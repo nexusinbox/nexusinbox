@@ -1,0 +1,28 @@
+{
+  "name": "@nexusinbox/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./visibility": {
+      "types": "./dist/visibility.d.ts",
+      "default": "./dist/visibility.js"
+    },
+    "./a2a": {
+      "types": "./dist/a2a.d.ts",
+      "default": "./dist/a2a.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm run build",
+    "lint": "eslint src tests --ext .ts",
+    "test": "vitest run"
+  }
+}

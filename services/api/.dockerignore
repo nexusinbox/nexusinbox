@@ -1,0 +1,28 @@
+# Keep the build context minimal — the Docker build only needs the Rust
+# source, manifests, and migrations. Everything else is either derived
+# (target/) or irrelevant (docs, tests output, local env).
+
+# Rust build artifacts — these would bloat the context by hundreds of MB
+# and defeat the in-image cargo cache warm-up.
+target/
+**/*.rs.bk
+
+# Local environment / secrets — must never leak into an image layer.
+.env
+.env.*
+!.env.example
+
+# Test output, IDE noise, OS metadata.
+tests/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Git metadata — large and not needed at runtime.
+.git/
+.gitignore
+
+# Documentation lives at the repo root; it's not consumed by the API runtime.
+README.md
+docs/

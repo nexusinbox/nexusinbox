@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "nexusinbox-agent-runtime",
+  "description": "Reference integration template: drive the NexusInbox non-interactive API from a Node.js AI agent runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "//": "build-sdk anchors pnpm at the monorepo root via -C ../.. (this template dir is NOT a workspace member) and filters to @nexusinbox/core. The previous `pnpm -w --filter ...` form invoked the root's `turbo run build` which fans out to next/web and dies on missing prod env vars.",
+    "build-sdk": "pnpm -C ../.. --filter @nexusinbox/core run build",
+    "predirect": "pnpm run build-sdk",
+    "direct": "node --env-file=.env direct-api.mjs",
+    "predirect:attachment": "pnpm run build-sdk",
+    "direct:attachment": "node --env-file=.env direct-api-with-attachment.mjs",
+    "pregateway": "pnpm run build-sdk",
+    "gateway": "node --env-file=.env gateway-runtime.mjs"
+  }
+}

@@ -1,0 +1,1666 @@
+openapi: 3.1.0
+info:
+  title: NexusInbox API
+  version: 0.1.0-mvp
+  description: |
+    MVP contract for NexusInbox.
+    Authentication uses JWT bearer and/or HttpOnly session cookie after World ID proof verification.
+servers:
+  - url: https://api.agentinbox.io/v1
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /auth/verify:
+    post:
+      summary: Verify World ID proof and issue session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyRequest'
+      responses:
+        '200':
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/session:
+    get:
+      summary: Return authentication state and user profile
+      description: |
+        Returns `{authenticated, user?}`. Used by Web auth guard
+        (`AuthSessionStatus` / `AppShell`) to decide whether to render
+        the dashboard or redirect to `/login`. 401 clears the stale
+        `nexusinbox_session` cookie via `Set-Cookie: ...; Max-Age=0`.
+      security: []
+      responses:
+        '200':
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    patch:
+      summary: Update authenticated user profile (display_name)
+      description: |
+        Updates the caller's `display_name`. Value is trimmed, must be
+        1..=64 characters, and must not contain control characters.
+        Pass `null` or an empty string to clear.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/logout:
+    post:
+      summary: Revoke current session and clear auth cookie
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /status:
+    get:
+      summary: Public backend feature status
+      description: |
+        Returns a snapshot of backend configuration flags so the Web
+        `/integrations` page can render a live status panel without
+        requiring authentication.
+      security: []
+      responses:
+        '200':
+          description: Status snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /agents:
+    get:
+      summary: List agents owned by authenticated user
+      responses:
+        '200':
+          description: Agents list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Agent'
+                required: [agents]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      summary: Create a new agent DID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAgentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-credentials:
+    get:
+      summary: List agent credentials owned by authenticated user
+      description: |
+        Returns every credential (pending / active / revoked) for the
+        caller's user_id. `enrollment_secret` is never returned here —
+        it is only exposed once in the creation response.
+      responses:
+        '200':
+          description: Credentials list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCredentialsListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      summary: Create a pending agent credential (enrollment secret issued)
+      description: |
+        Issues a one-time `enrollment_secret` (prefix `ens_`) that the
+        Signer Daemon uses with `POST /agent-credentials/{id}/activate`
+        to register its public keys. The secret is returned exactly once
+        and only for `status='pending'` rows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentCredentialRequest'
+      responses:
+        '201':
+          description: Created (pending activation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCredentialResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-credentials/{id}:
+    patch:
+      summary: Update label or policy on a credential
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchAgentCredentialRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchAgentCredentialResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      summary: Revoke a credential (soft delete, tokens invalidated)
+      description: |
+        Flips the credential to `status='revoked'` and revokes every
+        live token under it. The row remains for an audit grace window
+        (see `POST /agent-credentials/{id}/purge` to physically delete).
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      responses:
+        '204':
+          description: Revoked
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /agent-credentials/{id}/activate:
+    post:
+      summary: Activate a pending credential with the Daemon's public keys
+      description: |
+        Called by the Signer Daemon. Proves ownership of the signing key
+        via a JWS `enrollment_proof` signed over `credential_id` + `iat`.
+        On success the credential flips to `status='active'` and becomes
+        eligible for `POST /agent-auth/token`. No Cookie session required.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateCredentialRequest'
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivateCredentialResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-credentials/{id}/rotate:
+    post:
+      summary: Start key rotation for a credential
+      description: |
+        Issues a fresh `enrollment_secret` so the Daemon can re-enroll
+        with new keys. Existing active tokens continue to work until the
+        new activation completes; the caller is expected to follow up
+        with `POST /agent-credentials/{id}/activate`.
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      responses:
+        '200':
+          description: Rotation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotateCredentialResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /agent-credentials/{id}/purge:
+    post:
+      summary: Physically delete a revoked credential row
+      description: |
+        Only permitted when the credential is already `status='revoked'`
+        AND `revoked_at` is older than the purge grace window (7 days).
+        Freshly-revoked rows return 409. A `credential_purged` audit
+        event with a denormalised snapshot is emitted before the DELETE
+        so forensics still has enough context.
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      responses:
+        '204':
+          description: Purged
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Credential not yet eligible for purge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /agent-auth/token:
+    post:
+      summary: Exchange JWS assertion for access + refresh tokens
+      description: |
+        No Cookie required. The caller proves possession of the agent's
+        signing key by submitting a JWS compact-serialized assertion.
+        When `dpop_jwk` is supplied, the returned tokens are DPoP-bound
+        (RFC 9449) via JWK Thumbprint (RFC 7638) and subsequent API
+        calls MUST include a matching `DPoP` header.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentAuthTokenRequest'
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-auth/refresh:
+    post:
+      summary: Rotate a refresh token
+      description: |
+        Consumes the submitted `agr_` refresh token, revokes it, and
+        issues a new access + refresh pair. If the submitted RT was
+        already revoked this is treated as a theft signal — the entire
+        credential is marked `compromised` and all tokens under it are
+        revoked. When the original token was DPoP-bound the caller MUST
+        supply a matching `DPoP` proof header.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRefreshRequest'
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-auth/revoke:
+    post:
+      summary: Agent-initiated self-revoke of an access or refresh token
+      description: |
+        Accepts either an access token (`agt_`) or refresh token (`agr_`).
+        Returns 200 even when the token is unknown or already revoked,
+        per RFC 7009 §2.2.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRevokeRequest'
+      responses:
+        '200':
+          description: Revoked (or already revoked / unknown — idempotent)
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agent-audit-log:
+    get:
+      summary: List audit events for the authenticated user
+      parameters:
+        - $ref: '#/components/parameters/AuditCredentialId'
+        - $ref: '#/components/parameters/AuditEvent'
+        - $ref: '#/components/parameters/AuditEventPrefix'
+        - $ref: '#/components/parameters/AuditLimit'
+        - $ref: '#/components/parameters/AuditOffset'
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /agent-audit-log/bridge:
+    post:
+      summary: Ingest a Signer Daemon bridge audit event (JWS-authenticated)
+      description: |
+        Write-only endpoint for the Signer Daemon fire-and-forget audit
+        forwarder. Each event is signed as a standalone JWS with the
+        agent's Ed25519 signing key — independent of the access-token
+        lifecycle. Verification chain: JWS EdDSA check → `iss` matches
+        credential `aid` → `aud` byte-equal to the expected ingest URL
+        → `iat` within ±60s → `jti` not replayed within the window →
+        `bridge_event.event` is in the allow-list.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BridgeAuditIngestRequest'
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeAuditIngestResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /agents/{id}/emergency-shutdown:
+    post:
+      summary: Revoke every credential and token under an agent
+      description: |
+        "Panic button" for compromised agents. Flips every credential
+        under the agent's aid to `status='revoked'` and revokes every
+        live token. Returns counts of what was invalidated. Emits an
+        `emergency_shutdown` audit event.
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      responses:
+        '200':
+          description: Shutdown executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyShutdownResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /agents/{id}/auto-reply-policy:
+    get:
+      summary: Fetch the per-agent auto-reply policy
+      description: |
+        Returns the current policy row for the agent. When no row
+        exists yet the response carries `revision: 0` and an empty
+        `policy` — clients can PUT unconditionally in that case.
+        See docs/25 §6 for the full contract.
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      responses:
+        '200':
+          description: Current policy (or empty default when no row exists)
+          headers:
+            ETag:
+              description: Opaque value matching the row `revision`; use as `If-Match` on subsequent PUTs.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoReplyPolicyResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    put:
+      summary: Upsert the per-agent auto-reply policy
+      description: |
+        Replaces the entire policy for the agent. Optimistic locking
+        is enforced via `If-Match` (preferred) or a `revision` field
+        in the body (proxy / CDN fallback). Creating the first row
+        requires `revision: 0`. See docs/25 §6.
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Expected row revision (opaque ETag value from a prior GET).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutAutoReplyPolicyRequest'
+      responses:
+        '200':
+          description: Policy replaced; returns the new state + updated ETag
+          headers:
+            ETag:
+              description: Opaque value matching the new row `revision`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoReplyPolicyResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: revision mismatch — reload and reapply
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      summary: Drop the per-agent auto-reply policy (revert to default)
+      description: |
+        Removes the policy row. Idempotent — returns 204 even when no
+        row existed. An `auto_reply_policy_deleted` audit event is
+        only emitted when an actual row was deleted.
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      responses:
+        '204':
+          description: Policy removed (or already absent)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /recipients/resolve:
+    get:
+      summary: Resolve a shared Agent ID or DID to the current routing keys
+      parameters:
+        - name: identifier
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Accepts either `aid:ai:...` or `did:key:...`
+      responses:
+        '200':
+          description: Resolved recipient identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipientResolutionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /messages:
+    get:
+      summary: List message index entries for an agent
+      parameters:
+        - $ref: '#/components/parameters/AgentDid'
+        - $ref: '#/components/parameters/Folder'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Priority'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: auto_reply_pending
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "true", "0", "false"]
+          description: |-
+            Phase 4.4c+ Isolated mode executor filter. When `1`/`true`, the
+            response is restricted to rows whose `auto_reply_decision`
+            is `auto_accept` or `auto_decline` and whose
+            `auto_reply_sent_at` is still NULL — the set of messages
+            the Isolated mode daemon should dispatch. See docs/25c-a §4.1.
+      responses:
+        '200':
+          description: Message index list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageIndexListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    post:
+      summary: Send encrypted message envelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMessageResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Recipient not found or blocked by policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipientNotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /messages/{id}:
+    patch:
+      summary: Update message status
+      parameters:
+        - $ref: '#/components/parameters/MessageIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMessageStatusRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateMessageStatusResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /messages/{id}/auto-reply-sent:
+    patch:
+      summary: Mark the auto-reply executor as done for this inbox row
+      description: |-
+        Flips `message_index.auto_reply_sent_at` from NULL to NOW() for
+        the recipient-side row the caller owns. Predicated on
+        `auto_reply_sent_at IS NULL`, so repeated calls from page
+        refreshes or parallel tabs are idempotent. The first writer
+        wins; subsequent callers get the frozen timestamp.
+
+        The client calls this **after** it has dispatched the actual
+        auto-reply via POST /messages. See docs/25c §3.2 / §5.2.
+      parameters:
+        - $ref: '#/components/parameters/MessageIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkAutoReplySentRequest'
+      responses:
+        '200':
+          description: Updated (new stamp) or already stamped (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkAutoReplySentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /messages/{id}/content:
+    get:
+      summary: Fetch encrypted message body by message id
+      parameters:
+        - $ref: '#/components/parameters/MessageIdPath'
+      responses:
+        '200':
+          description: Encrypted message content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageContentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /ws:
+    get:
+      summary: WebSocket endpoint (JWT required in Authorization header)
+      description: |
+        Upgrade endpoint for realtime events.
+        Server emits `new_message`, `message_status`, `approval_required`, and `trust_alert`.
+      responses:
+        '101':
+          description: Switching Protocols
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AgentDid:
+      name: agent_did
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Target agent DID, shared `aid:ai:...`, or `all` (human sessions only). Agent tokens are restricted to the AID bound to their credential.
+    Folder:
+      name: folder
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [inbox, sent, drafts, archive]
+        default: inbox
+    Status:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [unread, read, all]
+        default: all
+    Priority:
+      name: priority
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [high, normal, low, background]
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    MessageIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Agent credential UUID
+    AgentIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Agent UUID
+    AuditCredentialId:
+      name: credential_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Filter audit events to a single credential
+    AuditEvent:
+      name: event
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Exact-match filter on `event`. Wins over `event_prefix` when both are supplied.
+    AuditEventPrefix:
+      name: event_prefix
+      in: query
+      required: false
+      schema:
+        type: string
+      description: |
+        Prefix filter on `event`, e.g. `bridged_` to bucket the bridge
+        lifecycle. Ignored unless `event` is absent. Only
+        `[A-Za-z0-9_]` characters (length ≤ 64) are accepted; anything
+        else is silently dropped to prevent LIKE wildcard injection.
+    AuditLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    AuditOffset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  responses:
+    UnauthorizedError:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    AuthVerifyRequest:
+      type: object
+      properties:
+        proof:
+          type: string
+        merkle_root:
+          type: string
+        nullifier_hash:
+          type: string
+        verification_level:
+          type: string
+          enum: [device, orb, orb_recent]
+        action:
+          type: string
+        signal:
+          type: string
+      required:
+        - proof
+        - merkle_root
+        - nullifier_hash
+        - verification_level
+        - action
+        - signal
+
+    AuthVerifyResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+      required: [user]
+
+    AuthSessionResponse:
+      type: object
+      properties:
+        authenticated:
+          type: boolean
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/UserSummary'
+            - type: 'null'
+      required: [authenticated]
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        display_name:
+          type: [string, 'null']
+          description: |
+            New display name. Trimmed to 1..=64 characters. Must not
+            contain control characters. Null or empty string clears
+            the field.
+          maxLength: 64
+
+    StatusResponse:
+      type: object
+      properties:
+        storage_backend:
+          type: string
+          enum: [local_fs, google_drive, s3, ipfs]
+        database_configured:
+          type: boolean
+        database_connected:
+          type: boolean
+        auto_purge_enabled:
+          type: boolean
+        websocket_enabled:
+          type: boolean
+        world_id_verify_enabled:
+          type: boolean
+      required:
+        - storage_backend
+        - database_configured
+        - database_connected
+        - auto_purge_enabled
+        - websocket_enabled
+        - world_id_verify_enabled
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: [string, 'null']
+        verification_level:
+          type: string
+          enum: [device, orb, orb_recent]
+        created_at:
+          type: string
+          format: date-time
+      required: [id, verification_level, created_at]
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        did:
+          type: string
+        label:
+          type: string
+        public_key:
+          type: string
+        encryption_key:
+          type: string
+        is_active:
+          type: boolean
+        auto_reply:
+          type: boolean
+        unread_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required: [id, aid, did, label, is_active, auto_reply, unread_count, created_at]
+
+    CreateAgentRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+        public_key:
+          type: string
+        encryption_key:
+          type: string
+      required: [label, public_key, encryption_key]
+
+    CreateAgentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        did:
+          type: string
+      required: [id, aid, did]
+
+    RecipientResolutionResponse:
+      type: object
+      properties:
+        input:
+          type: string
+        aid:
+          type: string
+        did:
+          type: string
+        label:
+          type: [string, 'null']
+        signing_public_key:
+          type: string
+        encryption_public_key:
+          type: string
+      required: [input, aid, did, signing_public_key, encryption_public_key]
+
+    EnvelopeMetadata:
+      type: object
+      properties:
+        subject_encrypted:
+          type: string
+        thread_id:
+          type: [string, 'null']
+          format: uuid
+        content_type:
+          type: string
+        has_attachments:
+          type: boolean
+      required: [subject_encrypted, thread_id, content_type, has_attachments]
+
+    Envelope:
+      type: object
+      properties:
+        encrypted_content:
+          type: string
+        encrypted_key:
+          type: string
+          description: "x25519 wrapped content key. Must start with x25519v1:"
+          pattern: '^x25519v1:.+'
+        nonce:
+          type: string
+        signature:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/EnvelopeMetadata'
+      required: [encrypted_content, encrypted_key, nonce, signature, metadata]
+
+    SendMessageRequest:
+      type: object
+      properties:
+        sender_did:
+          type: string
+        recipient_did:
+          type: string
+          description: Accepts either the current `did:key:...` or a shared `aid:ai:...`
+        envelope:
+          $ref: '#/components/schemas/Envelope'
+      required: [sender_did, recipient_did, envelope]
+
+    SendMessageResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [delivered, pending_approval, blocked]
+      required: [message_id, status]
+
+    MessageIndexEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sender_did:
+          type: string
+        sender_label:
+          type: [string, 'null']
+        recipient_did:
+          type: string
+        recipient_label:
+          type: [string, 'null']
+        thread_id:
+          type: [string, 'null']
+          format: uuid
+        subject_encrypted:
+          type: string
+        storage_ref:
+          type: string
+        status:
+          type: string
+          enum: [unread, read, archived, auto_purged]
+        priority:
+          type: string
+          enum: [high, normal, low, background]
+        ai_category:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        trust_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        auto_reply_decision:
+          description: |-
+            Phase 4.4b cached auto-reply evaluator action for the
+            recipient-side row. Absent when the evaluator has not
+            run (pre-4.4b row, or `AGENT_INBOX_AUTO_REPLY_EVALUATOR=off`).
+            See docs/25b for the decision model.
+          type: string
+          enum:
+            - queue_for_human
+            - auto_accept
+            - auto_decline
+            - auto_accept_if_free
+            - delegate_to_llm
+        auto_reply_reason:
+          description: |-
+            Short machine-readable reason code that accompanies
+            `auto_reply_decision`. Examples: `master_off`,
+            `no_policy`, `default_match`, `trust_below_threshold`,
+            `priority_exceeds_policy`, `not_a_contact`,
+            `sender_not_in_allowlist`, `calendar_unavailable`,
+            `llm_unavailable`.
+          type: string
+        auto_reply_sent_at:
+          description: |-
+            Phase 4.4c timestamp set by the executor after it has
+            dispatched the auto-reply for this recipient-side row.
+            Absent until the executor has run. Used by the inbox UI
+            to flip the badge from "Policy: …" to "Auto-replied · …"
+            and by the executor itself to skip already-handled rows
+            across multi-tab / refresh races. See docs/25c §3.2.
+          type: string
+          format: date-time
+      required:
+        - id
+        - sender_did
+        - recipient_did
+        - subject_encrypted
+        - storage_ref
+        - status
+        - priority
+        - created_at
+        - trust_score
+
+    MarkAutoReplySentRequest:
+      description: |-
+        Phase 4.4c executor idempotency hook body. `reply_message_id`
+        (if provided) is recorded in the `auto_reply_sent` audit event
+        so investigators can correlate the original delivery with the
+        outgoing reply. `executor_mode` (Phase 4.4c+, docs/25c-a §4.2)
+        tags which executor dispatched the reply — `client_protocol_v1`
+        for Standard mode (browser, default when absent) or
+        `daemon_protocol_v1` for Isolated mode (gateway polling).
+      type: object
+      properties:
+        reply_message_id:
+          type: string
+          format: uuid
+        executor_mode:
+          type: string
+
+    MarkAutoReplySentResponse:
+      type: object
+      required: [id, auto_reply_sent_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        auto_reply_sent_at:
+          type: string
+          format: date-time
+
+    MessageIndexListResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageIndexEntry'
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+      required: [messages, total, page, per_page]
+
+    UpdateMessageStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [read, archived]
+      required: [status]
+
+    UpdateMessageStatusResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [read, archived]
+      required: [id, status]
+
+    MessageContentResponse:
+      type: object
+      properties:
+        encrypted_content:
+          type: string
+        encrypted_key:
+          type: string
+          description: x25519 wrapped content key (x25519v1)
+        nonce:
+          type: string
+      required: [encrypted_content, encrypted_key, nonce]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+
+    RecipientNotFoundError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            error:
+              type: string
+              const: recipient_not_found
+
+    CreateAgentCredentialRequest:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 64
+        scopes:
+          type: array
+          description: |
+            Subset of the agent's allowed scopes to bind to this credential.
+            Valid values: `messages.read`, `messages.send`, `messages.delete`.
+            Defaults to all allowed scopes when omitted.
+          items:
+            type: string
+            enum: [messages.read, messages.send, messages.delete]
+      required: [agent_id, label]
+
+    AgentCredentialResponse:
+      type: object
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, revoked, compromised]
+        allowed_scopes:
+          type: array
+          items:
+            type: string
+        enrollment_secret:
+          type: [string, 'null']
+          description: |
+            One-time activation secret (prefix `ens_`). Returned exactly
+            once from `POST /agent-credentials` (and from
+            `POST /agent-credentials/{id}/rotate`). Null everywhere else.
+        enrollment_expires_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        activated_at:
+          type: [string, 'null']
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Set when `status='revoked'`. Web UI uses this to render the
+            purge grace-period countdown.
+        key_holder:
+          type: string
+          enum: [web_keystore, signer_daemon, unknown]
+          description: |
+            Where the private-key material for this credential lives.
+            `unknown` indicates a pre-migration credential and triggers
+            Standard mode rendering in the Web UI.
+      required:
+        - credential_id
+        - aid
+        - label
+        - status
+        - allowed_scopes
+        - created_at
+        - key_holder
+
+    AgentCredentialsListResponse:
+      type: object
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCredentialResponse'
+      required: [credentials]
+
+    ActivateCredentialRequest:
+      type: object
+      properties:
+        enrollment_secret:
+          type: string
+          description: One-time secret returned from credential creation.
+        signing_public_key:
+          type: string
+          description: Ed25519 public key (multibase encoded).
+        encryption_public_key:
+          type: string
+          description: X25519 public key (multibase encoded).
+        enrollment_proof:
+          type: string
+          description: |
+            JWS compact serialization signed with the same Ed25519 key.
+            Payload must include `credential_id` and `iat`.
+        key_holder:
+          type: string
+          enum: [web_keystore, signer_daemon, unknown]
+          description: |
+            Hint about where the private key lives. Unrecognised values
+            are stored as `unknown`.
+      required:
+        - enrollment_secret
+        - signing_public_key
+        - encryption_public_key
+        - enrollment_proof
+
+    ActivateCredentialResponse:
+      type: object
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        did:
+          type: string
+        status:
+          type: string
+          enum: [active]
+      required: [credential_id, aid, did, status]
+
+    PatchAgentCredentialRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 64
+        policy:
+          type: object
+          additionalProperties: true
+          description: Free-form policy object. Replaces the stored value.
+
+    PatchAgentCredentialResponse:
+      type: object
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+        updated:
+          type: boolean
+      required: [credential_id, updated]
+
+    RotateCredentialResponse:
+      type: object
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        enrollment_secret:
+          type: string
+          description: Fresh one-time secret for the Daemon to re-enroll.
+        enrollment_expires_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+      required:
+        - credential_id
+        - aid
+        - enrollment_secret
+        - enrollment_expires_at
+
+    AgentAuthTokenRequest:
+      type: object
+      properties:
+        assertion:
+          type: string
+          description: |
+            JWS compact serialization signed by the agent's Ed25519 key.
+            Payload fields: `iss` (aid), `sub` (credential_id), `aud`,
+            `jti`, `iat`, `exp`, `scope`.
+        dpop_jwk:
+          type: object
+          additionalProperties: true
+          description: |
+            DPoP public key in JWK format (RFC 9449). When present the
+            issued tokens are sender-constrained via JWK Thumbprint
+            (RFC 7638). Omit for plain Bearer (back-compat only —
+            discouraged in production).
+      required: [assertion]
+
+    AgentAuthTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Opaque token, prefix `agt_`.
+        refresh_token:
+          type: string
+          description: Opaque token, prefix `agr_`.
+        token_type:
+          type: string
+          enum: [Bearer, DPoP]
+        expires_in:
+          type: integer
+          description: Access-token TTL in seconds.
+        scope:
+          type: string
+          description: Space-separated list of granted scopes.
+      required: [access_token, refresh_token, token_type, expires_in, scope]
+
+    AgentRefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: Current `agr_` refresh token.
+      required: [refresh_token]
+
+    AgentRevokeRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Either an access token (`agt_`) or refresh token (`agr_`).
+      required: [token]
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        credential_id:
+          type: [string, 'null']
+          format: uuid
+        aid:
+          type: [string, 'null']
+        event:
+          type: string
+          description: |
+            Event name, e.g. `credential_created`, `credential_revoked`,
+            `token_issued`, `token_refreshed`, `token_reuse_detected`,
+            `emergency_shutdown`, `bridged_*`.
+        detail:
+          type: object
+          additionalProperties: true
+          description: |
+            JSONB detail payload. Shape is event-specific and evolves
+            over time — clients should treat unknown fields as opaque.
+        created_at:
+          type: string
+          format: date-time
+      required: [id, event, detail, created_at]
+
+    AuditLogResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+        total:
+          type: integer
+      required: [events, total]
+
+    BridgeAuditIngestRequest:
+      type: object
+      properties:
+        jws:
+          type: string
+          description: |
+            JWS compact serialization. Payload fields: `iss` (aid),
+            `sub` (credential_id UUID), `aud`, `iat`, `jti`, and a
+            `bridge_event` object whose `event` must match the server's
+            allow-list.
+      required: [jws]
+
+    BridgeAuditIngestResponse:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+      required: [accepted]
+
+    EmergencyShutdownResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        aid:
+          type: string
+        credentials_revoked:
+          type: integer
+          minimum: 0
+        tokens_revoked:
+          type: integer
+          minimum: 0
+      required: [agent_id, aid, credentials_revoked, tokens_revoked]
+
+    AutoReplyPolicy:
+      type: object
+      description: |
+        Declarative auto-reply policy DSL v=1. See docs/25 §5 for
+        the normative schema. Unknown fields are ignored (forward
+        compatibility) so additive extensions stay on v=1.
+      properties:
+        v:
+          type: integer
+          const: 1
+        default_action:
+          type: string
+          enum:
+            - queue_for_human
+            - auto_accept
+            - auto_decline
+            - auto_accept_if_free
+            - delegate_to_llm
+        protocols:
+          type: object
+          description: |
+            Per-protocol-type overrides. Only keys matching known
+            A2A protocol types are accepted (`schedule_negotiation`,
+            `task_delegation` today). Additions land here before
+            their own specialised Card does.
+          additionalProperties: false
+          properties:
+            schedule_negotiation:
+              type: object
+              additionalProperties: false
+              properties:
+                propose:
+                  $ref: '#/components/schemas/AutoReplyProtocolAction'
+            task_delegation:
+              type: object
+              additionalProperties: false
+              properties:
+                delegate:
+                  $ref: '#/components/schemas/AutoReplyProtocolAction'
+      required: [v, default_action]
+
+    AutoReplyProtocolAction:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - queue_for_human
+            - auto_accept
+            - auto_decline
+            - auto_accept_if_free
+            - delegate_to_llm
+        conditions:
+          $ref: '#/components/schemas/AutoReplyConditions'
+        note_template:
+          type: string
+          maxLength: 2000
+      required: [action]
+
+    AutoReplyConditions:
+      type: object
+      description: |
+        Pure predicates evaluated against the incoming message. No
+        external I/O allowed; the only action that needs a network
+        round-trip is `auto_accept_if_free` and that's dispatched
+        on the action side, not here.
+      properties:
+        min_trust_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        require_contact:
+          type: boolean
+        priority_at_most:
+          type: string
+          enum: [high, normal, low, background]
+        sender_in_allowlist:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            pattern: '^did:'
+
+    AutoReplyPolicyResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        schema_version:
+          type: integer
+          const: 1
+        revision:
+          type: integer
+          minimum: 0
+          description: |
+            Row-level optimistic lock. `0` when no row exists yet —
+            clients should send `revision: 0` on the first PUT so
+            the create-if-absent check passes.
+        policy:
+          $ref: '#/components/schemas/AutoReplyPolicy'
+        updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: Null when no row exists yet.
+      required: [agent_id, schema_version, revision, policy]
+
+    PutAutoReplyPolicyRequest:
+      type: object
+      properties:
+        policy:
+          $ref: '#/components/schemas/AutoReplyPolicy'
+        revision:
+          type: integer
+          minimum: 0
+          description: |
+            Expected row revision for optimistic locking. Prefer the
+            `If-Match` header; this field exists as a fallback when
+            proxies / CDNs strip conditional-request headers.
+      required: [policy]

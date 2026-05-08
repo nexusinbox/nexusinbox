@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: nexusinbox-postgres
+    environment:
+      POSTGRES_USER: agent_inbox
+      POSTGRES_PASSWORD: agent_inbox
+      POSTGRES_DB: agent_inbox
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_inbox -d agent_inbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis:
+    image: redis:7
+    container_name: nexusinbox-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # MinIO — S3-compatible object store for BYOS adapter integration tests.
+  # Console: http://127.0.0.1:9001  (agent_inbox / agent_inbox)
+  # API:     http://127.0.0.1:9000
+  minio:
+    image: minio/minio:latest
+    container_name: nexusinbox-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: agent_inbox
+      MINIO_ROOT_PASSWORD: agent_inbox
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # Kubo IPFS node — for IPFS adapter integration tests.
+  # API:     http://127.0.0.1:5001
+  # Gateway: http://127.0.0.1:8080
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: nexusinbox-ipfs
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--post-data=", "http://127.0.0.1:5001/api/v0/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # --- Application services (uncomment for full-stack local testing) ---
+
+  # api:
+  #   build:
+  #     context: services/api
+  #   container_name: nexusinbox-api
+  #   environment:
+  #     PORT: 8080
+  #     DATABASE_URL: postgres://agent_inbox:agent_inbox@postgres:5432/agent_inbox
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: ${JWT_SECRET:-change-me-in-local-dev}
+  #     JWT_ISSUER: nexusinbox-api
+  #     JWT_AUDIENCE: nexusinbox-web
+  #     RUST_LOG: info
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # signer-daemon:
+  #   build:
+  #     context: services/signer-daemon
+  #   container_name: nexusinbox-signer
+  #   volumes:
+  #     - signer-keys:/home/signer/keys
+  #     - signer-ipc:/run/nexusinbox
+  #   command: ["--socket", "/run/nexusinbox/signer.sock"]
+
+  # agent-gateway:
+  #   build:
+  #     context: services/agent-gateway
+  #   container_name: nexusinbox-gateway
+  #   environment:
+  #     AGENT_INBOX_API_URL: http://api:8080
+  #   volumes:
+  #     - signer-ipc:/run/nexusinbox
+  #   depends_on:
+  #     - api
+  #     - signer-daemon
+
+# volumes:
+#   signer-keys:
+#   signer-ipc:

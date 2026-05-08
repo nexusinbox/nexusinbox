@@ -1,0 +1,3756 @@
+:root {
+  /* Material Design 3 Like Palette */
+  --bg: #f4f7fc;
+  --surface: #ffffff;
+  --surface-alt: #f8fafd;
+  --surface-hover: #f0f4f9;
+  --surface-active: #c2e7ff;
+  --line: #e1e5ea;
+  --text: #1f1f1f;
+  --text-muted: #5f6368;
+  --primary: #0b57d0;
+  --primary-soft: #d3e3fd;
+  --primary-hover: #0842a0;
+  --danger: #b3261e;
+  --ok: #146c2e;
+  --warn: #8c4a00;
+  --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.1), 0 1px 3px 1px rgba(60, 64, 67, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(60, 64, 67, 0.1), 0 2px 4px -1px rgba(60, 64, 67, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #dadce0;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #bdc1c6;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--text);
+  background: var(--surface);
+  font-family: "Google Sans", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, textarea, select {
+  font: inherit;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Base Shell */
+.gmail-shell {
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg);
+  /* Contain the ambient bg's stacking context to this shell so modals,
+     dropdowns, and popovers rendered elsewhere in the DOM are never stuck
+     behind it. */
+  position: relative;
+  isolation: isolate;
+}
+
+/* =================================================================
+   Post-login animated backdrop.
+   Mounted by <AppBackdrop /> inside .gmail-shell. All classes are
+   namespaced under `.ai-app-*` / `.ai-*` so they never touch any
+   existing shell / component styles. The shell is `position: relative;
+   isolation: isolate;` so the fixed/absolute layers below stay scoped.
+   ================================================================= */
+
+/* ---------- root layer ---------- */
+.ai-app-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Panels always paint above the backdrop. Explicit z-index guards
+   against z-index-collapse when the grid layout reflows at breakpoints. */
+.gmail-sidebar,
+.gmail-main {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- radial wash ---------- */
+.ai-app-bg-wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 20% 10%, rgba(80, 150, 255, 0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 60% at 80% 90%, rgba(170, 100, 255, 0.20) 0%, transparent 60%);
+}
+
+/* ---------- drifting blurred orbs ---------- */
+.ai-app-orb {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  filter: blur(72px);
+  opacity: 0.45;
+}
+.ai-app-orb-a {
+  background: #7dd7ff;
+  top: -100px;
+  left: -120px;
+  animation: ai-app-orb-a 28s ease-in-out infinite alternate;
+}
+.ai-app-orb-b {
+  background: #d49eff;
+  bottom: -160px;
+  right: -140px;
+  animation: ai-app-orb-b 38s ease-in-out infinite alternate;
+}
+@keyframes ai-app-orb-a {
+  to { transform: translate(320px, 140px); }
+}
+@keyframes ai-app-orb-b {
+  to { transform: translate(-280px, -120px); }
+}
+
+/* ---------- dot grid w/ radial mask ---------- */
+.ai-app-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(90, 100, 140, 0.13) 1px, transparent 1px);
+  background-size: 30px 30px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
+          mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
+  opacity: 0.9;
+}
+
+/* ---------- agent orbits (2 rigs + relay pulse line) ---------- */
+.ai-app-orbits {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+}
+.ai-orbit-a {
+  transform-origin: 0 0;
+  animation: ai-orbit-a 24s linear infinite;
+}
+.ai-orbit-b {
+  transform-origin: 0 0;
+  animation: ai-orbit-b 32s linear infinite reverse;
+}
+.ai-orbit-c {
+  transform-origin: 0 0;
+  animation: ai-orbit-c 44s linear infinite;
+}
+@keyframes ai-orbit-a { to { transform: rotate(360deg); } }
+@keyframes ai-orbit-b { to { transform: rotate(360deg); } }
+@keyframes ai-orbit-c { to { transform: rotate(360deg); } }
+.ai-relay-pulse {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* ---------- rotating agent mesh (triangle + radar sweep) ---------- */
+.ai-app-mesh {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1100px;
+  height: 1100px;
+  transform: translate(-50%, -54%);
+  opacity: 1;
+  pointer-events: none;
+}
+.ai-app-mesh-rot {
+  transform-origin: center;
+  animation: ai-app-mesh-rot 70s linear infinite;
+}
+.ai-app-mesh-sweep {
+  transform-origin: 0 0;
+  animation: ai-app-mesh-sweep 5s linear infinite;
+}
+@keyframes ai-app-mesh-rot { to { transform: rotate(360deg); } }
+@keyframes ai-app-mesh-sweep { to { transform: rotate(360deg); } }
+
+/* ---------- conic rings (3 drifting rings) ---------- */
+.ai-app-conics {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ai-conic {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent calc(50% - 2.5px), #000 calc(50% - 2.5px) 50%, transparent 50%);
+          mask: radial-gradient(circle, transparent calc(50% - 2.5px), #000 calc(50% - 2.5px) 50%, transparent 50%);
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(125, 215, 255, 0.35));
+}
+.ai-conic-a {
+  width: 460px;
+  height: 460px;
+  top: 4%;
+  right: 5%;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(125, 215, 255, 1) 70deg, rgba(169, 184, 255, 0.85) 160deg, transparent 260deg, transparent 360deg);
+  animation: ai-conic-rot-a 42s linear infinite;
+}
+.ai-conic-b {
+  width: 680px;
+  height: 680px;
+  bottom: -10%;
+  left: 2%;
+  background: conic-gradient(from 180deg, transparent 0deg, rgba(212, 158, 255, 0.95) 60deg, rgba(169, 184, 255, 0.8) 140deg, transparent 240deg, transparent 360deg);
+  animation: ai-conic-rot-b 66s linear infinite reverse;
+  filter: drop-shadow(0 0 12px rgba(212, 158, 255, 0.4));
+}
+.ai-conic-c {
+  width: 320px;
+  height: 320px;
+  top: 44%;
+  left: 36%;
+  background: conic-gradient(from 90deg, transparent 0deg, rgba(125, 215, 255, 0.85) 40deg, transparent 120deg, rgba(212, 158, 255, 0.8) 200deg, transparent 280deg);
+  animation: ai-conic-rot-c 54s linear infinite;
+}
+@keyframes ai-conic-rot-a { to { transform: rotate(360deg); } }
+@keyframes ai-conic-rot-b { to { transform: rotate(-360deg); } }
+@keyframes ai-conic-rot-c { to { transform: rotate(360deg); } }
+
+/* ---------- constellation ---------- */
+.ai-app-constellation {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  pointer-events: none;
+}
+.ai-constell-edges {
+  animation: ai-constell-drift 11s ease-in-out infinite alternate;
+}
+@keyframes ai-constell-drift {
+  to   { opacity: 0.45; }
+  from { opacity: 0.95; }
+}
+.ai-constell-nodes circle {
+  animation: ai-constell-twinkle 4s ease-in-out infinite;
+}
+@keyframes ai-constell-twinkle {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* ---------- horizontal scan beam ---------- */
+.ai-app-scanbeam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  top: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(125, 215, 255, 0) 6%, rgba(125, 215, 255, 1) 50%, rgba(169, 184, 255, 0) 94%, transparent 100%);
+  box-shadow:
+    0 0 28px rgba(125, 215, 255, 0.95),
+    0 0 60px rgba(169, 184, 255, 0.55),
+    0 0 120px rgba(125, 215, 255, 0.3);
+  animation: ai-app-scanbeam 7s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 1;
+}
+@keyframes ai-app-scanbeam {
+  0%   { top: -2%;  opacity: 0; }
+  10%  { opacity: 0.8; }
+  50%  { top: 52%;  opacity: 0.8; }
+  90%  { opacity: 0.8; }
+  100% { top: 102%; opacity: 0; }
+}
+
+/* ---------- calm mode (add .is-calm on the backdrop root) ---------- */
+.ai-app-bg.is-calm .ai-app-orb,
+.ai-app-bg.is-calm .ai-orbit-a,
+.ai-app-bg.is-calm .ai-orbit-b,
+.ai-app-bg.is-calm .ai-orbit-c,
+.ai-app-bg.is-calm .ai-app-mesh-rot,
+.ai-app-bg.is-calm .ai-app-mesh-sweep,
+.ai-app-bg.is-calm .ai-conic-a,
+.ai-app-bg.is-calm .ai-conic-b,
+.ai-app-bg.is-calm .ai-conic-c,
+.ai-app-bg.is-calm .ai-constell-edges,
+.ai-app-bg.is-calm .ai-constell-nodes circle,
+.ai-app-bg.is-calm .ai-app-scanbeam {
+  animation: none;
+}
+.ai-app-bg.is-calm .ai-relay-pulse,
+.ai-app-bg.is-calm .ai-app-scanbeam {
+  display: none;
+}
+.ai-app-bg.is-calm .ai-app-mesh,
+.ai-app-bg.is-calm .ai-conic {
+  opacity: 0.25;
+}
+
+/* ---------- motion preference ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ai-app-bg *,
+  .ai-app-bg *::before,
+  .ai-app-bg *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Sidebar — Now completely transparent to allow the background animations
+   to blend seamlessly with the topbar and the main content boundary.
+   Scroll behaviour:
+     - `.gmail-sidebar` itself fills the grid row (100vh) and hides overflow
+       so the brand + compose pill stay pinned at the top.
+     - `.mailbox-nav` below claims the remaining vertical space (flex: 1)
+       and scrolls independently. `min-height: 0` is required for flex
+       children to shrink below content size, which is what enables the
+       inner scrollbar. Without it the nav would blow past the viewport
+       and the last entries (Create Agent / Audit Log / ...) become
+       unreachable. */
+.gmail-sidebar {
+  padding: 12px 16px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Fallback logic not strictly needed if background is transparent */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gmail-sidebar {
+    background: transparent;
+  }
+}
+
+/* Horizontal brand logotype: icon + stylized "NexusInbox" wordmark.
+   Mirrors the login screen's neon-gradient brand for continuity. */
+.gmail-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 20px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  /* Brand reads as a link → home/inbox. The default `a` color
+     would shift the wordmark off its gradient, so we keep it
+     untouched here and let `.gmail-brand-text` win. The hover
+     wash is the affordance. */
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.gmail-brand:hover {
+  background: var(--surface-hover);
+}
+.gmail-brand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.gmail-brand-text {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.1;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #0b57d0 0%, #7c4dff 55%, #b06ab3 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+}
+
+.compose-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0 24px 0 16px;
+  min-height: 56px;
+  border-radius: 16px;
+  background: #c2e7ff;
+  color: #001d35;
+  font-weight: 500;
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  transition: box-shadow 0.2s, background 0.2s;
+  align-self: flex-start;
+}
+
+.compose-pill:hover {
+  box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+  background: #b1ddf7;
+}
+
+.mailbox-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Pin the brand + compose-pill at the top while this inner list scrolls. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Slim custom scrollbar so it doesn't compete with the frosted chrome. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 140, 200, 0.35) transparent;
+  padding-right: 2px;
+}
+.mailbox-nav::-webkit-scrollbar {
+  width: 6px;
+}
+.mailbox-nav::-webkit-scrollbar-thumb {
+  background: rgba(120, 140, 200, 0.35);
+  border-radius: 3px;
+}
+.mailbox-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 140, 200, 0.55);
+}
+.mailbox-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mailbox-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mailbox-section + .mailbox-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.mailbox-section-title {
+  margin: 0 0 4px 0;
+  padding: 0 16px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #80868b;
+}
+
+.mailbox-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 32px;
+  border-radius: 16px;
+  padding: 0 16px;
+  font-size: 0.88rem;
+  color: #444746;
+  font-weight: 500;
+  gap: 12px;
+}
+
+.mailbox-item.active {
+  background: var(--surface-active);
+  color: #001d35;
+  font-weight: 600;
+}
+
+.mailbox-item:hover:not(.active) {
+  background: var(--surface-hover);
+}
+
+.mailbox-count {
+  font-size: 0.8rem;
+  color: inherit;
+  font-weight: 600;
+}
+
+/* Main Content Area */
+.gmail-main {
+  display: flex;
+  flex-direction: column;
+  /* top=0 so .gmail-topbar's chrome gradient reaches the very top of the
+     viewport and meets the sidebar's top gradient with no exposed gap.
+     Right=16px / bottom=16px preserve breathing room around the list
+     and detail cards below the top bar. */
+  padding: 0 16px 16px 0;
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Top bar — Now completely transparent to match the sidebar and allow
+   the continuous background animation to seamlessly connect. */
+.gmail-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 16px 16px 0;
+  background: transparent;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gmail-topbar {
+    background: transparent;
+  }
+}
+
+.search-container {
+  position: relative;
+  width: min(720px, 100%);
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.search-input {
+  border: none;
+  border-radius: 24px;
+  background: #eaf1fb;
+  min-height: 48px;
+  width: 100%;
+  padding: 0 20px 0 52px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.search-input:focus {
+  outline: none;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Per-page action slot hosted inside the topbar (used for Refresh
+   buttons etc). Adds a subtle trailing separator so the page-
+   specific control is visually distinct from the global icons that
+   follow it, without needing a divider element in the DOM. */
+.topbar-page-action {
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+  margin-right: 4px;
+  border-right: 1px solid rgba(68, 71, 70, 0.12);
+}
+
+/* Most pages pass a `<button class="btn">Refresh</button>` as the
+   action. Scale those down here so they don't tower over the 40×40
+   icon buttons that follow. Icon-only buttons (`.icon-btn`) keep
+   their own sizing; this only targets the text-label `.btn` variant. */
+.topbar-page-action .btn {
+  height: 32px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: #444746;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: rgba(68, 71, 70, 0.08);
+}
+
+.avatar-btn {
+  background: var(--primary);
+  color: #fff;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  border: none;
+  margin-left: 8px;
+  cursor: pointer;
+}
+
+/* Action Buttons */
+.btn {
+  border: 1px solid #747775;
+  background: transparent;
+  border-radius: 18px;
+  min-height: 36px;
+  padding: 0 16px;
+  color: var(--primary);
+  font-weight: 500;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(11, 87, 208, 0.04);
+}
+
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* World ID Cool Connect Button */
+.world-id-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 24px);
+  margin: 16px 12px;
+  padding: 12px 16px;
+  background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
+  color: #ffffff;
+  border: 1px solid #404040;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.world-id-btn:hover:not(:disabled) {
+  background: linear-gradient(145deg, #242424, #383838);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.world-id-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.world-id-btn svg {
+  color: #e0e0e0;
+}
+
+/* Login */
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.login-card {
+  width: min(460px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.login-card .title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.login-card .subtitle {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.login-card .world-id-btn {
+  width: 100%;
+  margin: 18px 0 0;
+}
+
+/* Page Layout Wrappers */
+.page-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.1);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Mail layout manages its own scrolling per-pane, so the
+   parent page-content should clip rather than scroll. */
+.page-content:has(.mail-layout) {
+  overflow: hidden;
+}
+
+/* Toolbar */
+.mail-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  gap: 12px;
+  min-height: 52px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+/* Gmail-style compact icon button for mail actions */
+.toolbar-icon-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+  padding: 0;
+}
+.toolbar-icon-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.toolbar-icon-btn:active:not(:disabled) {
+  background: var(--surface-active);
+}
+.toolbar-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.toolbar-icon-btn:disabled {
+  color: #c4c7c5;
+  cursor: default;
+}
+/* Destructive variant for permanent-delete style actions. Idle state
+   stays neutral so the toolbar reads consistently; the danger-colour
+   only flashes on hover so the user gets a "you're about to do
+   something irreversible" cue right before they click. */
+.toolbar-icon-btn.is-danger:hover:not(:disabled) {
+  background: rgba(179, 38, 30, 0.1);
+  color: var(--danger);
+}
+.toolbar-icon-btn.is-danger:focus-visible {
+  box-shadow: 0 0 0 2px var(--danger);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-selection-count {
+  margin-left: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.toolbar-pagination-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+/* Select-all checkbox wrapper in the toolbar */
+.check-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.12s;
+}
+.check-wrap:hover {
+  background: var(--surface-hover);
+}
+.check-wrap input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.filter-tabs {
+  display: flex;
+  background: var(--surface-hover);
+  padding: 2px;
+  border-radius: 8px;
+  margin-left: 12px;
+}
+
+.filter-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.filter-tab.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Layout for Inbox (2-column: thread list + reader) */
+.mail-layout {
+  display: grid;
+  grid-template-columns: var(--thread-width, 360px) 4px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Inline fetch-error banner shown at the bottom of mail-layout. Replaces the
+   side-pane error box that used to live in the third column. */
+.inbox-fetch-error {
+  grid-column: 1 / -1;
+  padding: 10px 16px;
+  background: rgba(197, 34, 31, 0.08);
+  color: var(--danger);
+  border-top: 1px solid rgba(197, 34, 31, 0.2);
+  font-size: 0.85rem;
+}
+
+.mail-resizer {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.2s;
+  margin: 0 -2px;
+  position: relative;
+}
+
+.mail-resizer:hover, .mail-resizer:active {
+  background: var(--primary);
+  opacity: 0.5;
+}
+
+/* Thread List (Row Style) */
+.thread-list {
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.thread-item {
+  /* Gmail-style stacked row: the actions column (checkbox) stays on
+     the far left, and everything else lives in `.thread-body` as a
+     three-line column (sender + time / subject / preview + star).
+     `align-items: flex-start` keeps the checkbox aligned with the
+     sender line rather than the vertical centre of the whole card. */
+  display: flex;
+  align-items: flex-start;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f2f2f2;
+  cursor: pointer;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+
+.thread-item:hover {
+  box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  z-index: 1;
+  position: relative;
+  background: #fff;
+}
+
+.thread-item.active {
+  background: var(--surface-active);
+  border-color: #a8d7fa;
+}
+
+.thread-item.unread .thread-sender,
+.thread-item.unread .thread-subject {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  /* Nudge the checkbox down so it sits on the sender-row baseline
+     instead of hugging the top of the card. Matches Gmail's visual
+     alignment. */
+  padding-top: 2px;
+}
+
+.thread-body {
+  /* Three-line stack: sender+time / subject / preview+star. `min-width: 0`
+     is what lets the child ellipses kick in on narrow list panes. */
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.thread-row-top,
+.thread-row-bottom {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The star sits below the time on its own baseline rather than the
+   sender's — align-items:center here so the icon doesn't drift. */
+.thread-row-bottom {
+  align-items: center;
+}
+
+.thread-sender {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-subject {
+  display: block;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Match Gmail's visual hierarchy: subject is the dominant line,
+     slightly heavier than the body preview below it. */
+  font-weight: 500;
+}
+
+.thread-preview {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+  font-size: 0.84rem;
+}
+
+.thread-time {
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.78rem;
+}
+
+/* Stars / Checkboxes */
+.star-btn {
+  border: none;
+  background: transparent;
+  color: #dadce0;
+  cursor: pointer;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.star-btn:hover {
+  background: rgba(68, 71, 70, 0.08);
+}
+
+.star-btn.starred {
+  color: #f4b400;
+}
+
+.thread-check {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* ============================================================
+ * Compose — メッセージ作成フォーム
+ * Shared form controls (.input, .select, .textarea) are defined
+ * once here so every page that composes or edits data has a
+ * consistent, production-grade look.
+ * ============================================================ */
+/* ============================================================
+ * First-login display-name onboarding overlay
+ * ============================================================ */
+.display-name-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.display-name-card {
+  width: min(440px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px 28px 24px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.25);
+}
+
+.display-name-title {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.display-name-lead {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.display-name-form {
+  display: grid;
+  gap: 10px;
+}
+
+.display-name-error {
+  margin: 0;
+  color: #b3261e;
+  font-size: 0.82rem;
+}
+
+.compose-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 16px;
+}
+
+.compose-frame {
+  max-width: 820px;
+  margin: 16px auto 48px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.08), 0 4px 12px rgba(60, 64, 67, 0.06);
+  overflow: hidden;
+}
+
+.compose-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px;
+  background: #f6f9fc;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.compose-context {
+  padding: 10px 24px;
+  background: #fdf8e6;
+  border-bottom: 1px solid var(--line);
+  color: #5f5a34;
+  font-size: 0.84rem;
+}
+
+.compose-body {
+  padding: 24px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.field-help {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  background: #f4f4f4;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.55;
+  font-family: inherit;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f6f9fc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.attachment-name {
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.attachment-size {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.attachment-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--danger, #c5221f);
+}
+
+.file-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.file-picker-btn:hover {
+  border-color: var(--primary);
+  background: #f0f6ff;
+}
+
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.form-status {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.form-status.info {
+  background: #f0f6ff;
+  color: #0b57d0;
+  border: 1px solid #c8daf5;
+}
+
+.form-status.error {
+  background: #fce8e6;
+  color: #a50e0e;
+  border: 1px solid #f5c3bc;
+}
+
+.form-status.success {
+  background: #e6f4ea;
+  color: #137333;
+  border: 1px solid #b7e1c5;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+/* Card-style row for list pages that are not mail threads
+ * (settings/agents, settings/blocks). Unlike .thread-item which
+ * forces every child onto a single flex row, .card-item stacks
+ * its children vertically so labels, DIDs and metadata stay
+ * readable when the column is narrow. */
+.card-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f2f2f2;
+  cursor: pointer;
+  font-size: 0.88rem;
+  background: var(--surface);
+}
+
+.card-item:hover {
+  background: #fff;
+}
+
+.card-item.active {
+  background: var(--surface-active);
+}
+
+.card-item .card-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.card-item .card-sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  word-break: break-all;
+  max-width: 100%;
+}
+
+.card-item .card-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Reader Pane */
+.reader-pane {
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.mobile-reader-header {
+  display: none;
+}
+
+.reader-header {
+  padding: 24px;
+  background: #fff;
+}
+
+.reader-subject-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.reader-subject {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.reader-sender-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reader-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.reader-meta-text h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.reader-meta-text p {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.reader-body {
+  padding: 0 24px 24px;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #222;
+}
+
+.reader-actions {
+  margin: 24px;
+  display: flex;
+  gap: 12px;
+}
+
+/* Gmail-style stacked conversation view */
+.conversation-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.conversation-head {
+  padding: 20px 24px 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.conversation-head .reader-subject {
+  margin: 0 0 4px 0;
+}
+
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 24px 24px;
+}
+
+.conversation-message {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fdfdfd;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.conversation-message.latest {
+  background: #fff;
+  border-color: #c7d2fe;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+.conversation-message-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.02); /* Subtle contrast */
+}
+
+.conversation-message-body {
+  padding: 20px;
+  line-height: 1.7;
+  font-size: 0.95rem;
+  color: #1a1c1e;
+  background: #fff;
+}
+
+.conversation-block-panel {
+  margin: 12px 20px !important;
+  padding: 16px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(220, 38, 38, 0.15) !important;
+  background: rgba(220, 38, 38, 0.03) !important;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conversation-message-head .reader-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e0e7ff;
+  color: #3730a3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.conversation-message-head .reader-meta-text {
+  flex: 1;
+  min-width: 0;
+}
+.conversation-message-head .reader-meta-text h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* Inline "Add to Contacts" button next to the sender name */
+.conversation-add-contact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  background: transparent;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.conversation-add-contact:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.conversation-add-contact:focus-visible {
+  outline: none;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.15);
+}
+
+.conversation-message-head .reader-meta-text p {
+  margin: 2px 0 0 0;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.conversation-message-body {
+  padding: 16px 20px;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #222;
+}
+
+.conversation-message-body p {
+  margin: 0 0 12px 0;
+}
+
+/* Premium Unavailable Message Card */
+.message-unavailable-card {
+  border: 1px solid rgba(128, 128, 128, 0.2) !important;
+  border-radius: 12px !important;
+  padding: 20px !important;
+  margin: 12px 20px 20px !important;
+  background: rgba(128, 128, 128, 0.03) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.01);
+}
+
+.message-unavailable-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px 0 !important;
+  color: var(--text);
+  font-size: 1.05rem !important;
+}
+
+.unavailable-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #c7d2fe;
+}
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.btn-premium {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.btn-premium.primary {
+  background: #1a73e8;
+  color: white;
+  border-color: #1a73e8;
+  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.2);
+}
+
+.btn-premium.primary:hover {
+  background: #1765cc;
+  border-color: #1765cc;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-premium.primary:active {
+  transform: translateY(0);
+}
+
+.btn-premium.secondary {
+  background: white;
+  border-color: #dadce0;
+  color: #3c4043;
+}
+
+.btn-premium.secondary:hover {
+  background: #f8f9fa;
+  border-color: #bdc1c6;
+  color: #1a73e8;
+}
+
+.btn-premium.outline {
+  background: transparent;
+  border-color: rgba(26, 115, 232, 0.3);
+  color: #1a73e8;
+}
+
+.btn-premium.outline:hover {
+  background: rgba(26, 115, 232, 0.04);
+  border-color: #1a73e8;
+}
+
+.copy-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(128, 128, 128, 0.1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Attachment chips below a message body */
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 16px 20px;
+  border-top: 1px solid var(--line);
+  margin-top: -4px;
+  padding-top: 12px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  padding: 8px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.attachment-chip:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary-soft);
+}
+.attachment-chip:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.attachment-chip.error {
+  background: #fdecec;
+  color: var(--danger);
+  cursor: default;
+}
+.attachment-chip-icon {
+  font-size: 1rem;
+}
+.attachment-chip-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-chip-size {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.attachment-chip-status {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-left: 4px;
+}
+
+/* Side Pane for Extensions */
+/* Empty State — shown when no data is available */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  gap: 12px;
+  min-height: 160px;
+}
+
+.empty-state::before {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--surface-hover);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z'/%3E%3Cpolyline points='22,6 12,13 2,6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 24px;
+  flex-shrink: 0;
+}
+
+.reader-pane .empty-state {
+  flex: 1;
+  min-height: 200px;
+  color: #bbb;
+  font-size: 0.85rem;
+}
+
+.reader-pane .empty-state::before {
+  width: 56px;
+  height: 56px;
+  background-color: #f5f5f5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%23ccc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
+  background-size: 28px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: #fdfdfd;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+ * Per-agent inbox — switcher bar (sits under the topbar search)
+ * ============================================================ */
+.agent-switcher-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 280px;
+}
+.agent-switcher:hover {
+  border-color: var(--primary-soft);
+}
+.agent-switcher:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.15);
+}
+
+.agent-switcher-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.agent-switcher-select {
+  flex: 1;
+  font: inherit;
+  font-size: 0.9rem;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  padding: 0;
+  min-width: 180px;
+  cursor: pointer;
+  font-weight: 500;
+  appearance: auto;
+}
+.agent-switcher-select:focus { outline: none; }
+
+/* ============================================================
+ * Settings / Profile / Integrations unified layout
+ * ============================================================ */
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 32px 24px 60px;
+}
+
+.settings-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.settings-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-card-heading svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.settings-card-desc {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.settings-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+.settings-meta-label {
+  color: var(--text-muted);
+  min-width: 140px;
+  font-weight: 500;
+}
+.settings-meta-value {
+  color: var(--text);
+  word-break: break-all;
+}
+.settings-meta-value code {
+  font-family: "SFMono-Regular", ui-monospace, monospace;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--surface-alt);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* Integration rows — list of connected services */
+.integration-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.integration-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.integration-row:first-child {
+  padding-top: 0;
+}
+.integration-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.integration-row-title {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.integration-row-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.integration-row-detail {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: "SFMono-Regular", ui-monospace, monospace;
+}
+
+.integration-row-status {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.integration-row-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.integration-row-badge.ok {
+  background: rgba(20, 108, 46, 0.1);
+  color: var(--ok);
+  border: 1px solid rgba(20, 108, 46, 0.25);
+}
+.integration-row-badge.warn {
+  background: rgba(140, 74, 0, 0.1);
+  color: var(--warn);
+  border: 1px solid rgba(140, 74, 0, 0.25);
+}
+.integration-row-badge.off {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  border: 1px solid var(--line);
+}
+.integration-row-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ============================================================
+ * Help Page
+ * ============================================================ */
+.help-hero {
+  margin-bottom: 24px;
+}
+
+.help-hero-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, #7c4dff 100%);
+  -webkit-background-clip: text;
+  color: transparent;
+  letter-spacing: -0.02em;
+}
+
+.help-hero-subtitle {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 600px;
+  line-height: 1.6;
+}
+
+.help-container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 60px;
+}
+
+.help-card {
+  border: 1px solid rgba(225, 229, 234, 0.6);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 8px 32px -8px rgba(60, 64, 67, 0.08), 0 2px 8px -2px rgba(60, 64, 67, 0.04);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease;
+}
+
+.help-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px -10px rgba(60, 64, 67, 0.12), 0 4px 12px -2px rgba(60, 64, 67, 0.06);
+}
+
+.help-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+/* Accordion Specific Styles */
+.help-card-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+
+.help-card-accordion[open] {
+  padding-bottom: 32px;
+}
+
+.help-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none; /* Hide default triangle */
+  padding: 32px;
+  margin: 0;
+  transition: background 0.2s;
+  outline: none;
+}
+
+.help-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-accordion-summary:hover,
+.help-accordion-summary:focus-visible {
+  background: rgba(60, 64, 67, 0.02);
+}
+
+.help-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.help-accordion-chevron {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  padding: 8px;
+  border-radius: 50%;
+  background: var(--surface-alt);
+}
+
+details[open] .help-accordion-chevron {
+  transform: rotate(180deg);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.help-accordion-content {
+  padding: 0 32px;
+  animation: accordion-slide-down 0.3s ease-out forwards;
+  transform-origin: top;
+}
+
+@keyframes accordion-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.help-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary-soft) 0%, rgba(124, 77, 255, 0.1) 100%);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.help-card-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.help-card-desc {
+  margin: 0 0 24px;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* Tutorial steps */
+.help-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.help-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+
+.help-step-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(11, 87, 208, 0.3);
+}
+
+.help-step-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.help-step-body {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  flex-grow: 1;
+}
+
+.help-step-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: none;
+  transition: opacity 0.2s;
+  margin-top: auto;
+}
+
+.help-step-link:hover {
+  opacity: 0.8;
+}
+
+/* Glossary */
+.help-glossary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.help-glossary-item {
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.help-glossary-item:hover {
+  background: var(--surface-hover);
+  border-color: rgba(60, 64, 67, 0.15);
+}
+
+.help-glossary-term {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.help-glossary-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* Code samples */
+.help-code-block {
+  margin-bottom: 28px;
+}
+
+.help-code-block:last-child { margin-bottom: 0; }
+
+.help-code-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.help-code-desc {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.help-code-window {
+  border-radius: 12px;
+  background: #1e1e2e;
+  overflow: hidden;
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.3);
+  border: 1px solid #313244;
+}
+
+.help-code-window-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #2a2a3c;
+  border-bottom: 1px solid #313244;
+}
+
+.help-mac-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.help-mac-dot.close { background: #ff5f56; }
+.help-mac-dot.minimize { background: #ffbd2e; }
+.help-mac-dot.maximize { background: #27c93f; }
+
+.help-pre {
+  margin: 0;
+  padding: 20px;
+  background: transparent;
+  color: #cdd6f4;
+  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  border: none;
+}
+
+@media (max-width: 768px) {
+  .help-card { padding: 24px; }
+  .help-card-accordion { padding: 0; }
+  .help-card-accordion[open] { padding-bottom: 24px; }
+  .help-accordion-summary { padding: 24px; }
+  .help-accordion-content { padding: 0 24px; }
+  .help-hero-title { font-size: 1.6rem; }
+}
+
+@media (max-width: 640px) {
+  .help-card { padding: 20px 16px; }
+  .help-card-accordion { padding: 0; }
+  .help-card-accordion[open] { padding-bottom: 20px; }
+  .help-accordion-summary { padding: 20px 16px; }
+  .help-accordion-content { padding: 0 16px; }
+  .help-pre { font-size: 0.75rem; padding: 16px; }
+  .help-steps { grid-template-columns: 1fr; }
+  .help-glossary-list { grid-template-columns: 1fr; }
+}
+
+.item-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.item-sub {
+  margin: 4px 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+.badge.ok {
+  background: #e6f4ea;
+  color: var(--ok);
+}
+
+/* ==================================================================
+ * Mobile drawer + responsive shell (≤ 980px).
+ *
+ * Desktop puts the sidebar in a static grid column. On phones we
+ * hide it by default and slide it in as an overlay drawer when the
+ * topbar hamburger is clicked. The drawer is the SAME `.gmail-sidebar`
+ * element — no DOM changes, only CSS transforms — so the nav links
+ * keep their existing keyboard / a11y wiring.
+ *
+ * Tap targets follow the 44×44 px guideline, and `.mobile-nav-toggle`
+ * stays hidden on desktop (where the sidebar is permanently visible).
+ * ================================================================== */
+
+/* Hamburger button: hidden on desktop, shown only ≤ 980px. */
+.mobile-nav-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.mobile-nav-toggle:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Drawer backdrop: only painted while the drawer is open on mobile. */
+.mobile-nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  /* Single-column shell on mobile; the sidebar is now position:fixed
+     rather than a grid column. */
+  .gmail-shell {
+    grid-template-columns: 1fr;
+  }
+
+  /* Sidebar becomes a slide-in drawer, hidden off-screen by default. */
+  .gmail-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(280px, 80vw);
+    height: 100vh;
+    height: 100dvh;
+    z-index: 1100;
+    background: var(--bg);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease-out;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  }
+  .gmail-shell[data-mobile-nav="open"] .gmail-sidebar {
+    transform: translateX(0);
+  }
+
+  /* Backdrop: full-viewport dim layer. As a <button> it absorbs taps
+     and dismisses the drawer; CSS just paints + sizes it. */
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    border: 0;
+    padding: 0;
+    background: rgba(4, 6, 14, 0.55);
+    backdrop-filter: blur(2px);
+    cursor: pointer;
+    /* Reset button defaults so the dim layer reads as "background". */
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  /* Show the hamburger and tighten the topbar. */
+  .mobile-nav-toggle {
+    display: inline-flex;
+  }
+  .gmail-topbar {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    gap: 8px !important;
+  }
+
+  /* Search box must be allowed to shrink — desktop's min-width
+     prevents the topbar from fitting on a 360px-wide screen. */
+  .search-container {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* Trim non-essential icons from the topbar to keep it usable on
+     narrow screens. The same actions are reachable via the sidebar
+     drawer (Help, Settings, Apps) and via /settings/profile so we're
+     not removing functionality, just collapsing redundant entry
+     points. The avatar + logout + language + the per-page action
+     stay because they're not in the sidebar. */
+  .topbar-actions [aria-label="Help"],
+  .topbar-actions [aria-label="ヘルプ"],
+  .topbar-actions [aria-label="Settings"],
+  .topbar-actions [aria-label="設定"],
+  .topbar-actions [aria-label="Apps"],
+  .topbar-actions [aria-label="アプリ"] {
+    display: none;
+  }
+
+  .gmail-main {
+    padding: 0;
+  }
+
+  /* List/Detail split UX for mobile. */
+  .mail-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr;
+  }
+  .mail-layout.mobile-list .reader-pane {
+    display: none !important;
+  }
+  .mail-layout.mobile-detail .thread-list {
+    display: none !important;
+  }
+  .mail-toolbar.mobile-detail {
+    display: none !important;
+  }
+  .mail-resizer {
+    display: none !important;
+  }
+  .thread-list {
+    border-right: 0;
+    border-bottom: 0;
+    max-height: none;
+  }
+  .mobile-reader-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 24px 0 24px;
+    background: transparent;
+  }
+  .mobile-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    margin-left: -8px;
+  }
+  .mobile-back-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  /* Cards / panels typically max out at 600–960 px on desktop. On
+     mobile they should fill the viewport so content doesn't sit in
+     a narrow strip. Targets only the AppShell's children, so login /
+     concept screens (which have their own layout systems) are
+     untouched. */
+  .gmail-main .panel,
+  .gmail-main .card-item,
+  .gmail-main .reader-pane,
+  .compose-frame {
+    max-width: 100% !important;
+  }
+
+  .compose-frame {
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+}
+
+/* Very narrow phones (≤ 480px): tighten further. */
+@media (max-width: 480px) {
+  .gmail-topbar {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+  /* Reader pane chrome is roomy on desktop; tighten on tiny screens
+     so the message body has more horizontal real estate. */
+  .reader-pane {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+}
+
+/* ============================================================
+ * NexusInbox — Futuristic Login Screen
+ * Only applied inside the dedicated /login route. Uses a dark,
+ * neon-accented aesthetic with animated SVG/CSS to communicate
+ * that this inbox is built for autonomous agents.
+ * ============================================================ */
+.ai-login-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  color: #e8ecff;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(90, 64, 255, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 90%, rgba(0, 210, 255, 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 50%, #0a0c18 0%, #04050b 75%);
+  font-family: "Space Grotesk", "Google Sans", "Noto Sans JP", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  isolation: isolate;
+}
+
+.ai-login-root *,
+.ai-login-root *::before,
+.ai-login-root *::after {
+  box-sizing: border-box;
+}
+
+/* --- Animated perspective grid floor --- */
+.ai-login-grid {
+  position: absolute;
+  inset: 0;
+  perspective: 600px;
+  pointer-events: none;
+  opacity: 0.55;
+  z-index: 0;
+}
+
+.ai-login-grid::before {
+  content: "";
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  top: 55%;
+  height: 140%;
+  background-image:
+    linear-gradient(rgba(120, 160, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 160, 255, 0.22) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: rotateX(72deg) translateZ(0);
+  transform-origin: center top;
+  animation: ai-grid-scroll 16s linear infinite;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 30%, #000 70%, transparent 100%);
+}
+
+@keyframes ai-grid-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 96px; }
+}
+
+/* --- Drifting particle stars --- */
+.ai-login-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 18%, #ffffff, transparent 60%),
+    radial-gradient(1px 1px at 82% 24%, #9ec9ff, transparent 60%),
+    radial-gradient(1.5px 1.5px at 35% 72%, #ffffff, transparent 60%),
+    radial-gradient(1px 1px at 68% 66%, #b5a5ff, transparent 60%),
+    radial-gradient(1.5px 1.5px at 22% 88%, #7dd7ff, transparent 60%),
+    radial-gradient(1px 1px at 92% 52%, #ffffff, transparent 60%),
+    radial-gradient(1px 1px at 48% 12%, #ffffff, transparent 60%),
+    radial-gradient(1.5px 1.5px at 58% 44%, #9ec9ff, transparent 60%);
+  animation: ai-stars-twinkle 5s ease-in-out infinite alternate;
+  opacity: 0.9;
+}
+
+@keyframes ai-stars-twinkle {
+  0% { opacity: 0.5; filter: blur(0px); }
+  100% { opacity: 1; filter: blur(0.4px); }
+}
+
+/* --- Rotating agent network SVG --- */
+.ai-login-network {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ai-login-network svg {
+  width: min(92vmin, 720px);
+  height: min(92vmin, 720px);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 18px rgba(120, 140, 255, 0.35));
+}
+
+.ai-login-network .ring-outer {
+  animation: ai-rotate 60s linear infinite;
+  transform-origin: 50% 50%;
+}
+.ai-login-network .ring-inner {
+  animation: ai-rotate 40s linear infinite reverse;
+  transform-origin: 50% 50%;
+}
+.ai-login-network .ring-core {
+  animation: ai-rotate 24s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes ai-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.ai-login-network .node {
+  fill: #8ec5ff;
+  filter: drop-shadow(0 0 6px #6aa5ff);
+  animation: ai-node-pulse 3.2s ease-in-out infinite;
+}
+.ai-login-network .node.n2 { animation-delay: -0.8s; fill: #b694ff; }
+.ai-login-network .node.n3 { animation-delay: -1.6s; fill: #78e9ff; }
+.ai-login-network .node.n4 { animation-delay: -2.4s; fill: #ff9ee0; }
+.ai-login-network .node.n5 { animation-delay: -1.2s; }
+.ai-login-network .node.n6 { animation-delay: -2.0s; fill: #b694ff; }
+
+@keyframes ai-node-pulse {
+  0%, 100% { r: 3.2; opacity: 0.9; }
+  50%      { r: 5.2; opacity: 1; }
+}
+
+.ai-login-network .link {
+  stroke: url(#ai-link-gradient);
+  stroke-width: 1;
+  fill: none;
+  stroke-dasharray: 4 6;
+  animation: ai-link-dash 6s linear infinite;
+}
+
+@keyframes ai-link-dash {
+  0%   { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -60; }
+}
+
+.ai-login-network .sweep {
+  stroke: rgba(140, 200, 255, 0.8);
+  stroke-width: 1.5;
+  fill: none;
+  stroke-dasharray: 1 900;
+  animation: ai-sweep 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes ai-sweep {
+  0%   { stroke-dashoffset: 900; opacity: 0; }
+  10%  { opacity: 1; }
+  100% { stroke-dashoffset: 0;   opacity: 0; }
+}
+
+/* --- Center content card --- */
+.ai-login-card {
+  position: relative;
+  z-index: 2;
+  width: min(440px, 100%);
+  padding: 40px 36px 32px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(12, 16, 32, 0.78), rgba(6, 8, 18, 0.78));
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(120, 140, 255, 0.15) inset,
+    0 0 60px rgba(90, 120, 255, 0.12);
+  overflow: hidden;
+  animation: ai-card-in 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ai-card-in {
+  0%   { transform: translateY(20px) scale(0.97); opacity: 0; }
+  100% { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+/* Rotating conic gradient border */
+.ai-login-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 23px;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(120, 140, 255, 0) 0%,
+    rgba(120, 140, 255, 0.9) 20%,
+    rgba(180, 100, 255, 0.8) 35%,
+    rgba(0, 220, 255, 0.9) 55%,
+    rgba(120, 140, 255, 0) 75%,
+    rgba(120, 140, 255, 0) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: ai-rotate 6s linear infinite;
+  pointer-events: none;
+}
+
+/* Scanning highlight line */
+.ai-login-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(180, 220, 255, 0.9),
+    rgba(120, 100, 255, 0.8),
+    transparent);
+  animation: ai-card-scan 4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes ai-card-scan {
+  0%   { transform: translateY(0);      opacity: 0.0; }
+  10%  { opacity: 1; }
+  50%  { transform: translateY(240px);  opacity: 1; }
+  100% { transform: translateY(460px);  opacity: 0.0; }
+}
+
+.ai-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.28em;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #9aa7d9;
+}
+.ai-login-brand .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5df0a5;
+  box-shadow: 0 0 12px #5df0a5, 0 0 4px #5df0a5 inset;
+  animation: ai-dot-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ai-dot-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.18); }
+}
+
+.ai-login-title {
+  margin: 18px 0 6px;
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  position: relative;
+  color: #e8ecff;
+}
+
+/* Apply the gradient on the glitch span itself so the glyphs always paint,
+ * regardless of stacking context. */
+.ai-login-title .glitch {
+  position: relative;
+  display: inline-block;
+  background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 40%, #7dd7ff 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+}
+.ai-login-title .glitch::before,
+.ai-login-title .glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  background: transparent;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  pointer-events: none;
+}
+.ai-login-title .glitch::before {
+  background: linear-gradient(135deg, #ff4f9a, #ff4f9a);
+  -webkit-background-clip: text;
+          background-clip: text;
+  clip-path: inset(0 0 60% 0);
+  transform: translate(-1px, 0);
+  animation: ai-glitch-a 4.5s steps(1, end) infinite;
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+.ai-login-title .glitch::after {
+  background: linear-gradient(135deg, #00e1ff, #00e1ff);
+  -webkit-background-clip: text;
+          background-clip: text;
+  clip-path: inset(60% 0 0 0);
+  transform: translate(1px, 0);
+  animation: ai-glitch-b 4.5s steps(1, end) infinite;
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+@keyframes ai-glitch-a {
+  0%, 92%, 100% { transform: translate(0, 0); }
+  93%           { transform: translate(-2px, -1px); }
+  95%           { transform: translate(2px, 1px); }
+  97%           { transform: translate(-1px, 2px); }
+}
+@keyframes ai-glitch-b {
+  0%, 92%, 100% { transform: translate(0, 0); }
+  93%           { transform: translate(2px, 1px); }
+  95%           { transform: translate(-2px, -1px); }
+  97%           { transform: translate(1px, -2px); }
+}
+
+.ai-login-subtitle {
+  margin: 0;
+  color: #9aa7d9;
+  font-size: 13px;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+}
+
+.ai-login-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(140, 160, 255, 0.12);
+  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: #8ea0d6;
+}
+.ai-login-meta code {
+  color: #b9c6ff;
+}
+.ai-login-meta .blink {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  background: #7dd7ff;
+  margin-left: 2px;
+  animation: ai-blink 1s steps(2, end) infinite;
+  vertical-align: -2px;
+}
+@keyframes ai-blink {
+  50% { opacity: 0; }
+}
+
+/* --- Primary CTA: Connect World ID --- */
+.ai-login-cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin: 22px 0 0;
+  padding: 15px 18px;
+  border: none;
+  border-radius: 14px;
+  color: #04060e;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%);
+  box-shadow:
+    0 10px 30px rgba(120, 140, 255, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s;
+  overflow: hidden;
+}
+.ai-login-cta:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 40px rgba(120, 140, 255, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+}
+.ai-login-cta:active:not(:disabled) {
+  transform: translateY(0);
+}
+.ai-login-cta:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.ai-login-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 60%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: ai-cta-shine 3.5s ease-in-out infinite;
+}
+@keyframes ai-cta-shine {
+  0%, 60%, 100% { transform: translateX(-100%); }
+  70%           { transform: translateX(100%); }
+}
+
+.ai-login-cta svg,
+.ai-login-cta span { position: relative; z-index: 1; }
+.ai-login-cta::before { pointer-events: none; }
+
+/* Pulse rings behind the CTA */
+.ai-login-cta-wrap {
+  position: relative;
+  margin-top: 22px;
+}
+.ai-login-cta-wrap .ai-login-cta { margin-top: 0; }
+.ai-login-cta-wrap::before,
+.ai-login-cta-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(160, 180, 255, 0.5);
+  pointer-events: none;
+  animation: ai-cta-ring 2.8s ease-out infinite;
+}
+.ai-login-cta-wrap::after { animation-delay: 1.4s; }
+@keyframes ai-cta-ring {
+  0%   { transform: scale(1);    opacity: 0.7; }
+  100% { transform: scale(1.15); opacity: 0;   }
+}
+
+.ai-login-status {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: #9aa7d9;
+  min-height: 16px;
+  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
+}
+.ai-login-status[data-kind="error"] { color: #ff88a8; }
+.ai-login-status[data-kind="ok"]    { color: #5df0a5; }
+
+.ai-login-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(140, 160, 255, 0.12);
+  font-size: 11px;
+  color: #8190c4;
+  letter-spacing: 0.05em;
+}
+.ai-login-foot span { display: inline-flex; align-items: center; gap: 6px; }
+.ai-login-foot .marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7dd7ff;
+  box-shadow: 0 0 8px #7dd7ff;
+}
+
+/* Corner glyphs to evoke a HUD */
+.ai-login-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.ai-login-hud span {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(160, 180, 255, 0.5);
+}
+.ai-login-hud span:nth-child(1) { top: 24px; left: 24px;   border-right: none; border-bottom: none; }
+.ai-login-hud span:nth-child(2) { top: 24px; right: 24px;  border-left:  none; border-bottom: none; }
+.ai-login-hud span:nth-child(3) { bottom: 24px; left: 24px;border-right: none; border-top:    none; }
+.ai-login-hud span:nth-child(4) { bottom: 24px; right: 24px;border-left: none; border-top:    none; }
+
+.ai-login-hud .tag {
+  position: absolute;
+  top: 28px;
+  right: 74px;
+  width: auto;
+  height: auto;
+  border: none;
+  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #8190c4;
+  text-transform: uppercase;
+}
+.ai-login-hud .tag .marker {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5df0a5;
+  box-shadow: 0 0 8px #5df0a5;
+  margin-right: 6px;
+  vertical-align: 1px;
+  animation: ai-dot-pulse 1.8s ease-in-out infinite;
+}
+
+/* Reduced motion: kill animations but keep the visual */
+@media (prefers-reduced-motion: reduce) {
+  .ai-login-root *,
+  .ai-login-root *::before,
+  .ai-login-root *::after {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .ai-login-card { padding: 28px 24px; }
+  .ai-login-title { font-size: 30px; }
+  .ai-login-hud { display: none; }
+}
+
+/* ============================================================
+ * NexusInbox — Concept Page
+ * Public-facing page explaining what NexusInbox is.
+ * Reuses the login dark theme backdrop with scrollable content.
+ * ============================================================ */
+.ai-concept-page {
+  position: fixed;
+  overflow: hidden;
+}
+
+.ai-concept-scroll {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 680px;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 80px 28px 60px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 160, 255, 0.3) transparent;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 60px, #000 calc(100% - 40px), transparent 100%);
+}
+.ai-concept-scroll::-webkit-scrollbar { width: 6px; }
+.ai-concept-scroll::-webkit-scrollbar-track { background: transparent; }
+.ai-concept-scroll::-webkit-scrollbar-thumb { background: rgba(140, 160, 255, 0.3); border-radius: 3px; }
+
+/* Hero */
+.ai-concept-hero {
+  text-align: center;
+  margin-bottom: 56px;
+}
+.ai-concept-hero .ai-login-brand { justify-content: center; }
+.ai-concept-hero .ai-login-title { text-align: center; }
+.ai-concept-hero-slogan {
+  margin: 20px auto 0;
+  max-width: 520px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 50%, #7dd7ff 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+  filter: drop-shadow(0 0 18px rgba(125, 215, 255, 0.22));
+}
+@media (max-width: 480px) {
+  .ai-concept-hero-slogan { font-size: 20px; }
+}
+
+.ai-concept-hero-sub {
+  margin: 14px auto 0;
+  max-width: 480px;
+  color: #9aa7d9;
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+/* Content sections */
+.ai-concept-section {
+  position: relative;
+  margin-bottom: 40px;
+  padding: 28px 28px 24px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.72), rgba(6, 8, 18, 0.72));
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  border: 1px solid rgba(140, 160, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  animation: ai-card-in 800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ai-concept-section:nth-child(2) { animation-delay: 100ms; }
+.ai-concept-section:nth-child(3) { animation-delay: 200ms; }
+.ai-concept-section:nth-child(4) { animation-delay: 300ms; }
+.ai-concept-section:nth-child(5) { animation-delay: 400ms; }
+.ai-concept-section:nth-child(6) { animation-delay: 500ms; }
+.ai-concept-section:nth-child(7) { animation-delay: 600ms; }
+
+.ai-concept-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(120, 140, 255, 0.1);
+  border: 1px solid rgba(120, 140, 255, 0.2);
+  color: #7dd7ff;
+  margin-bottom: 16px;
+}
+
+.ai-concept-section-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 60%, #7dd7ff 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+}
+
+.ai-concept-section-body {
+  margin: 0;
+  color: #b0bad8;
+  font-size: 14px;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+}
+
+/* Render \n\n in the i18n string as paragraph breaks so longer sections
+   (e.g. the Agent Address argument) don't collapse into one block. */
+.ai-concept-section-body-multiline {
+  white-space: pre-line;
+}
+
+/* Feature pills */
+.ai-concept-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 8px 0 48px;
+}
+.ai-concept-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: rgba(120, 140, 255, 0.08);
+  border: 1px solid rgba(140, 160, 255, 0.18);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #c0c8e8;
+  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+}
+.ai-concept-pill .marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7dd7ff;
+  box-shadow: 0 0 8px #7dd7ff;
+}
+
+/* CTA section */
+.ai-concept-cta-section {
+  text-align: center;
+  margin-bottom: 48px;
+}
+.ai-concept-cta-lead {
+  color: #9aa7d9;
+  font-size: 15px;
+  margin: 0 0 20px;
+  letter-spacing: 0.04em;
+}
+.ai-concept-cta-link {
+  display: inline-flex;
+  width: auto;
+  padding: 15px 36px;
+  text-decoration: none;
+}
+
+/* Footer */
+.ai-concept-footer {
+  text-align: center;
+  padding: 20px 0 40px;
+  border-top: 1px solid rgba(140, 160, 255, 0.1);
+  font-size: 11px;
+  color: #5a6590;
+  letter-spacing: 0.05em;
+}
+
+/* Concept footer links */
+.ai-concept-footer-links {
+  margin-bottom: 12px;
+}
+.ai-concept-footer-link {
+  color: #5a6590;
+  font-size: 12px;
+  text-decoration: none;
+  letter-spacing: 0.04em;
+  transition: color 0.2s;
+}
+.ai-concept-footer-link:hover {
+  color: #a9b8ff;
+}
+.ai-concept-footer-sep {
+  display: inline-block;
+  margin: 0 10px;
+  color: #3a4260;
+}
+
+/* Floating EN/JP toggle used on the pre-auth pages (/login and /concept).
+   Class name kept as `ai-concept-lang-toggle` for historical reasons;
+   both pages share the identical dark-pill visual. */
+.ai-concept-lang-toggle {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 160, 255, 0.25);
+  background: rgba(12, 16, 32, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #b0bad8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.ai-concept-lang-toggle:hover {
+  border-color: rgba(160, 180, 255, 0.5);
+  color: #e8ecff;
+  background: rgba(120, 140, 255, 0.15);
+}
+
+/* Login page: link to concept */
+.ai-login-concept-link {
+  display: block;
+  margin-top: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #7d8ab8;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.ai-login-concept-link:hover {
+  color: #a9b8ff;
+}
+.ai-login-concept-link svg {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-left: 4px;
+}
+
+/* Login page: legal links */
+.ai-login-legal-links {
+  margin-top: 14px;
+  text-align: center;
+}
+.ai-login-legal-link {
+  color: #5a6590;
+  font-size: 11px;
+  text-decoration: none;
+  letter-spacing: 0.04em;
+  transition: color 0.2s;
+}
+.ai-login-legal-link:hover {
+  color: #a9b8ff;
+}
+.ai-login-legal-sep {
+  display: inline-block;
+  margin: 0 8px;
+  color: #3a4260;
+  font-size: 11px;
+}
+
+@media (max-width: 560px) {
+  .ai-concept-scroll { padding: 60px 16px 40px; }
+  .ai-concept-section { padding: 20px 20px 18px; }
+  .ai-concept-hero .ai-login-title { font-size: 30px; }
+  .ai-concept-pills { gap: 8px; }
+  .ai-concept-pill { font-size: 10px; padding: 6px 12px; }
+}
+
+/* ===== Legal pages (Privacy Policy / Terms of Service) ===== */
+.ai-legal-scroll {
+  max-width: 720px;
+}
+
+.ai-legal-header {
+  margin-bottom: 40px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid rgba(140, 160, 255, 0.12);
+}
+
+.ai-legal-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: #7d8ab8;
+  font-size: 13px;
+  text-decoration: none;
+  letter-spacing: 0.03em;
+  transition: color 0.2s;
+}
+.ai-legal-back:hover {
+  color: #a9b8ff;
+}
+
+.ai-legal-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 60%, #7dd7ff 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+}
+
+.ai-legal-updated {
+  margin: 0;
+  color: #5a6590;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.ai-legal-section {
+  margin-bottom: 32px;
+  padding: 24px 24px 20px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.6), rgba(6, 8, 18, 0.6));
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(140, 160, 255, 0.08);
+  animation: ai-card-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ai-legal-section:nth-child(2) { animation-delay: 50ms; }
+.ai-legal-section:nth-child(3) { animation-delay: 100ms; }
+.ai-legal-section:nth-child(4) { animation-delay: 150ms; }
+.ai-legal-section:nth-child(5) { animation-delay: 200ms; }
+.ai-legal-section:nth-child(6) { animation-delay: 250ms; }
+.ai-legal-section:nth-child(7) { animation-delay: 300ms; }
+.ai-legal-section:nth-child(8) { animation-delay: 350ms; }
+.ai-legal-section:nth-child(9) { animation-delay: 400ms; }
+.ai-legal-section:nth-child(10) { animation-delay: 450ms; }
+.ai-legal-section:nth-child(11) { animation-delay: 500ms; }
+.ai-legal-section:nth-child(12) { animation-delay: 550ms; }
+.ai-legal-section:nth-child(13) { animation-delay: 600ms; }
+
+.ai-legal-heading {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #e0e6ff;
+  letter-spacing: 0.01em;
+}
+
+.ai-legal-subheading {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #a9b8ff;
+  letter-spacing: 0.01em;
+}
+
+.ai-legal-body {
+  margin: 0 0 6px;
+  color: #b0bad8;
+  font-size: 14px;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+}
+
+.ai-legal-contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(140, 160, 255, 0.2);
+  background: rgba(120, 140, 255, 0.08);
+  color: #a9b8ff;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.ai-legal-contact-link:hover {
+  background: rgba(120, 140, 255, 0.16);
+  border-color: rgba(160, 180, 255, 0.4);
+  color: #e0e6ff;
+}
+
+.ai-legal-footer {
+  text-align: center;
+  padding: 28px 0 48px;
+  border-top: 1px solid rgba(140, 160, 255, 0.1);
+  margin-top: 16px;
+}
+
+.ai-legal-footer-link {
+  color: #7d8ab8;
+  font-size: 13px;
+  text-decoration: none;
+  letter-spacing: 0.03em;
+  transition: color 0.2s;
+}
+.ai-legal-footer-link:hover {
+  color: #a9b8ff;
+}
+
+.ai-legal-footer-sep {
+  display: inline-block;
+  margin: 0 16px;
+  color: #3a4260;
+}
+
+@media (max-width: 560px) {
+  .ai-legal-scroll { max-width: 100%; }
+  .ai-legal-title { font-size: 22px; }
+  .ai-legal-section { padding: 18px 16px 14px; }
+  .ai-legal-heading { font-size: 15px; }
+  .ai-legal-body { font-size: 13px; }
+}
+
+/* ==================================================================
+ * Public help shell — used when /help is viewed without a session.
+ * Lighter weight than AppShell (no sidebar / queries / session
+ * monitor) but visually consistent with the help content underneath
+ * so logged-in and logged-out views feel like the same page.
+ */
+.public-help-root {
+  /* The global `html, body { overflow: hidden }` rule (line ~46) treats the
+     viewport as a fixed frame and expects every page to provide its own
+     internal scroll container — AppShell does this via `.page-content`,
+     /concept via `.ai-concept-scroll`. Mirror that pattern here so the
+     public help page can actually scroll. */
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.public-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.public-help-brand {
+  font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  color: var(--text);
+}
+.public-help-brand-mark {
+  background: linear-gradient(135deg, var(--primary) 0%, #7c4dff 100%);
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.public-help-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.public-help-lang {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.public-help-lang:hover {
+  background: var(--surface-hover);
+  border-color: rgba(60, 64, 67, 0.18);
+}
+
+.public-help-signin {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.15s;
+}
+.public-help-signin:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.public-help-main {
+  flex: 1;
+  width: 100%;
+}
+
+.public-help-footer {
+  padding: 24px 32px 36px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.public-help-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.public-help-footer a:hover {
+  color: var(--primary);
+}
+
+@media (max-width: 640px) {
+  .public-help-header { padding: 14px 18px; }
+  .public-help-footer { padding: 20px 18px 28px; flex-wrap: wrap; }
+  .public-help-signin { padding: 8px 14px; font-size: 0.82rem; }
+}
+
+/* ==================================================================
+ * Help group dividers (Basics / Advanced).
+ */
+.help-group-header {
+  margin: 12px 0 -8px;
+  padding: 0 4px;
+}
+.help-group-header[data-group="advanced"] {
+  margin-top: 28px;
+}
+.help-group-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 0 0 8px;
+}
+.help-group-header[data-group="advanced"] .help-group-title {
+  color: #7c4dff;
+}
+.help-group-desc {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 720px;
+}
+
+/* WELCOME tag shown on the public hero. */
+.help-hero-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+.help-hero-public-body {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin: 14px 0 0;
+  max-width: 640px;
+}
+
+/* "Requires sign-in" badge attached to gated tutorial step links. */
+.help-step-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line);
+}
+
+/* Advanced-locked teaser card for unauthenticated visitors. */
+.help-locked-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  border: 1px dashed rgba(124, 77, 255, 0.4);
+  background: linear-gradient(135deg, rgba(124, 77, 255, 0.04) 0%, rgba(11, 87, 208, 0.04) 100%);
+  border-radius: 20px;
+}
+.help-icon-badge-locked {
+  background: rgba(124, 77, 255, 0.12);
+  color: #7c4dff;
+}
+.help-locked-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.help-locked-list li::marker {
+  color: #7c4dff;
+}
+.help-signin-button {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  margin-top: 4px;
+  transition: background 0.2s, transform 0.15s;
+}
+.help-signin-button:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}

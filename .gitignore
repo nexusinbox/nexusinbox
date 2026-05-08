@@ -1,0 +1,30 @@
+node_modules
+.pnpm-store
+.next
+dist
+target
+coverage
+.turbo
+test-results
+playwright-report
+*.log
+.claude
+.env
+.env.*
+!.env.example
+.envrc
+nexusinbox-localfs
+services/api/target
+.vscode
+.idea
+.DS_Store
+*.tsbuildinfo
+.test_agent_keys.json
+scripts/test_user_send.ts
+scripts/*.local.*
+
+# AI coding-agent tooling context. Kept out of the public repo — the
+# content overlaps README.md / CONTRIBUTING.md, and contributors using
+# these agents usually maintain their own local memory files.
+CLAUDE.md
+AGENTS.md

@@ -1,0 +1,308 @@
+name: CI
+
+# Path-filtered CI. The `changes` job below classifies the diff once
+# and the rest of the jobs gate on its outputs, so:
+#
+#   - docs / skills / runbook-only PRs    → 0 jobs run, ~0 billable min.
+#   - apps/web/** or core/crypto PR       → only `node-web` runs.
+#   - packages/mcp-server/** PR           → only `node-mcp` runs.
+#   - packages/ui/** PR                   → only `node-ui` runs.
+#   - packages/storage-adapters/** PR     → only `node-storage-adapters` runs.
+#   - openapi/** or tests/contract/** PR  → only `node-contract` runs.
+#   - services/<service>/** PR            → only that one rust job runs.
+#   - .github/workflows/ci.yml change     → all jobs run as belt-and-braces.
+#
+# This sits on the path-filter side of the trade-off: skipping a job
+# means we *trust* the developer's local checks for that area. The
+# trust is well-founded — CLAUDE.md + docs/27 codify the same fmt /
+# clippy / test commands the workflow runs, and Rust toolchain
+# differences between local and CI are the only place a green local
+# build can still surface a CI failure (we run on ubuntu-latest's
+# stable; local can lag).
+#
+# Why we still keep `pull_request` *and* `push: main` triggers: the
+# pull_request run is the safety gate before merge; the push run is
+# what `Deploy API` waits on via `workflow_run`. A docs-only push
+# to main lets every job no-op, the workflow still reports success,
+# and Deploy API's own `git diff HEAD^ HEAD` path filter then
+# decides not to deploy. Net effect: docs commits cost ~0 min.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel in-flight CI when a new push lands on the SAME PR. A typical
+# iteration is "push, realise something's wrong, push again" 5–10 times
+# per PR, and there's no value in finishing the first 4 runs. We do
+# NOT cancel on `push: main`, though — `Deploy API` watches CI's
+# completion via `workflow_run` and only triggers when conclusion =
+# success. Cancelling a main-push CI mid-run would skip Deploy API
+# for that commit, and the next merge's CI completion would only
+# carry the *next* commit's diff into Deploy API's path filter,
+# leaving the earlier commit's `services/api/**` change un-deployed.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# `dorny/paths-filter@v3` reads the changed-files list via the
+# `pull-requests` API on `pull_request` events. The default
+# `GITHUB_TOKEN` on private Hobby repos doesn't carry that scope,
+# so the action fails with "Resource not accessible by integration"
+# unless we widen the workflow's token here. `contents: read` keeps
+# checkout / git diff working; everything else stays at the
+# restrictive default.
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  # Opt into Node.js 24 runtime for JavaScript actions (checkout, pnpm/action-setup)
+  # to clear the Node 20 deprecation warning ahead of the 2026-09-16 removal.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    # Resolve the diff once and expose six boolean outputs the
+    # downstream jobs gate on. Cheap (no full source checkout
+    # needed for paths-filter v3 against pull_request events; for
+    # push it does a shallow checkout under the hood).
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      mcp: ${{ steps.filter.outputs.mcp }}
+      ui: ${{ steps.filter.outputs.ui }}
+      storage: ${{ steps.filter.outputs.storage }}
+      contract: ${{ steps.filter.outputs.contract }}
+      api: ${{ steps.filter.outputs.api }}
+      signer: ${{ steps.filter.outputs.signer }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # The packages list is split per consumer. `web` includes the
+          # workspace packages the Next app actually imports
+          # (core / crypto / storage-adapters / ui); changes to those
+          # can break the web build, so they trigger node-web. `mcp`
+          # includes `core` + `crypto` for the same reason — the MCP
+          # server has them as workspace deps. Keeping both lists
+          # explicit (instead of a blanket `packages/**`) is what
+          # lets a packages/mcp-server-only PR skip node-web.
+          #
+          # `.github/workflows/ci.yml` is listed in every filter so
+          # a CI change re-runs every job. Without that, a workflow
+          # rewrite that breaks (say) the rust-api job would land
+          # on main without ever exercising it.
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/core/**'
+              - 'packages/crypto/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            mcp:
+              - 'packages/mcp-server/**'
+              - 'packages/core/**'
+              - 'packages/crypto/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'packages/ui/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            storage:
+              - 'packages/storage-adapters/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            contract:
+              - 'openapi/**'
+              - 'tests/contract/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            api:
+              - 'services/api/**'
+              - '.github/workflows/ci.yml'
+            signer:
+              - 'services/signer-daemon/**'
+              - '.github/workflows/ci.yml'
+            gateway:
+              - 'services/agent-gateway/**'
+              - '.github/workflows/ci.yml'
+
+  node-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      # `pnpm lint` runs `turbo run lint` which fans out to every
+      # workspace. Cheap (parallel eslint), and catches lint
+      # regressions in workspace packages that web depends on
+      # (core / crypto / ui) when the diff touches them.
+      - run: pnpm lint
+      # We invoke vitest via turbo (not `pnpm --filter ... test`)
+      # so the workspace-task graph in turbo.json is honoured. The
+      # `test` pipeline declares `dependsOn: ["^test", "^build"]`,
+      # which is what builds `@nexusinbox/core`'s `dist/` before
+      # web's vitest tries to import `@nexusinbox/core/a2a`. A
+      # naked `pnpm --filter @nexusinbox/web test` skips the
+      # graph and fails with `ERR_MODULE_NOT_FOUND`.
+      - run: pnpm exec turbo run test --filter=@nexusinbox/web
+
+  node-mcp:
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      # mcp-server has its own ESLint config; keep it linted even
+      # when only the mcp filter matched (so node-web didn't run
+      # the workspace-wide `pnpm lint`).
+      - run: pnpm exec turbo run lint --filter=@nexusinbox/mcp-server
+      # Same reason as node-web: turbo respects the `^build` dep
+      # so @nexusinbox/{core,crypto} are built before mcp-server's
+      # vitest spins up. `pretest` builds mcp-server itself; the
+      # workspace deps need turbo to be built ahead.
+      - run: pnpm exec turbo run test --filter=@nexusinbox/mcp-server
+
+  # Leaf packages with their own vitest suites that aren't pulled in
+  # by any node-web turbo `^test` chain (apps/web does NOT depend on
+  # @nexusinbox/ui or @nexusinbox/storage-adapters today). Without
+  # dedicated jobs, a regression in one of these packages would only
+  # be caught on `pnpm lint`'s eslint pass — the actual test suites
+  # would never run in CI. Each job is small (~1–1.5 min including
+  # pnpm install) so the cost of two extra runners is acceptable in
+  # exchange for the safety net.
+  node-ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm exec turbo run lint --filter=@nexusinbox/ui
+      - run: pnpm exec turbo run test --filter=@nexusinbox/ui
+
+  node-storage-adapters:
+    needs: changes
+    if: needs.changes.outputs.storage == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm exec turbo run lint --filter=@nexusinbox/storage-adapters
+      - run: pnpm exec turbo run test --filter=@nexusinbox/storage-adapters
+
+  node-contract:
+    needs: changes
+    if: needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      # `contract:check` = redocly lint of openapi.yaml + the
+      # contract harness vitest suite (64 tests). This is by far the
+      # cheapest of the three node jobs — typically ~30 s end-to-end
+      # — so a small openapi tweak doesn't drag the full web matrix
+      # along with it.
+      - run: pnpm contract:check
+
+  rust-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Caches ~/.cargo + target/ keyed on Cargo.lock. Cuts a clean
+      # cargo test from ~3-4 min to ~30-60s on cache hit. Per-workspace
+      # key keeps api / signer / gateway caches scoped so they don't
+      # clobber each other.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/api
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+      - name: World verify ON regression
+        run: env -u WORLD_ID_APP_ID AGENT_INBOX_WORLD_VERIFY_ENABLED=true WORLD_ID_ACTION=login cargo test --test world_verify_ci_test
+
+  rust-signer-daemon:
+    needs: changes
+    if: needs.changes.outputs.signer == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/signer-daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/signer-daemon
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  rust-agent-gateway:
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/agent-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/agent-gateway
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test

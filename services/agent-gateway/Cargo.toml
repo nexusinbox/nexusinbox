@@ -1,0 +1,49 @@
+[package]
+name = "nexusinbox-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP Gateway for NexusInbox — bridges LLM tools to the API"
+
+[[bin]]
+name = "nexusinbox-gateway"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime + UDS
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for API proxy
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Base64
+base64 = "0.22"
+
+# Chrono
+chrono = "0.4"
+
+# DPoP proof signing
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+sha2 = "0.10"
+
+# Phase 4.4c+ Isolated mode executor — content-key AES-GCM for outgoing replies.
+# Daemon still owns X25519 / HKDF via the wrap_content_key RPC; gateway
+# only touches the symmetric content key in plaintext for AES-GCM around
+# the envelope body + subject. The PBKDF2 layer matches the TS
+# `encryptText` contract (packages/crypto) so clients can still decrypt.
+# See docs/25c-a §2.2.
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+hmac = "0.12"
+async-trait = "0.1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# SO_PEERCRED check (Unix only)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**"],
+      "env": [
+        "NODE_ENV",
+        "API_ORIGIN",
+        "NEXT_PUBLIC_API_BASE_URL",
+        "NEXT_PUBLIC_SITE_URL",
+        "NEXT_PUBLIC_WS_URL",
+        "WORLD_ID_APP_ID",
+        "WORLD_ID_ACTION",
+        "WORLD_ID_RP_ID",
+        "WORLD_ID_SIGNER_PRIVATE_KEY"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      // `^build` so workspace packages that publish compiled JS
+      // (e.g. `@nexusinbox/core`) are built before downstream
+      // tests spawn their compiled CLIs. Without this a fresh CI
+      // runner can hit `ERR_MODULE_NOT_FOUND` on a core import
+      // when no other step has built dist/.
+      "dependsOn": ["^test", "^build"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@nexusinbox/promo-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion-based concept/promo videos for NexusInbox",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "build": "remotion render src/index.ts ConceptVideo out/concept.mp4",
+    "build:still": "remotion still src/index.ts ConceptVideo out/poster.png",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.290",
+    "@remotion/bundler": "^4.0.290",
+    "@remotion/renderer": "^4.0.290",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "remotion": "^4.0.290"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.8.3"
+  }
+}

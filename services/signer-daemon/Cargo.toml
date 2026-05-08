@@ -1,0 +1,73 @@
+[package]
+name = "nexusinbox-signer"
+version = "0.1.0"
+edition = "2021"
+description = "Reference Signer Daemon for NexusInbox non-interactive access"
+
+[[bin]]
+name = "nexusinbox-signer"
+path = "src/main.rs"
+
+[dependencies]
+# Ed25519 signing
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Base64 encoding (URL-safe no-pad for JWS)
+base64 = "0.22"
+
+# Async runtime + UDS
+tokio = { version = "1", features = ["full"] }
+
+# Encryption for key-at-rest (XChaCha20-Poly1305)
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+
+# X25519 ECDH for unwrap_content_key (Phase 2.5)
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+
+# AES-GCM-256 for envelope content-key unwrap (matches the web-side wrap)
+aes-gcm = "0.10"
+
+# HKDF-SHA256 for derive-wrap-key (matches apps/web/lib/crypto/keywrap.ts)
+hkdf = "0.12"
+
+# Key derivation from passphrase (Argon2id)
+argon2 = "0.5"
+
+# Chrono for timestamps
+chrono = "0.4"
+
+# SHA-256 for hashing
+sha2 = "0.10"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# CLI args (env feature for --bridge-token / AGENT_INBOX_BRIDGE_TOKEN)
+clap = { version = "4", features = ["derive", "env"] }
+
+# Bridged-restore HTTP listener (docs/22 §4.1). axum is the smallest
+# battle-tested HTTP stack that integrates with the daemon's existing
+# Tokio runtime; tower provides the middleware hooks we need for
+# Origin / pairing-token enforcement without writing ad-hoc code.
+axum = "0.7"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Phase 3c.3: daemon optionally forwards bridge audit events to the
+# API's `/agent-audit-log/bridge` endpoint. rustls-tls so we don't
+# pull in OpenSSL for what is otherwise a lean binary.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# SO_PEERCRED check (Unix only)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# Lets bridge unit tests drain response bodies without spinning up a
+# real TCP listener.
+http-body-util = "0.1"
