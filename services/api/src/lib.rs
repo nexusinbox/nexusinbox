@@ -2807,6 +2807,12 @@ async fn validate_dpop_proof(
     if claim_htm != htm {
         return Err(format!("htm mismatch: expected {htm}, got {claim_htm}"));
     }
+    // `htu` is compared as PATH ONLY (no scheme/host). This is intentional —
+    // the gateway's `dpop_htu_for_url` normalises both the direct and Next.js
+    // proxy routes to the same canonical path, which the full-URI host binding
+    // RFC 9449 describes cannot express across the proxy hop. The `ath` claim
+    // below pins each proof to a specific access token, covering most of the
+    // gap. See agent-gateway `dpop_htu_for_url` (audit 2026-06-11 finding #4).
     if claim_htu != htu {
         return Err(format!("htu mismatch: expected {htu}, got {claim_htu}"));
     }
@@ -8380,6 +8386,18 @@ fn record_audit_event(
 }
 
 /// Policy L3: check daily send limit for a credential.
+///
+/// NOTE (known limitation, audit 2026-06-11 finding #3): this COUNTs prior
+/// `agent_message_sent` audit rows, so it is a check-then-act with a TOCTOU
+/// window — N concurrent sends can each read a count below the cap and all
+/// proceed, briefly exceeding POLICY_L3_MAX_SENDS_PER_CREDENTIAL_PER_DAY. This
+/// is accepted: L3 is the outermost of three layers and the inner two bound
+/// throughput well below the point where the race matters — L1 caps token
+/// issuance at 6/hour/credential (≈144/day) in the Signer Daemon and L2 caps
+/// 20 sends/token in the gateway. Making L3 strictly atomic would need either
+/// a dedicated counter column (migration + a shift from this rolling-24h
+/// window to a fixed window) or a per-credential advisory lock serialising
+/// sends; neither is worth the cost while L1/L2 already gate the volume.
 async fn check_policy_l3_send_limit(
     pool: &PgPool,
     credential_id: Uuid,

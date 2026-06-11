@@ -322,6 +322,25 @@ fn random_b64url(bytes: usize) -> String {
     URL_SAFE_NO_PAD.encode(buf)
 }
 
+/// Build the DPoP `htu` claim for a request to `url`.
+///
+/// NOTE (known limitation, audit 2026-06-11 finding #4): `htu` is deliberately
+/// the request PATH only, not the full target URI RFC 9449 §4.2 nominally asks
+/// for. The gateway reaches the API by two routes — directly
+/// (`http://host:8080/messages`) and via the Next.js proxy
+/// (`http://host:3001/api/messages`) — and the API validates the proof against
+/// the path it actually received. A full-URI `htu` would embed the
+/// gateway-side host and the `/api` proxy prefix, which never match the
+/// host/path the API server sees, breaking every proxied request. Stripping
+/// `/api/` here makes both routes converge on the same canonical path.
+///
+/// Security trade-off: this drops the host binding RFC 9449 provides, so a
+/// proof is not pinned to an origin. The `ath` (access-token-hash) claim still
+/// binds each proof to one specific token, so a captured proof cannot be
+/// replayed against a different token — the residual gap is only a same-token,
+/// same-path relay to another host, which requires breaking TLS. If the proxy
+/// hop is ever removed, switch both sides to a canonical
+/// `AGENT_INBOX_PUBLIC_API_URL`-based full URI to restore host binding.
 fn dpop_htu_for_url(url: &str) -> Result<String, String> {
     let parsed = reqwest::Url::parse(url).map_err(|e| format!("invalid DPoP URL: {}", e))?;
     let path = parsed.path();
