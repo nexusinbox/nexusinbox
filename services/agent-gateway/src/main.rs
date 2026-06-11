@@ -699,6 +699,22 @@ async fn handle_list_inbox(state: &GatewayState, req: &RpcRequest) -> RpcRespons
     }
 }
 
+/// True when `s` is a canonical 8-4-4-4-12 hex UUID. Gateway RPC handlers
+/// validate LLM-supplied `message_id` values against this before
+/// interpolating them into an API path: a non-UUID like "../agents" would
+/// otherwise let reqwest canonicalise the path and drive the gateway's
+/// authenticated session to an unintended endpoint (path traversal).
+fn is_uuid(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 36 {
+        return false;
+    }
+    b.iter().enumerate().all(|(i, c)| match i {
+        8 | 13 | 18 | 23 => *c == b'-',
+        _ => c.is_ascii_hexdigit(),
+    })
+}
+
 async fn handle_read_message(state: &GatewayState, req: &RpcRequest) -> RpcResponse {
     let token = match ensure_token(state).await {
         Ok(t) => t,
@@ -711,6 +727,14 @@ async fn handle_read_message(state: &GatewayState, req: &RpcRequest) -> RpcRespo
             return RpcResponse::error(req.id.clone(), -32602, "missing param: message_id".into())
         }
     };
+
+    if !is_uuid(message_id) {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "invalid param: message_id must be a UUID".into(),
+        );
+    }
 
     let url = format!("{}/messages/{}/content", state.api_url, message_id);
 
@@ -887,6 +911,14 @@ async fn handle_mark_read(state: &GatewayState, req: &RpcRequest) -> RpcResponse
         }
     };
 
+    if !is_uuid(message_id) {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "invalid param: message_id must be a UUID".into(),
+        );
+    }
+
     let url = format!("{}/messages/{}", state.api_url, message_id);
     let body = serde_json::json!({ "status": "read" });
 
@@ -911,6 +943,14 @@ async fn handle_archive_message(state: &GatewayState, req: &RpcRequest) -> RpcRe
             return RpcResponse::error(req.id.clone(), -32602, "missing param: message_id".into())
         }
     };
+
+    if !is_uuid(message_id) {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "invalid param: message_id must be a UUID".into(),
+        );
+    }
 
     let url = format!("{}/messages/{}", state.api_url, message_id);
     let body = serde_json::json!({ "status": "archived" });
@@ -1521,6 +1561,21 @@ mod tests {
         assert_eq!(val["message"], "hello");
         assert_eq!(val["leaked"], "[REDACTED]");
         assert_eq!(val["nested"]["token"], "[REDACTED]");
+    }
+
+    #[test]
+    fn test_is_uuid_accepts_canonical_and_rejects_traversal() {
+        // Canonical UUIDs (both cases) pass.
+        assert!(is_uuid("00000000-0000-0000-0000-000000000bb1"));
+        assert!(is_uuid("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
+        // Path-traversal and other non-UUID message_id values are rejected
+        // before they reach the format!-built API path.
+        assert!(!is_uuid("../agents"));
+        assert!(!is_uuid("../../agent-auth/revoke"));
+        assert!(!is_uuid(""));
+        assert!(!is_uuid("00000000-0000-0000-0000-000000000bb1/../agents"));
+        assert!(!is_uuid("g0000000-0000-0000-0000-000000000bb1")); // non-hex
+        assert!(!is_uuid("00000000_0000_0000_0000_000000000bb1")); // wrong sep
     }
 
     #[test]

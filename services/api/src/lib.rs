@@ -8839,6 +8839,110 @@ struct AgentRefreshRequest {
     refresh_token: String,
 }
 
+/// Shared response for a detected/raced refresh-token reuse: family-scoped
+/// revoke + credential compromise + audit trail, returning the 401 the
+/// caller should propagate. Invoked from two places in `agent_auth_refresh`:
+///   1. when the initial SELECT already sees `revoked_at IS NOT NULL`, and
+///   2. when the atomic rotation UPDATE affects zero rows — i.e. a concurrent
+///      refresh already consumed this RT. Case (2) closes the double-spend
+///      window where two refreshes both read the RT as live and each mint a
+///      fresh token pair.
+#[allow(clippy::too_many_arguments)]
+async fn revoke_refresh_family_for_reuse(
+    pool: &PgPool,
+    credential_id: Uuid,
+    token_family_id: Uuid,
+    token_id: Uuid,
+    refresh_user_id: Uuid,
+    aid: &str,
+    actor_ip: &str,
+    actor_user_agent: &str,
+) -> (StatusCode, Json<ErrorResponse>) {
+    // First: family-scoped revoke (the "minimum" requirement).
+    let family_revoke = sqlx::query(
+        r#"
+        UPDATE agent_tokens
+        SET revoked_at = NOW(), flagged_at = NOW()
+        WHERE token_family_id = $1 AND revoked_at IS NULL
+        "#,
+    )
+    .bind(token_family_id)
+    .execute(pool)
+    .await;
+    let family_tokens_revoked = family_revoke.map(|r| r.rows_affected()).unwrap_or(0);
+
+    // Second: mark credential as compromised (escalation).
+    let _ = sqlx::query(
+        r#"
+        UPDATE agent_credentials
+        SET status = 'compromised', revoked_at = NOW()
+        WHERE id = $1 AND status != 'compromised'
+        "#,
+    )
+    .bind(credential_id)
+    .execute(pool)
+    .await;
+
+    // Third: revoke any OTHER live tokens under the same credential
+    // that happened to belong to different families.
+    let _ = sqlx::query(
+        r#"
+        UPDATE agent_tokens
+        SET revoked_at = NOW(), flagged_at = NOW()
+        WHERE credential_id = $1 AND revoked_at IS NULL
+        "#,
+    )
+    .bind(credential_id)
+    .execute(pool)
+    .await;
+
+    warn!(
+        %credential_id, %token_id, %token_family_id,
+        family_tokens_revoked,
+        actor_ip = %actor_ip,
+        "refresh token reuse detected — family revoked, credential compromised"
+    );
+
+    // Audit: refresh_reuse_detected + credential_compromised
+    record_audit_event(
+        pool.clone(),
+        refresh_user_id,
+        Some(credential_id),
+        Some(aid.to_string()),
+        "refresh_reuse_detected",
+        serde_json::json!({
+            "token_id": token_id.to_string(),
+            "token_family_id": token_family_id.to_string(),
+            "family_tokens_revoked": family_tokens_revoked,
+            "detected_ip": actor_ip,
+            "detected_user_agent": actor_user_agent,
+        }),
+    );
+    record_audit_event(
+        pool.clone(),
+        refresh_user_id,
+        Some(credential_id),
+        Some(aid.to_string()),
+        "credential_compromised",
+        serde_json::json!({
+            "reason": "refresh_token_reuse",
+            "token_family_id": token_family_id.to_string(),
+            "actor_type": "system",
+            "triggered_by_token_id": token_id.to_string(),
+        }),
+    );
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ErrorResponse {
+            error: "token_reuse_detected".into(),
+            message: "Refresh token reuse detected. Credential has been revoked for security. \
+                      Contact the account owner to re-issue credentials."
+                .into(),
+        }),
+    )
+}
+
 /// POST /agent-auth/refresh — rotate a refresh token.
 ///
 /// The caller submits the current `agr_` refresh token. If valid and unused:
@@ -8932,89 +9036,17 @@ async fn agent_auth_refresh(
     // because the credential-compromise case is the right answer for a
     // stolen signing key — the attacker can otherwise mint a fresh family.
     if token_is_revoked {
-        // First: family-scoped revoke (the "minimum" requirement).
-        let family_revoke = sqlx::query(
-            r#"
-            UPDATE agent_tokens
-            SET revoked_at = NOW(), flagged_at = NOW()
-            WHERE token_family_id = $1 AND revoked_at IS NULL
-            "#,
-        )
-        .bind(token_family_id)
-        .execute(&pool)
-        .await;
-        let family_tokens_revoked = family_revoke.map(|r| r.rows_affected()).unwrap_or(0);
-
-        // Second: mark credential as compromised (escalation).
-        let _ = sqlx::query(
-            r#"
-            UPDATE agent_credentials
-            SET status = 'compromised', revoked_at = NOW()
-            WHERE id = $1 AND status != 'compromised'
-            "#,
-        )
-        .bind(credential_id)
-        .execute(&pool)
-        .await;
-
-        // Third: revoke any OTHER live tokens under the same credential
-        // that happened to belong to different families.
-        let _ = sqlx::query(
-            r#"
-            UPDATE agent_tokens
-            SET revoked_at = NOW(), flagged_at = NOW()
-            WHERE credential_id = $1 AND revoked_at IS NULL
-            "#,
-        )
-        .bind(credential_id)
-        .execute(&pool)
-        .await;
-
-        warn!(
-            %credential_id, %token_id, %token_family_id,
-            family_tokens_revoked,
-            actor_ip = %actor_ip,
-            "refresh token reuse detected — family revoked, credential compromised"
-        );
-
-        // Audit: refresh_reuse_detected + credential_compromised
-        record_audit_event(
-            pool.clone(),
+        return Err(revoke_refresh_family_for_reuse(
+            &pool,
+            credential_id,
+            token_family_id,
+            token_id,
             refresh_user_id,
-            Some(credential_id),
-            Some(aid.clone()),
-            "refresh_reuse_detected",
-            serde_json::json!({
-                "token_id": token_id.to_string(),
-                "token_family_id": token_family_id.to_string(),
-                "family_tokens_revoked": family_tokens_revoked,
-                "detected_ip": actor_ip,
-                "detected_user_agent": actor_user_agent,
-            }),
-        );
-        record_audit_event(
-            pool.clone(),
-            refresh_user_id,
-            Some(credential_id),
-            Some(aid.clone()),
-            "credential_compromised",
-            serde_json::json!({
-                "reason": "refresh_token_reuse",
-                "token_family_id": token_family_id.to_string(),
-                "actor_type": "system",
-                "triggered_by_token_id": token_id.to_string(),
-            }),
-        );
-
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "token_reuse_detected".into(),
-                message: "Refresh token reuse detected. Credential has been revoked for security. \
-                          Contact the account owner to re-issue credentials."
-                    .into(),
-            }),
-        ));
+            &aid,
+            &actor_ip,
+            &actor_user_agent,
+        )
+        .await);
     }
 
     // Check credential status
@@ -9069,12 +9101,34 @@ async fn agent_auth_refresh(
         })?;
     }
 
-    // ---- Rotate: revoke old token row ----
-    sqlx::query("UPDATE agent_tokens SET revoked_at = NOW() WHERE id = $1")
-        .bind(token_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| internal_server_error(&format!("failed to revoke old token: {e}")))?;
+    // ---- Rotate: atomically revoke the old token row ----
+    // `AND revoked_at IS NULL` makes this UPDATE the serialization point.
+    // Two refreshes presenting the same RT both read `revoked_at IS NULL` in
+    // the SELECT above; only one can win this conditional revoke. If our
+    // UPDATE affects zero rows (`RETURNING` yields no row), a concurrent
+    // refresh already consumed this RT — treat it as reuse and revoke the
+    // family instead of minting a second valid token pair from one RT.
+    let revoked = sqlx::query(
+        "UPDATE agent_tokens SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL RETURNING id",
+    )
+    .bind(token_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_server_error(&format!("failed to revoke old token: {e}")))?;
+
+    if revoked.is_none() {
+        return Err(revoke_refresh_family_for_reuse(
+            &pool,
+            credential_id,
+            token_family_id,
+            token_id,
+            refresh_user_id,
+            &aid,
+            &actor_ip,
+            &actor_user_agent,
+        )
+        .await);
+    }
 
     // ---- Issue new AT + RT ----
     let new_access = generate_token("agt_");
@@ -12423,8 +12477,10 @@ async fn delete_message(
     Path(message_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
-    // Deleting a message requires write-level access; reuse messages.read for now
-    ctx.require_scope("messages.read")?;
+    // Deletion is an irreversible write — require the dedicated
+    // `messages.delete` scope, not the read scope. A token granted only
+    // `messages.read` must not be able to permanently destroy messages.
+    ctx.require_scope("messages.delete")?;
     let user_id = ctx.user_id().to_string();
     let maybe_pool = state
         .database_pool()
