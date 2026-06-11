@@ -12,6 +12,10 @@ primary_region = 'nrt'
 [env]
   AGENT_INBOX_COOKIE_SECURE = 'true'
   AGENT_INBOX_DATABASE_REQUIRED = 'true'
+  # Fixed origin for JWS `aud` + DPoP `htu` binding. validate_runtime_config
+  # now refuses to boot in production without this, so it must stay set here
+  # (or as a fly secret) — otherwise the next deploy fails fast.
+  AGENT_INBOX_PUBLIC_API_URL = 'https://api.nexusinbox.ai'
   AGENT_INBOX_WORLD_VERIFY_ENABLED = 'true'
   LOG_FORMAT = 'json'
   NODE_ENV = 'production'

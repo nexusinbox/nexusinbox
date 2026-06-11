@@ -160,9 +160,15 @@ export function buildCsp(
   const bridgeConnect =
     "http://127.0.0.1:* http://[::1]:* http://localhost:*";
 
+  // Attachment downloads are fetched from a Cloudflare R2 presigned URL
+  // (AGENT_INBOX_S3_ENDPOINT, shaped `<account>.r2.cloudflarestorage.com`).
+  // Without this entry the production CSP blocks the ConversationThread
+  // attachment fetch. Scoped to the R2 S3-endpoint wildcard, not `*`.
+  const r2Connect = "https://*.r2.cloudflarestorage.com";
+
   const connectSrc = IS_DEV
-    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`
-    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`;
+    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`
+    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`;
 
   return [
     "default-src 'self'",

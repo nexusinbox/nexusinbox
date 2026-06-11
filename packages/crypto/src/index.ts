@@ -125,6 +125,12 @@ export function parseEncryptedPayload(text: string): EncryptedPayload | null {
   const version = Number(parts[1].replace("v", ""));
   const iter = Number(parts[4]);
   if (!Number.isFinite(version) || !Number.isFinite(iter)) return null;
+  // `iter` is attacker-controlled — it comes straight from sender-supplied
+  // ciphertext. Reject values outside a sane PBKDF2 band so a hostile
+  // envelope can neither weaken the KDF (iter=1) nor lock the tab with a
+  // multi-minute derivation (iter=1e9). Our own writer uses
+  // PBKDF2_ITERATIONS (120k), comfortably inside this range.
+  if (iter < 100_000 || iter > 1_000_000) return null;
 
   const payload: EncryptedPayload = {
     v: version,

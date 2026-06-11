@@ -1180,14 +1180,20 @@ async fn main() {
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
-                // SO_PEERCRED check (§4.3 IPC security)
+                // SO_PEERCRED check (§4.3 IPC security). When --allowed-uid is
+                // unset we default to this process's own uid, so an
+                // unconfigured deployment still rejects other users on the host
+                // instead of accepting everyone. We deliberately do NOT
+                // special-case uid 0: a local root process must not be able to
+                // bypass the configured peer restriction.
                 #[cfg(unix)]
-                if let Some(allowed_uid) = state.allowed_uid {
+                {
+                    let my_uid = unsafe { libc::getuid() };
+                    let allowed_uid = state.allowed_uid.unwrap_or(my_uid);
                     match stream.peer_cred() {
                         Ok(cred) => {
                             let peer_uid = cred.uid();
-                            let my_uid = unsafe { libc::getuid() };
-                            if peer_uid != allowed_uid && peer_uid != 0 && peer_uid != my_uid {
+                            if peer_uid != allowed_uid && peer_uid != my_uid {
                                 eprintln!(
                                     "[SECURITY] Rejected connection from UID {} (allowed: {})",
                                     peer_uid, allowed_uid

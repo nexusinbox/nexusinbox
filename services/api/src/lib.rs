@@ -993,6 +993,14 @@ pub fn validate_runtime_config() -> Result<(), String> {
     if database_required() && std::env::var("DATABASE_URL").is_err() {
         return Err("DATABASE_URL is required when AGENT_INBOX_DATABASE_REQUIRED=true".to_string());
     }
+    // SECURITY: In production the JWS `aud` and DPoP `htu` bindings must be
+    // derived from a fixed, operator-set URL — never from the request `Host`
+    // / `X-Forwarded-Proto` headers, which a caller controls. Refuse to start
+    // if it isn't set so we can't silently fall back to header-derived
+    // expectations (see `expected_api_url`).
+    if is_production_env() && std::env::var("AGENT_INBOX_PUBLIC_API_URL").is_err() {
+        return Err("AGENT_INBOX_PUBLIC_API_URL is required when NODE_ENV=production".to_string());
+    }
     Ok(())
 }
 
@@ -3435,6 +3443,28 @@ fn consume_request_rate_limit(state: &AppState) -> bool {
 
 /// Extract client IP from X-Forwarded-For or X-Real-IP headers, falling back to peer addr.
 fn extract_client_ip(headers: &HeaderMap) -> String {
+    // Cloudflare stamps CF-Connecting-IP with the real client address; when
+    // traffic actually transits the tunnel the client cannot forge it.
+    // Prefer it over the client-supplied X-Forwarded-For, which a caller can
+    // set to any value to rotate past the per-IP rate limit (the primary
+    // brute-force defense on credential activation).
+    if let Some(cf_ip) = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+    {
+        let trimmed = cf_ip.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // In production we trust ONLY CF-Connecting-IP. Falling through to the
+    // client-controlled XFF / X-Real-IP would reopen the spoofing hole, so a
+    // request that reached us without the Cloudflare header lands in a shared
+    // "unknown" bucket rather than a forgeable per-IP one.
+    if is_production_env() {
+        return "unknown".to_string();
+    }
+    // Non-production (local / docker): accept proxy headers for convenience.
     // X-Forwarded-For: client, proxy1, proxy2 — take the first (leftmost)
     if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         if let Some(first) = xff.split(',').next() {
