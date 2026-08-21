@@ -2112,13 +2112,14 @@ fn parse_storage_ref(storage_ref: &str) -> Option<StorageRef> {
     }
 
     // Legacy format: <scheme>://<uuid>
-    let (backend, message_id_raw) = if let Some(rest) = storage_ref.strip_prefix("localfs://") {
-        (StorageBackend::LocalFs, rest)
-    } else if let Some(rest) = storage_ref.strip_prefix("gdrive://") {
-        (StorageBackend::GoogleDriveMock, rest)
-    } else {
-        return None;
-    };
+    let (backend, message_id_raw) = storage_ref
+        .strip_prefix("localfs://")
+        .map(|rest| (StorageBackend::LocalFs, rest))
+        .or_else(|| {
+            storage_ref
+                .strip_prefix("gdrive://")
+                .map(|rest| (StorageBackend::GoogleDriveMock, rest))
+        })?;
     Some(StorageRef {
         backend,
         locator: message_id_raw.to_string(),
