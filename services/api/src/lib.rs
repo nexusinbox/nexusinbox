@@ -392,7 +392,13 @@ impl AppState {
                     .await
             })
             .await
-            .map_err(|error| format!("failed to initialize database pool: {error}"))?;
+            .map_err(|error| {
+                // Log the sqlx connect error (may embed host/user/db details)
+                // server-side only; callers surface this String verbatim in
+                // HTTP 500 bodies, so keep it generic.
+                error!("failed to initialize database pool: {error}");
+                "failed to initialize database pool".to_string()
+            })?;
 
         Ok(Some(pool.clone()))
     }
@@ -1256,6 +1262,23 @@ fn internal_server_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
             message: message.to_string(),
         }),
     )
+}
+
+/// Internal-error helper that keeps failure detail OUT of the HTTP response.
+///
+/// `public_msg` is the only thing the client sees; `detail` (the underlying
+/// sqlx / reqwest / serde error) goes to the server log alone. Raw sqlx
+/// error strings embed query text, table and column names, and connection
+/// context — echoing them in a 500 body hands schema recon to any caller
+/// (audit 2026-06-11, finding M2). Prefer this over
+/// `internal_error("...", e)` everywhere a source error
+/// is attached.
+fn internal_error(
+    public_msg: &str,
+    detail: impl std::fmt::Display,
+) -> (StatusCode, Json<ErrorResponse>) {
+    error!("{public_msg}: {detail}");
+    internal_server_error(public_msg)
 }
 
 fn database_required_but_unavailable_error() -> (StatusCode, Json<ErrorResponse>) {
@@ -4000,12 +4023,11 @@ async fn auth_verify(
         .bind(&verification_level)
         .fetch_one(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to upsert user: {error}")))?;
+        .map_err(|error| internal_error("failed to upsert user", error))?;
 
         let id_text: String = row.get("id");
-        let id = Uuid::parse_str(&id_text).map_err(|error| {
-            internal_server_error(&format!("invalid user id from database: {error}"))
-        })?;
+        let id = Uuid::parse_str(&id_text)
+            .map_err(|error| internal_error("invalid user id from database", error))?;
         UserRecord {
             id,
             verification_level: row.get("verification_level"),
@@ -4056,7 +4078,7 @@ async fn auth_verify(
         .bind(issued_session.expires_at_unix)
         .execute(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to persist session: {error}")))?;
+        .map_err(|error| internal_error("failed to persist session", error))?;
     }
 
     let mut headers = HeaderMap::new();
@@ -4126,9 +4148,7 @@ async fn auth_logout(
         .bind(jwt_id)
         .execute(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to revoke session in database: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to revoke session in database", error))?;
     } else {
         revoke_session_jti_in_memory(&state, jwt_id, claims.exp);
     }
@@ -4255,9 +4275,7 @@ async fn update_auth_profile(
             .bind(user_uuid)
             .execute(&pool)
             .await
-            .map_err(|error| {
-                internal_server_error(&format!("failed to update profile: {error}"))
-            })?;
+            .map_err(|error| internal_error("failed to update profile", error))?;
     }
 
     if let Ok(mut map) = state.display_names.lock() {
@@ -4503,7 +4521,7 @@ async fn enforce_agent_bound_message(
     .bind(recipient_did)
     .fetch_optional(pool)
     .await
-    .map_err(|e| internal_server_error(&format!("agent-bound message lookup failed: {e}")))?;
+    .map_err(|e| internal_error("agent-bound message lookup failed", e))?;
     if row.is_none() {
         return Err((
             StatusCode::NOT_FOUND,
@@ -4634,7 +4652,7 @@ async fn validate_agent_token(
     .bind(&hash)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("agent token lookup failed: {e}")))?;
+    .map_err(|e| internal_error("agent token lookup failed", e))?;
 
     let row = row.ok_or_else(|| unauthorized_error("invalid agent token"))?;
 
@@ -4817,7 +4835,7 @@ async fn list_blocks(
         .bind(user_uuid)
         .fetch_all(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to list blocks: {error}")))?;
+        .map_err(|error| internal_error("failed to list blocks", error))?;
         let blocks = rows
             .into_iter()
             .map(|row| {
@@ -4913,7 +4931,7 @@ async fn create_block(
         .bind(&entry.target_world_id)
         .execute(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to persist block: {error}")))?;
+        .map_err(|error| internal_error("failed to persist block", error))?;
         return Ok((StatusCode::CREATED, Json(CreateBlockResponse { id })));
     }
 
@@ -4976,7 +4994,7 @@ async fn create_block_from_message(
         .bind(user_uuid)
         .fetch_optional(pool)
         .await
-        .map_err(|e| internal_server_error(&format!("failed to load message: {e}")))?;
+        .map_err(|e| internal_error("failed to load message", e))?;
         let row = row.ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
@@ -5008,7 +5026,7 @@ async fn create_block_from_message(
             .bind(&sender_did)
             .fetch_optional(pool)
             .await
-            .map_err(|e| internal_server_error(&format!("failed to resolve sender: {e}")))?;
+            .map_err(|e| internal_error("failed to resolve sender", e))?;
             let row = row.ok_or_else(|| {
                 (
                     StatusCode::UNPROCESSABLE_ENTITY,
@@ -5098,7 +5116,7 @@ async fn create_block_from_message(
         .bind(&entry.target_world_id)
         .execute(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to persist block: {error}")))?;
+        .map_err(|error| internal_error("failed to persist block", error))?;
     } else {
         state
             .blocks_by_user
@@ -5138,7 +5156,7 @@ async fn delete_block(
             .bind(user_uuid)
             .execute(&pool)
             .await
-            .map_err(|error| internal_server_error(&format!("failed to delete block: {error}")))?;
+            .map_err(|error| internal_error("failed to delete block", error))?;
         if result.rows_affected() == 0 {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -5246,7 +5264,7 @@ async fn list_contacts(
         .bind(user_uuid)
         .fetch_all(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to list contacts: {error}")))?;
+        .map_err(|error| internal_error("failed to list contacts", error))?;
 
         rows.into_iter()
             .map(|row| ContactEntry {
@@ -5312,7 +5330,7 @@ async fn create_contact(
         .bind(&note)
         .execute(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to create contact: {error}")))?;
+        .map_err(|error| internal_error("failed to create contact", error))?;
         if result.rows_affected() == 0 {
             return Err(conflict_error(
                 "a contact for this DID already exists in your address book",
@@ -5387,7 +5405,7 @@ async fn update_contact(
         .bind(&note)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to update contact: {error}")))?;
+        .map_err(|error| internal_error("failed to update contact", error))?;
 
         let Some(row) = row_opt else {
             return Err((
@@ -5461,9 +5479,7 @@ async fn delete_contact(
             .bind(user_uuid)
             .execute(&pool)
             .await
-            .map_err(|error| {
-                internal_server_error(&format!("failed to delete contact: {error}"))
-            })?;
+            .map_err(|error| internal_error("failed to delete contact", error))?;
         if result.rows_affected() == 0 {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -5584,14 +5600,13 @@ async fn list_agents(
         .bind(user_uuid)
         .fetch_all(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to list agents: {error}")))?;
+        .map_err(|error| internal_error("failed to list agents", error))?;
 
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             let id_text: String = row.get("id");
-            let id = Uuid::parse_str(&id_text).map_err(|error| {
-                internal_server_error(&format!("invalid agent id from database: {error}"))
-            })?;
+            let id = Uuid::parse_str(&id_text)
+                .map_err(|error| internal_error("invalid agent id from database", error))?;
             out.push(Agent {
                 id,
                 aid: row.get("aid"),
@@ -5660,9 +5675,7 @@ async fn create_agent(
             .bind(&did)
             .fetch_optional(&pool)
             .await
-            .map_err(|error| {
-                internal_server_error(&format!("failed to check agent conflict: {error}"))
-            })?;
+            .map_err(|error| internal_error("failed to check agent conflict", error))?;
         if maybe_conflict.is_some() {
             return Err(conflict_error(
                 "an agent for this public_key already exists",
@@ -5684,7 +5697,7 @@ async fn create_agent(
         .bind(&payload.encryption_key)
         .execute(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to create agent: {error}")))?;
+        .map_err(|error| internal_error("failed to create agent", error))?;
 
         // Insert into agent_identities + agent_identity_keys (stable aid layer).
         sqlx::query(
@@ -5698,9 +5711,7 @@ async fn create_agent(
         .bind(user_uuid)
         .execute(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to create agent_identity: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to create agent_identity", error))?;
 
         sqlx::query(
             r#"
@@ -5715,7 +5726,7 @@ async fn create_agent(
         .execute(&pool)
         .await
         .map_err(|error| {
-            internal_server_error(&format!("failed to create agent_identity_key: {error}"))
+            internal_error("failed to create agent_identity_key", error)
         })?;
     } else {
         let agent = Agent {
@@ -5810,7 +5821,7 @@ async fn update_agent(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to update agent: {error}")))?;
+        .map_err(|error| internal_error("failed to update agent", error))?;
         if let Some(row) = row {
             return Ok(Json(UpdateAgentResponse {
                 id: agent_id,
@@ -5878,7 +5889,7 @@ async fn delete_agent(
             .bind(user_uuid)
             .execute(&pool)
             .await
-            .map_err(|error| internal_server_error(&format!("failed to delete agent: {error}")))?;
+            .map_err(|error| internal_error("failed to delete agent", error))?;
         if result.rows_affected() > 0 {
             return Ok(StatusCode::NO_CONTENT);
         }
@@ -6473,7 +6484,7 @@ async fn ensure_agent_owned_by_user(
         .bind(user_uuid)
         .fetch_optional(pool)
         .await
-        .map_err(|e| internal_server_error(&format!("agent lookup failed: {e}")))?;
+        .map_err(|e| internal_error("agent lookup failed", e))?;
     if exists.is_none() {
         return Err((
             StatusCode::NOT_FOUND,
@@ -6514,7 +6525,7 @@ async fn get_auto_reply_policy(
     .bind(agent_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("policy fetch failed: {e}")))?;
+    .map_err(|e| internal_error("policy fetch failed", e))?;
 
     let (body, etag) = match row {
         Some(r) => {
@@ -6581,7 +6592,7 @@ async fn put_auto_reply_policy(
             .bind(agent_id)
             .fetch_optional(&pool)
             .await
-            .map_err(|e| internal_server_error(&format!("policy fetch failed: {e}")))?;
+            .map_err(|e| internal_error("policy fetch failed", e))?;
     let (prev_rev, prev_policy) = match existing {
         Some(r) => (
             r.get::<i64, _>("revision"),
@@ -6641,7 +6652,7 @@ async fn put_auto_reply_policy(
     .bind(user_uuid)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("policy upsert failed: {e}")))?;
+    .map_err(|e| internal_error("policy upsert failed", e))?;
 
     let updated_at: Option<String> = sqlx::query_scalar(
         "SELECT updated_at::text FROM agent_auto_reply_policies WHERE agent_id = $1",
@@ -6649,7 +6660,7 @@ async fn put_auto_reply_policy(
     .bind(agent_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("policy post-read failed: {e}")))?;
+    .map_err(|e| internal_error("policy post-read failed", e))?;
 
     let event = if is_create {
         "auto_reply_policy_created"
@@ -6710,7 +6721,7 @@ async fn delete_auto_reply_policy(
             .bind(agent_id)
             .fetch_optional(&pool)
             .await
-            .map_err(|e| internal_server_error(&format!("policy fetch failed: {e}")))?;
+            .map_err(|e| internal_error("policy fetch failed", e))?;
 
     if let Some(r) = row {
         let prev_rev: i64 = r.get("revision");
@@ -6719,7 +6730,7 @@ async fn delete_auto_reply_policy(
             .bind(agent_id)
             .execute(&pool)
             .await
-            .map_err(|e| internal_server_error(&format!("policy delete failed: {e}")))?;
+            .map_err(|e| internal_error("policy delete failed", e))?;
         record_audit_event(
             pool.clone(),
             user_uuid,
@@ -6828,7 +6839,7 @@ async fn create_agent_credential(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to look up agent: {e}")))?;
+    .map_err(|e| internal_error("failed to look up agent", e))?;
 
     let aid: String = match aid_row {
         Some(row) => row.get("aid"),
@@ -6865,7 +6876,7 @@ async fn create_agent_credential(
     .bind(&scopes as &[String])
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to create credential: {e}")))?;
+    .map_err(|e| internal_error("failed to create credential", e))?;
 
     Ok((
         StatusCode::CREATED,
@@ -6921,13 +6932,13 @@ async fn list_agent_credentials(
     .bind(user_uuid)
     .fetch_all(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to list credentials: {e}")))?;
+    .map_err(|e| internal_error("failed to list credentials", e))?;
 
     let mut credentials = Vec::with_capacity(rows.len());
     for row in rows {
         let id_str: String = row.get("id");
-        let credential_id = Uuid::parse_str(&id_str)
-            .map_err(|e| internal_server_error(&format!("invalid credential id: {e}")))?;
+        let credential_id =
+            Uuid::parse_str(&id_str).map_err(|e| internal_error("invalid credential id", e))?;
         // Only surface enrollment_expires while the credential is still
         // pending; once it's active or revoked, the field is historical
         // noise and we also cleared it during activation.
@@ -6991,7 +7002,7 @@ async fn revoke_agent_credential(
     .bind(user_uuid)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to revoke credential: {e}")))?;
+    .map_err(|e| internal_error("failed to revoke credential", e))?;
 
     if result.rows_affected() == 0 {
         return Err((
@@ -7109,7 +7120,7 @@ async fn purge_agent_credential(
     .bind(CREDENTIAL_PURGE_GRACE_DAYS as i32)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to look up credential: {e}")))?;
+    .map_err(|e| internal_error("failed to look up credential", e))?;
 
     let row = row.ok_or_else(|| {
         (
@@ -7183,7 +7194,7 @@ async fn purge_agent_credential(
     .bind(&audit_detail)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to record purge audit: {e}")))?;
+    .map_err(|e| internal_error("failed to record purge audit", e))?;
 
     // Physical delete. Tokens are already revoked by the preceding
     // revoke_agent_credential; the `agent_tokens` FK cascade will clean
@@ -7201,7 +7212,7 @@ async fn purge_agent_credential(
     .bind(CREDENTIAL_PURGE_GRACE_DAYS as i32)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to purge credential: {e}")))?;
+    .map_err(|e| internal_error("failed to purge credential", e))?;
 
     if delete_result.rows_affected() == 0 {
         // Raced with another purge or a state change between our SELECT
@@ -7283,7 +7294,7 @@ async fn activate_agent_credential(
     .bind(credential_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("credential lookup failed: {e}")))?;
+    .map_err(|e| internal_error("credential lookup failed", e))?;
 
     let cred_row = cred_row.ok_or_else(|| {
         (
@@ -7529,7 +7540,7 @@ async fn activate_agent_credential(
     .bind(&payload.encryption_public_key)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to insert identity key: {e}")))?;
+    .map_err(|e| internal_error("failed to insert identity key", e))?;
 
     // Activate the credential: store signing key, clear enrollment
     // hash, and record the caller's key_holder hint. Zero the
@@ -7558,7 +7569,7 @@ async fn activate_agent_credential(
     .bind(key_holder)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to activate credential: {e}")))?;
+    .map_err(|e| internal_error("failed to activate credential", e))?;
 
     // Audit: credential_activated
     record_audit_event(
@@ -7605,7 +7616,7 @@ async fn patch_agent_credential(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("lookup failed: {e}")))?;
+        .map_err(|e| internal_error("lookup failed", e))?;
 
     if exists.is_none() {
         return Err((
@@ -7627,7 +7638,7 @@ async fn patch_agent_credential(
             .bind(credential_id)
             .execute(&pool)
             .await
-            .map_err(|e| internal_server_error(&format!("update label failed: {e}")))?;
+            .map_err(|e| internal_error("update label failed", e))?;
     }
 
     if let Some(ref policy) = payload.policy {
@@ -7636,7 +7647,7 @@ async fn patch_agent_credential(
             .bind(credential_id)
             .execute(&pool)
             .await
-            .map_err(|e| internal_server_error(&format!("update policy failed: {e}")))?;
+            .map_err(|e| internal_error("update policy failed", e))?;
     }
 
     Ok(Json(serde_json::json!({
@@ -7672,7 +7683,7 @@ async fn rotate_agent_credential(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("lookup failed: {e}")))?;
+    .map_err(|e| internal_error("lookup failed", e))?;
 
     let cred_row = cred_row.ok_or_else(|| {
         (
@@ -7722,7 +7733,7 @@ async fn rotate_agent_credential(
     .bind(credential_id)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("rotate update failed: {e}")))?;
+    .map_err(|e| internal_error("rotate update failed", e))?;
 
     // Audit: key_rotation_started
     record_audit_event(
@@ -7783,7 +7794,7 @@ async fn agent_auth_revoke(
     .bind(&hash)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("revoke failed: {e}")))?;
+    .map_err(|e| internal_error("revoke failed", e))?;
 
     if result.rows_affected() == 0 {
         // Token not found or already revoked — return 200 anyway (RFC 7009 §2.2)
@@ -7868,7 +7879,7 @@ async fn agent_emergency_shutdown(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("agent lookup failed: {e}")))?;
+    .map_err(|e| internal_error("agent lookup failed", e))?;
 
     let agent_row = agent_row.ok_or_else(|| {
         (
@@ -7894,7 +7905,7 @@ async fn agent_emergency_shutdown(
     .bind(user_uuid)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("credential revocation failed: {e}")))?;
+    .map_err(|e| internal_error("credential revocation failed", e))?;
 
     let credentials_revoked = cred_result.rows_affected();
 
@@ -7911,7 +7922,7 @@ async fn agent_emergency_shutdown(
     .bind(user_uuid)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("token revocation failed: {e}")))?;
+    .map_err(|e| internal_error("token revocation failed", e))?;
 
     let tokens_revoked = token_result.rows_affected();
 
@@ -8218,7 +8229,7 @@ async fn ingest_bridge_audit_event(
     .bind(credential_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("credential lookup failed: {e}")))?
+    .map_err(|e| internal_error("credential lookup failed", e))?
     .ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
@@ -8317,7 +8328,7 @@ async fn ingest_bridge_audit_event(
     }
     let accepted = check_and_record_bridge_audit_replay(&state, credential_id, jti)
         .await
-        .map_err(|e| internal_server_error(&format!("bridge audit replay check failed: {e}")))?;
+        .map_err(|e| internal_error("bridge audit replay check failed", e))?;
     if !accepted {
         return Err((
             StatusCode::CONFLICT,
@@ -8414,7 +8425,7 @@ async fn check_policy_l3_send_limit(
     .bind(credential_id)
     .fetch_one(pool)
     .await
-    .map_err(|e| internal_server_error(&format!("policy L3 check failed: {e}")))?;
+    .map_err(|e| internal_error("policy L3 check failed", e))?;
 
     let count: i64 = row.get("cnt");
     if count >= POLICY_L3_MAX_SENDS_PER_CREDENTIAL_PER_DAY {
@@ -8554,7 +8565,7 @@ async fn list_agent_audit_log(
     let count_row = count_q
         .fetch_one(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("audit count failed: {e}")))?;
+        .map_err(|e| internal_error("audit count failed", e))?;
     let total: i64 = count_row.get("total");
 
     // List query
@@ -8578,7 +8589,7 @@ async fn list_agent_audit_log(
     let rows = list_q
         .fetch_all(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("audit list failed: {e}")))?;
+        .map_err(|e| internal_error("audit list failed", e))?;
 
     let events: Vec<AuditLogEntry> = rows
         .iter()
@@ -8713,7 +8724,7 @@ async fn agent_auth_token(
     .bind(&claims.iss)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("credential lookup failed: {e}")))?;
+    .map_err(|e| internal_error("credential lookup failed", e))?;
 
     let cred_row = cred_row.ok_or_else(|| {
         (
@@ -8775,7 +8786,7 @@ async fn agent_auth_token(
     // Fail-closed on DB error.
     let accepted = check_and_record_agent_auth_replay(&state, cred_id, &claims.jti)
         .await
-        .map_err(|e| internal_server_error(&format!("agent-auth replay check failed: {e}")))?;
+        .map_err(|e| internal_error("agent-auth replay check failed", e))?;
     if !accepted {
         return Err((
             StatusCode::CONFLICT,
@@ -8838,7 +8849,7 @@ async fn agent_auth_token(
     .bind(&refresh_expires)
     .fetch_one(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to insert token: {e}")))?;
+    .map_err(|e| internal_error("failed to insert token", e))?;
     let new_token_id: Uuid = inserted.get("id");
     let new_token_family_id: Uuid = inserted.get("token_family_id");
 
@@ -9051,7 +9062,7 @@ async fn agent_auth_refresh(
     .bind(&hash)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("refresh token lookup failed: {e}")))?;
+    .map_err(|e| internal_error("refresh token lookup failed", e))?;
 
     let row = row.ok_or_else(|| unauthorized_error("invalid refresh token"))?;
 
@@ -9162,7 +9173,7 @@ async fn agent_auth_refresh(
     .bind(token_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to revoke old token: {e}")))?;
+    .map_err(|e| internal_error("failed to revoke old token", e))?;
 
     if revoked.is_none() {
         return Err(revoke_refresh_family_for_reuse(
@@ -9211,7 +9222,7 @@ async fn agent_auth_refresh(
     .bind(token_family_id)
     .execute(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to insert new token: {e}")))?;
+    .map_err(|e| internal_error("failed to insert new token", e))?;
 
     // Update last_used_at on credential
     let _ = sqlx::query("UPDATE agent_credentials SET last_used_at = NOW() WHERE id = $1")
@@ -9296,7 +9307,7 @@ async fn send_message(
                 .bind(user_uuid)
                 .fetch_optional(pool)
                 .await
-                .map_err(|e| internal_server_error(&format!("failed to lookup user: {e}")))?;
+                .map_err(|e| internal_error("failed to lookup user", e))?;
                 match row {
                     Some(r) => (
                         r.get::<String, _>("world_id_hash"),
@@ -9497,9 +9508,7 @@ async fn send_message(
         .bind(&recipient_did)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to resolve recipient owner: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to resolve recipient owner", error))?;
         if let Some(row) = owner_row {
             use sqlx::Row;
             let owner_uuid: Uuid = row.get("user_id");
@@ -9564,7 +9573,7 @@ async fn send_message(
         .bind(&sender_world_id)
         .fetch_one(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to count blocks: {error}")))?;
+        .map_err(|error| internal_error("failed to count blocks", error))?;
         use sqlx::Row;
         let count: i64 = row.get("count");
         let blocks = count.clamp(0, u32::MAX as i64) as u32;
@@ -9811,9 +9820,10 @@ async fn send_message(
         // updates all happen inside one transaction. If anything fails mid-
         // flight, `tx` is dropped without commit and Postgres rolls back,
         // leaving no partial-write ghosts for the caller to discover.
-        let mut tx = pool.begin().await.map_err(|error| {
-            internal_server_error(&format!("failed to start send transaction: {error}"))
-        })?;
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|error| internal_error("failed to start send transaction", error))?;
         let tx_result: Result<(), (StatusCode, Json<ErrorResponse>)> = async {
             if is_cross_user {
                 // Sender-side bookkeeping row ("sent" folder, status="sent").
@@ -9850,9 +9860,7 @@ async fn send_message(
                 .execute(&mut *tx)
                 .await
                 .map_err(|error| {
-                    internal_server_error(&format!(
-                        "failed to persist sender-side message index: {error}"
-                    ))
+                    internal_error("failed to persist sender-side message index", error)
                 })?;
 
                 // Recipient-side deliverable row (inbox / spam / pending_approval,
@@ -9891,9 +9899,7 @@ async fn send_message(
                 .execute(&mut *tx)
                 .await
                 .map_err(|error| {
-                    internal_server_error(&format!(
-                        "failed to persist recipient-side message index: {error}"
-                    ))
+                    internal_error("failed to persist recipient-side message index", error)
                 })?;
             } else {
                 // Same-user send: single row with folder="inbox"/"spam"/"pending_approval".
@@ -9930,9 +9936,7 @@ async fn send_message(
                 .bind(&message.folder)
                 .execute(&mut *tx)
                 .await
-                .map_err(|error| {
-                    internal_server_error(&format!("failed to persist message index: {error}"))
-                })?;
+                .map_err(|error| internal_error("failed to persist message index", error))?;
             }
 
             if !validated_attachments.is_empty() {
@@ -9981,9 +9985,9 @@ async fn send_message(
                 .await?;
             }
 
-            tx.commit().await.map_err(|error| {
-                internal_server_error(&format!("failed to commit send transaction: {error}"))
-            })?;
+            tx.commit()
+                .await
+                .map_err(|error| internal_error("failed to commit send transaction", error))?;
             Ok(())
         }
         .await;
@@ -10193,7 +10197,7 @@ async fn check_attachment_intent_rate_limit(
     .bind(ATTACHMENT_INTENT_RATE_LIMIT_WINDOW_SECS as f64)
     .fetch_one(pool)
     .await
-    .map_err(|error| internal_server_error(&format!("rate limit check failed: {error}")))?;
+    .map_err(|error| internal_error("rate limit check failed", error))?;
     if row >= ATTACHMENT_INTENT_RATE_LIMIT_PER_USER {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
@@ -10330,9 +10334,8 @@ async fn create_attachment_intent(
     check_attachment_intent_rate_limit(&pool, user_uuid).await?;
 
     // Load R2 config
-    let config = s3_config_from_env().map_err(|msg| {
-        internal_server_error(&format!("attachment storage not configured: {msg}"))
-    })?;
+    let config = s3_config_from_env()
+        .map_err(|msg| internal_error("attachment storage not configured", msg))?;
 
     // Generate identifiers
     let attachment_id = Uuid::new_v4();
@@ -10401,7 +10404,7 @@ async fn create_attachment_intent(
     .bind(ATTACHMENT_PUT_URL_TTL_SECS as f64)
     .execute(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to persist intent: {error}")))?;
+    .map_err(|error| internal_error("failed to persist intent", error))?;
 
     // Audit — include client_ip + user_agent in detail so incident response
     // can correlate attachment upload attempts with other API traffic.
@@ -10522,7 +10525,7 @@ async fn complete_attachment(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load intent: {error}")))?;
+    .map_err(|error| internal_error("failed to load intent", error))?;
 
     let row = row.ok_or_else(|| not_found_error("attachment not found"))?;
     use sqlx::Row as SqlxRow;
@@ -10625,7 +10628,7 @@ async fn complete_attachment(
     .bind(user_uuid)
     .execute(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to mark uploaded: {error}")))?;
+    .map_err(|error| internal_error("failed to mark uploaded", error))?;
 
     // Emit under the spec's name (`attachment_upload_completed`); retires the
     // legacy `attachment_uploaded_verified` event.
@@ -10722,7 +10725,7 @@ async fn prevalidate_attachments_for_message(
         .bind(user_uuid)
         .fetch_optional(pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to load attachment: {error}")))?;
+        .map_err(|error| internal_error("failed to load attachment", error))?;
 
         let row = row.ok_or_else(|| {
             validation_error(&format!(
@@ -10825,7 +10828,7 @@ async fn insert_message_attachment_row_in_tx(
     .bind(v.size_bytes)
     .execute(&mut **tx)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to link attachment: {error}")))?;
+    .map_err(|error| internal_error("failed to link attachment", error))?;
     Ok(())
 }
 
@@ -10859,7 +10862,7 @@ async fn mark_attachments_attached_in_tx(
         .bind(upload_owner_user_uuid)
         .execute(&mut **tx)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to mark attached: {error}")))?;
+        .map_err(|error| internal_error("failed to mark attached", error))?;
 
         if updated.rows_affected() == 0 {
             // Prevalidation saw status='uploaded'; the UPDATE now sees
@@ -10910,7 +10913,7 @@ async fn list_message_attachments(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load message: {error}")))?;
+    .map_err(|error| internal_error("failed to load message", error))?;
 
     if owner_row.is_none() {
         return Err(not_found_error("message not found"));
@@ -10927,7 +10930,7 @@ async fn list_message_attachments(
     .bind(message_id)
     .fetch_all(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load attachments: {error}")))?;
+    .map_err(|error| internal_error("failed to load attachments", error))?;
 
     use sqlx::Row as SqlxRow;
     let attachments: Vec<MessageAttachmentSummary> = rows
@@ -10992,7 +10995,7 @@ async fn generate_attachment_download_url(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load message: {error}")))?;
+    .map_err(|error| internal_error("failed to load message", error))?;
     if msg_owned.is_none() {
         return Err(not_found_error("message not found"));
     }
@@ -11014,7 +11017,7 @@ async fn generate_attachment_download_url(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load attachment: {error}")))?;
+    .map_err(|error| internal_error("failed to load attachment", error))?;
 
     let row = row.ok_or_else(|| not_found_error("attachment not found"))?;
     use sqlx::Row as SqlxRow;
@@ -11028,9 +11031,8 @@ async fn generate_attachment_download_url(
     // Step 3: generate a short-lived presigned GET URL. The
     // response-content-disposition=attachment query param is signed so the
     // browser never gets an inline URL.
-    let config = s3_config_from_env().map_err(|msg| {
-        internal_server_error(&format!("attachment storage not configured: {msg}"))
-    })?;
+    let config = s3_config_from_env()
+        .map_err(|msg| internal_error("attachment storage not configured", msg))?;
     let extra_query = vec![(
         "response-content-disposition".to_string(),
         "attachment".to_string(),
@@ -11106,7 +11108,7 @@ async fn delete_attachment(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to load intent: {error}")))?;
+    .map_err(|error| internal_error("failed to load intent", error))?;
 
     let row = row.ok_or_else(|| not_found_error("attachment not found"))?;
     use sqlx::Row as SqlxRow;
@@ -11148,7 +11150,7 @@ async fn delete_attachment(
     .bind(r2_purged)
     .execute(&pool)
     .await
-    .map_err(|error| internal_server_error(&format!("failed to mark deleted: {error}")))?;
+    .map_err(|error| internal_error("failed to mark deleted", error))?;
 
     record_audit_event(
         pool.clone(),
@@ -11506,9 +11508,7 @@ async fn list_messages(
                         .fetch_all(&pool)
                         .await
                         .map_err(|error| {
-                            internal_server_error(&format!(
-                                "failed to resolve agent did history: {error}"
-                            ))
+                            internal_error("failed to resolve agent did history", error)
                         })?;
                     let mut out: Vec<String> = rows
                         .into_iter()
@@ -11579,9 +11579,7 @@ async fn list_messages(
             .bind(user_uuid)
             .fetch_all(&pool)
             .await
-            .map_err(|error| {
-                internal_server_error(&format!("failed to resolve user-owned dids: {error}"))
-            })?
+            .map_err(|error| internal_error("failed to resolve user-owned dids", error))?
             .into_iter()
             .map(|row| row.get::<String, _>("did"))
             .collect()
@@ -11697,7 +11695,7 @@ async fn list_messages(
         .bind(&user_owned_dids as &[String])
         .fetch_all(&pool)
         .await
-        .map_err(|error| internal_server_error(&format!("failed to list messages: {error}")))?;
+        .map_err(|error| internal_error("failed to list messages", error))?;
 
         let total: i64 = rows
             .first()
@@ -11706,9 +11704,8 @@ async fn list_messages(
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             let id_text: String = row.get("id");
-            let id = Uuid::parse_str(&id_text).map_err(|error| {
-                internal_server_error(&format!("invalid message id from database: {error}"))
-            })?;
+            let id = Uuid::parse_str(&id_text)
+                .map_err(|error| internal_error("invalid message id from database", error))?;
             let thread_id = row
                 .get::<Option<String>, _>("thread_id")
                 .and_then(|value| Uuid::parse_str(&value).ok());
@@ -11868,9 +11865,7 @@ async fn message_content(
         .bind(message_id)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to load message content index: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to load message content index", error))?;
 
         row.map(|row| {
             let thread_id = row
@@ -12144,7 +12139,7 @@ async fn update_message_status(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("message lookup failed: {e}")))?;
+        .map_err(|e| internal_error("message lookup failed", e))?;
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
@@ -12182,9 +12177,7 @@ async fn update_message_status(
             .execute(&pool)
             .await
         }
-        .map_err(|error| {
-            internal_server_error(&format!("failed to update message status: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to update message status", error))?;
         if result.rows_affected() > 0 {
             return Ok(Json(UpdateMessageStatusResponse {
                 id: message_id,
@@ -12298,7 +12291,7 @@ async fn update_message_flags(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("message lookup failed: {e}")))?;
+        .map_err(|e| internal_error("message lookup failed", e))?;
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
@@ -12329,9 +12322,7 @@ async fn update_message_flags(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to update message flags: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to update message flags", error))?;
         if let Some(row) = row {
             use sqlx::Row;
             return Ok(Json(UpdateMessageFlagsResponse {
@@ -12439,7 +12430,7 @@ async fn mark_auto_reply_sent(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("message lookup failed: {e}")))?;
+    .map_err(|e| internal_error("message lookup failed", e))?;
 
     let Some(row) = pre else {
         return Err((
@@ -12470,7 +12461,7 @@ async fn mark_auto_reply_sent(
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_server_error(&format!("failed to mark auto-reply sent: {e}")))?;
+    .map_err(|e| internal_error("failed to mark auto-reply sent", e))?;
 
     let Some(updated_row) = updated else {
         return Err((
@@ -12574,7 +12565,7 @@ async fn delete_message(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| internal_server_error(&format!("message lookup failed: {e}")))?;
+        .map_err(|e| internal_error("message lookup failed", e))?;
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
@@ -12588,9 +12579,7 @@ async fn delete_message(
         .bind(user_uuid)
         .fetch_optional(&pool)
         .await
-        .map_err(|error| {
-            internal_server_error(&format!("failed to delete message index row: {error}"))
-        })?;
+        .map_err(|error| internal_error("failed to delete message index row", error))?;
 
         let storage_ref = match deleted_storage_ref {
             Some(s) => s,
@@ -12611,9 +12600,7 @@ async fn delete_message(
                 .bind(&storage_ref)
                 .fetch_one(&pool)
                 .await
-                .map_err(|error| {
-                    internal_server_error(&format!("failed to count storage_ref refs: {error}"))
-                })?;
+                .map_err(|error| internal_error("failed to count storage_ref refs", error))?;
 
         if remaining_refs == 0 {
             gc_message_storage(&state, &user_id, message_id, &storage_ref).await?;
@@ -12726,9 +12713,10 @@ async fn gc_message_storage(
                     "error",
                     Some("gdrive_delete_failed"),
                 );
-                return Err(internal_server_error(&format!(
-                    "failed to delete encrypted payload from google drive: {error}"
-                )));
+                return Err(internal_error(
+                    "failed to delete encrypted payload from google drive",
+                    error,
+                ));
             }
         }
         StorageBackend::S3 => {
@@ -12742,9 +12730,10 @@ async fn gc_message_storage(
                     "error",
                     Some("s3_delete_failed"),
                 );
-                return Err(internal_server_error(&format!(
-                    "failed to delete encrypted payload from s3: {error}"
-                )));
+                return Err(internal_error(
+                    "failed to delete encrypted payload from s3",
+                    error,
+                ));
             }
         }
         StorageBackend::Ipfs => {
@@ -12758,9 +12747,10 @@ async fn gc_message_storage(
                     "error",
                     Some("ipfs_delete_failed"),
                 );
-                return Err(internal_server_error(&format!(
-                    "failed to unpin encrypted payload from ipfs: {error}"
-                )));
+                return Err(internal_error(
+                    "failed to unpin encrypted payload from ipfs",
+                    error,
+                ));
             }
         }
         StorageBackend::LocalFs | StorageBackend::GoogleDriveMock => {
@@ -12778,9 +12768,10 @@ async fn gc_message_storage(
                             "error",
                             Some("localfs_delete_failed"),
                         );
-                        return Err(internal_server_error(&format!(
-                            "failed to delete encrypted payload from local storage: {error}"
-                        )));
+                        return Err(internal_error(
+                            "failed to delete encrypted payload from local storage",
+                            error,
+                        ));
                     }
                 }
             }

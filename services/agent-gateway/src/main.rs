@@ -734,26 +734,39 @@ fn is_uuid(s: &str) -> bool {
     })
 }
 
+/// Extract a required UUID-shaped param from an RPC request, or build the
+/// `-32602` error response the handler should return. Folds together the
+/// missing-param and non-UUID (path-traversal guard, see `is_uuid`) checks
+/// that handle_read_message / handle_mark_read / handle_archive_message all
+/// need before interpolating the value into an API URL.
+fn require_uuid_param<'a>(req: &'a RpcRequest, key: &str) -> Result<&'a str, Box<RpcResponse>> {
+    let Some(value) = req.params.get(key).and_then(|v| v.as_str()) else {
+        return Err(Box::new(RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            format!("missing param: {key}"),
+        )));
+    };
+    if !is_uuid(value) {
+        return Err(Box::new(RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            format!("invalid param: {key} must be a UUID"),
+        )));
+    }
+    Ok(value)
+}
+
 async fn handle_read_message(state: &GatewayState, req: &RpcRequest) -> RpcResponse {
     let token = match ensure_token(state).await {
         Ok(t) => t,
         Err(e) => return RpcResponse::error(req.id.clone(), -32000, e),
     };
 
-    let message_id = match req.params.get("message_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => {
-            return RpcResponse::error(req.id.clone(), -32602, "missing param: message_id".into())
-        }
+    let message_id = match require_uuid_param(req, "message_id") {
+        Ok(id) => id,
+        Err(resp) => return *resp,
     };
-
-    if !is_uuid(message_id) {
-        return RpcResponse::error(
-            req.id.clone(),
-            -32602,
-            "invalid param: message_id must be a UUID".into(),
-        );
-    }
 
     let url = format!("{}/messages/{}/content", state.api_url, message_id);
 
@@ -923,20 +936,10 @@ async fn handle_mark_read(state: &GatewayState, req: &RpcRequest) -> RpcResponse
         Err(e) => return RpcResponse::error(req.id.clone(), -32000, e),
     };
 
-    let message_id = match req.params.get("message_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => {
-            return RpcResponse::error(req.id.clone(), -32602, "missing param: message_id".into())
-        }
+    let message_id = match require_uuid_param(req, "message_id") {
+        Ok(id) => id,
+        Err(resp) => return *resp,
     };
-
-    if !is_uuid(message_id) {
-        return RpcResponse::error(
-            req.id.clone(),
-            -32602,
-            "invalid param: message_id must be a UUID".into(),
-        );
-    }
 
     let url = format!("{}/messages/{}", state.api_url, message_id);
     let body = serde_json::json!({ "status": "read" });
@@ -956,20 +959,10 @@ async fn handle_archive_message(state: &GatewayState, req: &RpcRequest) -> RpcRe
         Err(e) => return RpcResponse::error(req.id.clone(), -32000, e),
     };
 
-    let message_id = match req.params.get("message_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => {
-            return RpcResponse::error(req.id.clone(), -32602, "missing param: message_id".into())
-        }
+    let message_id = match require_uuid_param(req, "message_id") {
+        Ok(id) => id,
+        Err(resp) => return *resp,
     };
-
-    if !is_uuid(message_id) {
-        return RpcResponse::error(
-            req.id.clone(),
-            -32602,
-            "invalid param: message_id must be a UUID".into(),
-        );
-    }
 
     let url = format!("{}/messages/{}", state.api_url, message_id);
     let body = serde_json::json!({ "status": "archived" });
@@ -1661,6 +1654,38 @@ mod tests {
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("encrypted_key"));
+    }
+
+    #[test]
+    fn test_require_uuid_param_paths() {
+        let make_req = |params: serde_json::Value| RpcRequest {
+            id: json!(7),
+            method: "read_message".into(),
+            params,
+        };
+
+        // Valid UUID passes through untouched. (RpcResponse has no Debug
+        // impl, so match instead of unwrap on the Ok path.)
+        let req = make_req(json!({ "message_id": "00000000-0000-0000-0000-000000000bb1" }));
+        match require_uuid_param(&req, "message_id") {
+            Ok(v) => assert_eq!(v, "00000000-0000-0000-0000-000000000bb1"),
+            Err(_) => panic!("expected Ok for a canonical UUID"),
+        }
+
+        // Missing param → -32602 with the same message the handlers used
+        // before the dedupe refactor.
+        let req = make_req(json!({}));
+        let resp = *require_uuid_param(&req, "message_id").unwrap_err();
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32602);
+        assert_eq!(err.message, "missing param: message_id");
+
+        // Traversal-shaped value → -32602 invalid-param message.
+        let req = make_req(json!({ "message_id": "../agents" }));
+        let resp = *require_uuid_param(&req, "message_id").unwrap_err();
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32602);
+        assert_eq!(err.message, "invalid param: message_id must be a UUID");
     }
 
     #[test]

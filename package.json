@@ -2,6 +2,20 @@
   "name": "nexusinbox",
   "private": true,
   "packageManager": "pnpm@10.0.0",
+  "pnpm": {
+    "//": "Security floors for transitive deps flagged by `pnpm audit` (2026-06-12). Each pin is the advisory's patched version; all are semver-compatible with what the parents request. body-parser is deliberately absent (only fix is 2.x, would break express 4); extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video).",
+    "overrides": {
+      "hono": ">=4.12.34",
+      "@hono/node-server": ">=1.19.15",
+      "fast-uri": ">=3.1.4",
+      "ip-address": ">=10.3.1",
+      "qs": ">=6.15.2",
+      "postcss": ">=8.5.12",
+      "nanoid": ">=3.3.16",
+      "ws": ">=8.21.0",
+      "sharp": ">=0.35.0"
+    }
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
