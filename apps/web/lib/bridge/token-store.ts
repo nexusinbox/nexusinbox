@@ -214,3 +214,29 @@ export function clearBridgeSessionNonce(aid: string): void {
   if (!aid || !isSessionStorageAvailable()) return;
   window.sessionStorage.removeItem(nonceKey(aid));
 }
+
+/**
+ * Drop every stored bridge token and session nonce, whatever the aid.
+ *
+ * Called on logout. The bearer is re-obtainable by pairing again, so
+ * unlike the E2E private keys in IndexedDB (which this browser may hold
+ * the only copy of) it must not outlive the session that created it.
+ */
+export function clearAllBridgeTokens(): void {
+  if (isStorageAvailable()) {
+    removeKeysWithPrefix(window.localStorage, STORAGE_PREFIX);
+  }
+  if (isSessionStorageAvailable()) {
+    removeKeysWithPrefix(window.sessionStorage, SESSION_NONCE_PREFIX);
+  }
+}
+
+function removeKeysWithPrefix(storage: Storage, prefix: string): void {
+  // Collect first: removing while iterating shifts the key indices.
+  const doomed: string[] = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (key && key.startsWith(prefix)) doomed.push(key);
+  }
+  for (const key of doomed) storage.removeItem(key);
+}

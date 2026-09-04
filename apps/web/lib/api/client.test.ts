@@ -175,4 +175,29 @@ describe("NexusInboxApiClient", () => {
     expect(headers.get("Authorization")).toBe(null);
     expect(init?.credentials).toBe("include");
   });
+
+  it("percent-encodes path ids so a crafted id cannot escape its route", async () => {
+    // A fresh Response per call — a body can only be consumed once.
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    const client = new NexusInboxApiClient({
+      baseUrl: "http://localhost:8080",
+      bearerToken: "dev-user-test",
+    });
+
+    await client.getMessageContent("../auth/session?x=1");
+    await client.getAttachmentDownloadUrl("m/1", "a/2");
+
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual([
+      "http://localhost:8080/messages/..%2Fauth%2Fsession%3Fx%3D1/content",
+      "http://localhost:8080/messages/m%2F1/attachments/a%2F2/download",
+    ]);
+  });
 });

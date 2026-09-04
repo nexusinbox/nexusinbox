@@ -140,7 +140,7 @@ export class NexusInboxApiClient {
   }
 
   async updateAgent(id: string, payload: UpdateAgentRequest): Promise<UpdateAgentResponse> {
-    return this.request<UpdateAgentResponse>("/agents/" + id, {
+    return this.request<UpdateAgentResponse>("/agents/" + encodeURIComponent(id), {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
@@ -161,7 +161,7 @@ export class NexusInboxApiClient {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/agent-credentials/" + id, {
+    const response = await fetch(this.baseUrl + "/agent-credentials/" + encodeURIComponent(id), {
       method: "DELETE",
       headers,
       cache: "no-store",
@@ -182,12 +182,15 @@ export class NexusInboxApiClient {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/agent-credentials/" + id + "/purge", {
-      method: "POST",
-      headers,
-      cache: "no-store",
-      credentials: "include",
-    });
+    const response = await fetch(
+      this.baseUrl + "/agent-credentials/" + encodeURIComponent(id) + "/purge",
+      {
+        method: "POST",
+        headers,
+        cache: "no-store",
+        credentials: "include",
+      },
+    );
     if (!response.ok) {
       // Surface the server's structured error (e.g. purge_grace_period)
       // so the UI can distinguish "try again later" from other failures.
@@ -226,14 +229,14 @@ export class NexusInboxApiClient {
 
   async emergencyShutdown(agentId: string): Promise<EmergencyShutdownResponse> {
     return this.request<EmergencyShutdownResponse>(
-      "/agents/" + agentId + "/emergency-shutdown",
+      "/agents/" + encodeURIComponent(agentId) + "/emergency-shutdown",
       { method: "POST", body: JSON.stringify({}) },
     );
   }
 
   async getAutoReplyPolicy(agentId: string): Promise<AutoReplyPolicyResponse> {
     return this.request<AutoReplyPolicyResponse>(
-      "/agents/" + agentId + "/auto-reply-policy",
+      "/agents/" + encodeURIComponent(agentId) + "/auto-reply-policy",
     );
   }
 
@@ -242,7 +245,7 @@ export class NexusInboxApiClient {
     payload: PutAutoReplyPolicyRequest,
   ): Promise<AutoReplyPolicyResponse> {
     return this.request<AutoReplyPolicyResponse>(
-      "/agents/" + agentId + "/auto-reply-policy",
+      "/agents/" + encodeURIComponent(agentId) + "/auto-reply-policy",
       { method: "PUT", body: JSON.stringify(payload) },
     );
   }
@@ -252,7 +255,7 @@ export class NexusInboxApiClient {
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
     const response = await fetch(
-      this.baseUrl + "/agents/" + agentId + "/auto-reply-policy",
+      this.baseUrl + "/agents/" + encodeURIComponent(agentId) + "/auto-reply-policy",
       {
         method: "DELETE",
         headers,
@@ -272,7 +275,7 @@ export class NexusInboxApiClient {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/agents/" + id, {
+    const response = await fetch(this.baseUrl + "/agents/" + encodeURIComponent(id), {
       method: "DELETE",
       headers,
       cache: "no-store",
@@ -284,11 +287,13 @@ export class NexusInboxApiClient {
   }
 
   async getMessageContent(id: string): Promise<MessageContentResponse> {
-    return this.request<MessageContentResponse>("/messages/" + id + "/content");
+    return this.request<MessageContentResponse>(
+      "/messages/" + encodeURIComponent(id) + "/content",
+    );
   }
 
   async updateMessageStatus(id: string, status: Extract<MessageStatus, "read" | "archived">) {
-    return this.request<{ id: string; status: MessageStatus }>("/messages/" + id, {
+    return this.request<{ id: string; status: MessageStatus }>("/messages/" + encodeURIComponent(id), {
       method: "PATCH",
       body: JSON.stringify({ status }),
     });
@@ -299,7 +304,7 @@ export class NexusInboxApiClient {
     flags: { folder?: string; starred?: boolean },
   ) {
     return this.request<{ id: string; folder: string; starred: boolean }>(
-      "/messages/" + id + "/flags",
+      "/messages/" + encodeURIComponent(id) + "/flags",
       {
         method: "PATCH",
         body: JSON.stringify(flags),
@@ -320,7 +325,7 @@ export class NexusInboxApiClient {
     const headers = new Headers();
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/messages/" + id, {
+    const response = await fetch(this.baseUrl + "/messages/" + encodeURIComponent(id), {
       method: "DELETE",
       headers,
       cache: "no-store",
@@ -350,7 +355,7 @@ export class NexusInboxApiClient {
     const body: MarkAutoReplySentRequest = {};
     if (params.replyMessageId) body.reply_message_id = params.replyMessageId;
     return this.request<MarkAutoReplySentResponse>(
-      "/messages/" + id + "/auto-reply-sent",
+      "/messages/" + encodeURIComponent(id) + "/auto-reply-sent",
       {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -434,7 +439,7 @@ export class NexusInboxApiClient {
     ciphertextSizeBytes: number,
   ): Promise<CompleteAttachmentResponse> {
     return this.request<CompleteAttachmentResponse>(
-      `/attachments/${attachmentId}/complete`,
+      `/attachments/${encodeURIComponent(attachmentId)}/complete`,
       {
         method: "POST",
         body: JSON.stringify({ ciphertext_size_bytes: ciphertextSizeBytes }),
@@ -443,14 +448,16 @@ export class NexusInboxApiClient {
   }
 
   async deleteAttachment(attachmentId: string): Promise<void> {
-    await this.request<void>(`/attachments/${attachmentId}`, { method: "DELETE" });
+    await this.request<void>(`/attachments/${encodeURIComponent(attachmentId)}`, {
+      method: "DELETE",
+    });
   }
 
   async listMessageAttachments(
     messageId: string,
   ): Promise<ListMessageAttachmentsResponse> {
     return this.request<ListMessageAttachmentsResponse>(
-      `/messages/${messageId}/attachments`,
+      `/messages/${encodeURIComponent(messageId)}/attachments`,
     );
   }
 
@@ -459,7 +466,7 @@ export class NexusInboxApiClient {
     attachmentId: string,
   ): Promise<AttachmentDownloadUrlResponse> {
     return this.request<AttachmentDownloadUrlResponse>(
-      `/messages/${messageId}/attachments/${attachmentId}/download`,
+      `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
       { method: "POST", body: "{}" },
     );
   }
@@ -497,7 +504,7 @@ export class NexusInboxApiClient {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/blocks/" + id, {
+    const response = await fetch(this.baseUrl + "/blocks/" + encodeURIComponent(id), {
       method: "DELETE",
       headers,
       cache: "no-store",
@@ -525,7 +532,7 @@ export class NexusInboxApiClient {
   }
 
   async updateContact(id: string, payload: UpdateContactRequest): Promise<ContactEntry> {
-    return this.request<ContactEntry>("/contacts/" + id, {
+    return this.request<ContactEntry>("/contacts/" + encodeURIComponent(id), {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
@@ -535,7 +542,7 @@ export class NexusInboxApiClient {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.bearerToken.trim();
     if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/contacts/" + id, {
+    const response = await fetch(this.baseUrl + "/contacts/" + encodeURIComponent(id), {
       method: "DELETE",
       headers,
       cache: "no-store",

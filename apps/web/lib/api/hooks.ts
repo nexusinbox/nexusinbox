@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { clearAllBridgeTokens } from "../bridge/token-store";
+import { disconnectLLM } from "../llm/llmAuth";
 import { defaultApiClient } from "./client";
 import {
   AuditLogQuery,
@@ -393,6 +395,15 @@ export function useAuthLogoutMutation() {
     mutationFn: () => defaultApiClient.logoutAuth(),
     onSuccess: async () => {
       await queryClient.clear();
+    },
+    onSettled: async () => {
+      // Session-scoped secrets die with the session, even when the
+      // server call failed (the button navigates to /login regardless).
+      // Both are re-obtainable: re-pair the bridge, re-enter the LLM
+      // key. The E2E private keys in IndexedDB are deliberately left
+      // alone — this browser may hold the only copy.
+      clearAllBridgeTokens();
+      await disconnectLLM();
     },
   });
 }

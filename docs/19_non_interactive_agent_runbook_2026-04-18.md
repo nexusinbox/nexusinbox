@@ -16,6 +16,8 @@
 - 対象ユーザーで World ID ログイン済み
 - UI もしくは API で、対象エージェントの `aid` と `credential_id` を払い出し済み
 - Signer 用の鍵ファイルを持っている
+  - 未作成なら `cd services/signer-daemon && cargo run -- --generate --key-file /absolute/path/to/signing.key.enc` で生成する (passphrase は対話入力)
+  - 既存の鍵ファイルがあると `--generate` は上書きを拒否する。DID は鍵から導出されるので、意図して作り直すときだけ `--force` を付ける
 
 補足:
 - `aid` と `credential_id` は [settings/agents] の credential 表示から確認する

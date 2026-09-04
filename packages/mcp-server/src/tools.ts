@@ -1,5 +1,14 @@
 import type { ToolDefinition } from "./types.js";
 
+/**
+ * Server-issued message ids are UUIDs. Declaring the shape in the schema
+ * lets well-behaved clients reject junk early, and `validateToolArguments`
+ * enforces it for everyone else before the id reaches a URL path (SaaS
+ * mode) or the Gateway RPC (Mode A).
+ */
+export const UUID_PATTERN =
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+
 export const TOOL_CATALOG: ToolDefinition[] = [
   {
     name: "list_my_agents",
@@ -40,7 +49,7 @@ export const TOOL_CATALOG: ToolDefinition[] = [
       additionalProperties: false,
       required: ["message_id"],
       properties: {
-        message_id: { type: "string" },
+        message_id: { type: "string", pattern: UUID_PATTERN },
       },
     },
   },
@@ -98,7 +107,7 @@ export const TOOL_CATALOG: ToolDefinition[] = [
       additionalProperties: false,
       required: ["incoming_message_id", "body_markdown"],
       properties: {
-        incoming_message_id: { type: "string" },
+        incoming_message_id: { type: "string", pattern: UUID_PATTERN },
         body_markdown: { type: "string" },
         subject: { type: "string" },
         mode: { type: "string", enum: ["draft", "send"], default: "draft" },
@@ -108,6 +117,31 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     },
   },
 ];
+
+/**
+ * Enforce the `pattern` constraints a tool's inputSchema declares.
+ *
+ * The low-level MCP SDK `Server` hands tool arguments through without
+ * checking them against the advertised schema, so without this a client
+ * could pass any string where the schema promises a UUID. Presence of
+ * required fields is left to the runtime, which already reports missing
+ * ids with its own error text.
+ */
+export function validateToolArguments(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+): void {
+  const properties =
+    (tool.inputSchema.properties as Record<string, { pattern?: string }> | undefined) ?? {};
+  for (const [key, schema] of Object.entries(properties)) {
+    if (!schema.pattern) continue;
+    const value = args[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !new RegExp(schema.pattern).test(value)) {
+      throw new Error(`${key} must match ${schema.pattern}`);
+    }
+  }
+}
 
 export function phase1aTools(): ToolDefinition[] {
   return TOOL_CATALOG.filter((tool) => tool.phase === "phase1a");

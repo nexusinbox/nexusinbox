@@ -34,6 +34,7 @@ import type {
 } from "../../lib/api/types";
 import { useTranslation } from "../../lib/i18n";
 import { getLLMKey } from "../../lib/llm/llmAuth";
+import { sanitiseUuidParam } from "../../lib/url/uuid-param";
 import {
   AnthropicDraftError,
   generateReplyDraft,
@@ -103,8 +104,10 @@ function ComposePageInner() {
   const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const replyToId = searchParams?.get("reply") ?? null;
-  const forwardFromId = searchParams?.get("forward") ?? null;
+  // Ids come from links we render ourselves, but the URL is user-editable:
+  // only a well-formed UUID may be forwarded into an API path.
+  const replyToId = sanitiseUuidParam(searchParams?.get("reply"));
+  const forwardFromId = sanitiseUuidParam(searchParams?.get("forward"));
   const aiDraft = searchParams?.get("ai") === "1";
   const composeMode: "new" | "reply" | "forward" = replyToId
     ? "reply"

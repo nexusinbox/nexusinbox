@@ -1058,3 +1058,200 @@ async fn cross_user_send_writes_per_owner_message_attachments_rows() {
         "recipient must pass the download authorization JOIN — regression test for Bug 2"
     );
 }
+
+// ============================================================================
+// Attachment blob lifecycle after message deletion
+// ============================================================================
+
+const S3_ENV_KEYS: [&str; 7] = [
+    "AGENT_INBOX_S3_ENDPOINT",
+    "AGENT_INBOX_S3_BUCKET",
+    "AGENT_INBOX_S3_ACCESS_KEY_ID",
+    "AGENT_INBOX_S3_SECRET_ACCESS_KEY",
+    "AGENT_INBOX_S3_REGION",
+    "AGENT_INBOX_S3_PATH_STYLE",
+    "AGENT_INBOX_S3_PREFIX",
+];
+
+/// Unset every S3 variable so `s3_delete_object()` fails fast and
+/// deterministically (no live R2 in tests). Returns the prior values for
+/// `restore_s3_env`.
+fn clear_s3_env() -> Vec<(&'static str, Option<String>)> {
+    S3_ENV_KEYS
+        .iter()
+        .map(|key| {
+            let saved = std::env::var(key).ok();
+            // SAFETY: test-local env mutation under #[serial].
+            unsafe {
+                std::env::remove_var(key);
+            }
+            (*key, saved)
+        })
+        .collect()
+}
+
+fn restore_s3_env(saved: Vec<(&'static str, Option<String>)>) {
+    for (key, value) in saved {
+        // SAFETY: test-local env mutation under #[serial].
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+    }
+}
+
+async fn load_upload_lifecycle(pool: &PgPool, attachment_id: Uuid) -> (String, bool, bool) {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            status,
+            deleted_at IS NOT NULL AS deleted_at_is_set,
+            purged_at IS NULL AS purged_at_is_null
+        FROM attachment_uploads
+        WHERE id = $1
+        "#,
+    )
+    .bind(attachment_id)
+    .fetch_one(pool)
+    .await
+    .expect("reload attachment_uploads row");
+    (
+        row.get("status"),
+        row.get("deleted_at_is_set"),
+        row.get("purged_at_is_null"),
+    )
+}
+
+async fn delete_message_as(app: &axum::Router, auth: &str, message_id: Uuid) -> StatusCode {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/messages/{message_id}"))
+                .header("authorization", auth)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+}
+
+#[tokio::test]
+#[serial]
+async fn deleting_both_message_copies_retires_attachment_upload() {
+    // Regression (audit 2026-09-04): `delete_message` drops the
+    // `message_attachments` links via FK cascade but never touched the
+    // `attachment_uploads` row, so the R2 blob outlived both copies of the
+    // message. The cleanup pass must retire the upload only once the LAST
+    // link is gone — the recipient's copy keeps it alive.
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    // SAFETY: test-local env tweak; rejected at startup when NODE_ENV=production.
+    unsafe {
+        std::env::set_var("AGENT_INBOX_ALLOW_SKIP_S3_HEAD_IN_TESTS", "true");
+    }
+    let saved_s3_env = clear_s3_env();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    let fx = seed_cross_user_send_fixture(&pool).await;
+    let recipient_auth = seed_session(
+        &pool,
+        fx.recipient_user_id,
+        "0xattach-xuser-recipient",
+        "orb",
+    )
+    .await;
+
+    let body = build_cross_user_send_body(
+        &fx,
+        vec![json!({
+            "attachment_id": fx.valid_attachment_id.to_string(),
+            "metadata_encrypted": "meta-ct-opaque",
+            "metadata_nonce": "meta-nonce-opaque",
+        })],
+    );
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/messages")
+                .header("authorization", &fx.sender_auth)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    let sender_row_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM message_index WHERE owner_user_id = $1 AND folder = 'sent'",
+    )
+    .bind(fx.sender_user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("sender-side message_index row");
+    let recipient_row_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM message_index WHERE owner_user_id = $1")
+            .bind(fx.recipient_user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("recipient-side message_index row");
+
+    // Sender deletes their copy: the recipient still links the upload, so
+    // a cleanup pass must leave it untouched.
+    assert_eq!(
+        delete_message_as(&app, &fx.sender_auth, sender_row_id).await,
+        StatusCode::NO_CONTENT
+    );
+    nexusinbox_api::run_attachment_cleanup_pass(&pool).await;
+    let (status, deleted_at_is_set, _) = load_upload_lifecycle(&pool, fx.valid_attachment_id).await;
+    assert_eq!(
+        status, "attached",
+        "upload must stay attached while the recipient's copy still links it"
+    );
+    assert!(!deleted_at_is_set);
+
+    // Recipient deletes too: zero links left, so the pass retires the
+    // upload. With S3 unset the purge fails fast, leaving purged_at NULL
+    // so the row stays a candidate for the next pass.
+    assert_eq!(
+        delete_message_as(&app, &recipient_auth, recipient_row_id).await,
+        StatusCode::NO_CONTENT
+    );
+    let remaining_links: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM message_attachments WHERE attachment_upload_id = $1",
+    )
+    .bind(fx.valid_attachment_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_links, 0,
+        "FK cascade must have removed both link rows"
+    );
+
+    nexusinbox_api::run_attachment_cleanup_pass(&pool).await;
+    let (status, deleted_at_is_set, purged_at_is_null) =
+        load_upload_lifecycle(&pool, fx.valid_attachment_id).await;
+    assert_eq!(
+        status, "deleted",
+        "unlinked upload must be retired for purge"
+    );
+    assert!(deleted_at_is_set);
+    assert!(
+        purged_at_is_null,
+        "R2 unavailable in tests → purged_at stays NULL so cleanup retries"
+    );
+
+    restore_s3_env(saved_s3_env);
+}

@@ -19,7 +19,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { DeploymentMode } from "./index.js";
-import { TOOL_CATALOG } from "./tools.js";
+import { TOOL_CATALOG, validateToolArguments } from "./tools.js";
 import type { NexusInboxMcpRuntime, ToolDefinition } from "./types.js";
 
 export type StartStdioServerInput = {
@@ -97,6 +97,7 @@ async function dispatch(
   tool: ToolDefinition,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  validateToolArguments(tool, args);
   switch (tool.name) {
     case "list_my_agents":
       return runtime.listMyAgents();

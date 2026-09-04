@@ -11249,7 +11249,10 @@ async fn delete_attachment(
 // ---------------------------------------------------------------------------
 // Attachment orphan cleanup (docs/17 §12.1).
 //
-// Three kinds of orphans exist in the attachment lifecycle:
+// Four kinds of orphans exist in the attachment lifecycle:
+//   0. `attached` uploads whose every `message_attachments` link is gone —
+//      both owners deleted their copy of the message (FK cascade removed
+//      the links) but nothing ever retired the upload row or its blob.
 //   1. `issued` intents past upload_expires_at  → never PUT to R2.
 //   2. `uploaded` intents >24h old              → PUT succeeded but the
 //      sender never called POST /messages to attach them.
@@ -11258,8 +11261,9 @@ async fn delete_attachment(
 //      S3 failure.
 //
 // We want to:
-//   - flip (1)/(2) to `expired` so retry logic stops considering them usable,
-//   - purge the underlying R2 object for (1)/(2)/(3) best-effort,
+//   - flip (0) to `deleted` and (1)/(2) to `expired` so retry logic stops
+//     considering them usable,
+//   - purge the underlying R2 object for (0)/(1)/(2)/(3) best-effort,
 //   - record an audit event per purge so operators can reconcile costs.
 //
 // The job runs as a background tokio task started at boot. It sleeps
@@ -11277,10 +11281,56 @@ const ATTACHMENT_UPLOADED_ORPHAN_SECS: i64 = 24 * 60 * 60;
 
 /// Run one pass of the attachment orphan cleanup.
 ///
-/// Returns `(intents_expired, objects_deleted)` for logging. Errors during a
+/// Returns `(rows_retired, objects_deleted)` for logging. Errors during a
 /// single row's cleanup are absorbed — the job must make progress across
-/// partial failures.
-async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
+/// partial failures. Public so DB integration tests can drive a pass
+/// without waiting for the background ticker.
+pub async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
+    // Step 0: uploads that no message links to any more. `delete_message`
+    // (and auto-purge) remove `message_index` rows and the FK cascade
+    // drops the `message_attachments` links, but the upload row stayed
+    // `attached` forever and its R2 blob leaked (audit 2026-09-04). A
+    // cross-user send has one link per owner, so the recipient's copy
+    // keeps the upload alive until they delete too.
+    let unlinked = sqlx::query(
+        r#"
+        UPDATE attachment_uploads au
+        SET status = 'deleted', deleted_at = NOW()
+        WHERE au.status = 'attached'
+          AND au.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM message_attachments ma
+            WHERE ma.attachment_upload_id = au.id
+          )
+        RETURNING id, owner_user_id, object_key
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|err| {
+        warn!(error = %err, "attachment cleanup: failed to retire unlinked uploads");
+        Vec::new()
+    });
+    for row in &unlinked {
+        use sqlx::Row as SqlxRow;
+        let row_id: Uuid = row.get("id");
+        let owner_user_id: Uuid = row.get("owner_user_id");
+        let object_key: String = row.get("object_key");
+        record_audit_event(
+            pool.clone(),
+            owner_user_id,
+            None,
+            None,
+            "attachment_deleted",
+            serde_json::json!({
+                "attachment_id": row_id.to_string(),
+                "object_key": object_key,
+                "trigger": "cleanup_job",
+                "reason": "all_message_links_removed",
+            }),
+        );
+    }
+
     // Step 1: intents that expired without ever being PUT. Flip them to
     // `expired` and set deleted_at (= "ready for R2 purge, if an object
     // accidentally exists"). RETURNING gives us the list so we can emit a
@@ -11408,7 +11458,7 @@ async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
     }
 
     (
-        abandoned_issued.len() as u64 + abandoned_uploaded.len() as u64,
+        unlinked.len() as u64 + abandoned_issued.len() as u64 + abandoned_uploaded.len() as u64,
         purged,
     )
 }
@@ -11427,10 +11477,10 @@ pub fn spawn_attachment_cleanup_job(pool: PgPool) {
         ticker.tick().await;
         loop {
             ticker.tick().await;
-            let (expired, purged) = run_attachment_cleanup_pass(&pool).await;
-            if expired > 0 || purged > 0 {
+            let (retired, purged) = run_attachment_cleanup_pass(&pool).await;
+            if retired > 0 || purged > 0 {
                 info!(
-                    expired = expired,
+                    retired = retired,
                     purged_objects = purged,
                     "attachment cleanup pass completed"
                 );

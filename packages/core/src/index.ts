@@ -928,7 +928,7 @@ export class NexusInboxApiClient {
   }
 
   readMessage(messageId: string): Promise<MessageContentResponse> {
-    return this.request("GET", `/messages/${messageId}/content`);
+    return this.request("GET", `/messages/${encodeURIComponent(messageId)}/content`);
   }
 
   sendMessage(params: {
@@ -1016,7 +1016,7 @@ export class NexusInboxApiClient {
     attachmentId: string;
     ciphertextSizeBytes: number;
   }): Promise<CompleteAttachmentResponse> {
-    return this.request("POST", `/attachments/${params.attachmentId}/complete`, {
+    return this.request("POST", `/attachments/${encodeURIComponent(params.attachmentId)}/complete`, {
       ciphertext_size_bytes: params.ciphertextSizeBytes,
     });
   }
