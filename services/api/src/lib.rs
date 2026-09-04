@@ -1093,6 +1093,15 @@ pub fn issue_dev_session(
 
 fn verify_dev_jwt(token: &str) -> Result<TokenClaims, &'static str> {
     let secret = jwt_secret()?;
+    // jsonwebtoken 9.x is kept on purpose (Dependabot GHSA-h395-gr6q-cpjc,
+    // "type confusion" for exp/nbf, fixed in 10.3). The bypass only applies to
+    // a claim that is validated but NOT in `required_spec_claims`; here `exp`
+    // is required (the `Validation::new` default), so a mistyped `exp` is
+    // rejected as missing, and `nbf` is not validated at all. Tokens are also
+    // minted server-side under HS256, so an attacker cannot supply mistyped
+    // claims under a valid signature in the first place. Moving to 10.x means
+    // picking a crypto backend: `rust_crypto` drags in the `rsa` crate (Marvin
+    // advisory, no fix) and `aws_lc_rs` adds a C build to the Fly image.
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_issuer(&[jwt_issuer()]);
     validation.set_audience(&[jwt_audience()]);

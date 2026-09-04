@@ -3,18 +3,25 @@
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
-    "//": "Security floors for transitive deps flagged by `pnpm audit` / Dependabot (2026-06-12, updated 2026-09-04). Each pin is the advisory's patched version; all are semver-compatible with what the parents request (body-parser/qs sit under express 5 via @modelcontextprotocol/sdk, so >=2.3.0 / >=6.16.0 are patch bumps). extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video).",
+    "//": "Security floors for transitive deps flagged by `pnpm audit` / Dependabot (2026-06-12, updated 2026-09-04). Each pin is the advisory's patched version; all are semver-compatible with what the parents request (body-parser/qs sit under express 5 via @modelcontextprotocol/sdk, so >=2.3.0 / >=6.16.0 are patch bumps; the `pkg@major` selectors keep brace-expansion 1/2/5 and js-yaml 4 on the major their parents expect). Left alone on purpose: extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video) and esbuild 0.27.x (GHSA-g7r4-m6w7-qqqr is Windows dev-server only; vite 7 pins ^0.27).",
     "overrides": {
       "hono": ">=4.12.34",
       "@hono/node-server": ">=1.19.15",
-      "fast-uri": ">=3.1.4",
+      "fast-uri": ">=4.1.3",
       "ip-address": ">=10.3.1",
       "qs": ">=6.16.0",
       "body-parser": ">=2.3.0",
       "postcss": ">=8.5.12",
-      "nanoid": ">=3.3.16",
+      "nanoid@3": ">=3.3.16 <4",
       "ws": ">=8.21.0",
-      "sharp": ">=0.35.0"
+      "sharp": ">=0.35.0",
+      "browserslist": ">=4.28.7 <5",
+      "vite@7": ">=7.3.5 <8",
+      "js-yaml@4": ">=4.3.1 <5",
+      "brace-expansion@1": ">=1.1.16 <2",
+      "brace-expansion@2": ">=2.1.2 <3",
+      "brace-expansion@5": ">=5.0.7 <6",
+      "@humanfs/node": ">=0.16.8 <1"
     }
   },
   "scripts": {
@@ -32,15 +39,15 @@
     "@apidevtools/json-schema-ref-parser": "^11.9.3",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "@redocly/cli": "^1.34.5",
+    "@redocly/cli": "^2.51.1",
     "@types/node": "^22.15.0",
     "@typescript-eslint/eslint-plugin": "^8.31.0",
     "@typescript-eslint/parser": "^8.31.0",
     "eslint": "^9.25.0",
     "eslint-config-prettier": "^10.1.2",
     "prettier": "^3.5.3",
-    "turbo": "^2.5.1",
+    "turbo": "^2.9.14",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.1"
+    "vitest": "^3.2.7"
   }
 }
