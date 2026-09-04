@@ -462,7 +462,11 @@ async fn obtain_new_token(state: &GatewayState) -> Result<String, String> {
         .ok_or("missing access_token")?
         .to_string();
     let refresh_token = body["refresh_token"].as_str().map(|s| s.to_string());
-    let expires_in = body["expires_in"].as_u64().unwrap_or(900);
+    // Clamp before it reaches chrono::Duration::seconds, which panics on
+    // out-of-range input. That expression runs while holding state.token,
+    // so a panic would poison the mutex and wedge every later RPC until
+    // the process restarts.
+    let expires_in = body["expires_in"].as_u64().unwrap_or(900).clamp(30, 86_400);
 
     // Store tokens
     {
@@ -513,7 +517,11 @@ async fn refresh_token(state: &GatewayState, rt: &str) -> Result<String, String>
         .ok_or("missing access_token")?
         .to_string();
     let refresh_token = body["refresh_token"].as_str().map(|s| s.to_string());
-    let expires_in = body["expires_in"].as_u64().unwrap_or(900);
+    // Clamp before it reaches chrono::Duration::seconds, which panics on
+    // out-of-range input. That expression runs while holding state.token,
+    // so a panic would poison the mutex and wedge every later RPC until
+    // the process restarts.
+    let expires_in = body["expires_in"].as_u64().unwrap_or(900).clamp(30, 86_400);
 
     {
         let mut ts = state.token.lock().unwrap();
@@ -1504,6 +1512,57 @@ fn urlencoding_encode(input: &str) -> String {
     out
 }
 
+/// Upper bound for one JSON-RPC line on the UDS. A plain `read_line` buffers
+/// until it sees `\n`, so the (low-trust) LLM-runtime peer could grow one
+/// line until the gateway OOMs, taking every agent behind it down (audit
+/// 2026-09-04). 64 KiB is ~100x the largest legitimate request.
+const MAX_RPC_LINE_BYTES: usize = 64 * 1024;
+
+/// `read_line` with a byte cap. Returns `Ok(0)` at EOF, `Ok(n)` after
+/// appending a full line (newline included) to `line`, or an `InvalidData`
+/// error as soon as `max` bytes accumulate without a newline — the caller
+/// drops the connection.
+async fn read_line_bounded<R: AsyncBufReadExt + Unpin>(
+    reader: &mut R,
+    line: &mut String,
+    max: usize,
+) -> std::io::Result<usize> {
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let (done, consumed) = {
+            let available = reader.fill_buf().await?;
+            if available.is_empty() {
+                (true, 0)
+            } else if let Some(i) = available.iter().position(|&b| b == b'\n') {
+                buf.extend_from_slice(&available[..=i]);
+                (true, i + 1)
+            } else {
+                buf.extend_from_slice(available);
+                (false, available.len())
+            }
+        };
+        reader.consume(consumed);
+        if buf.len() > max {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("rpc line exceeds {max} bytes"),
+            ));
+        }
+        if done {
+            break;
+        }
+    }
+    let n = buf.len();
+    let text = String::from_utf8(buf).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "rpc line is not valid UTF-8",
+        )
+    })?;
+    line.push_str(&text);
+    Ok(n)
+}
+
 async fn handle_connection(state: Arc<GatewayState>, stream: tokio::net::UnixStream) {
     let (reader, mut writer) = stream.into_split();
     let mut buf_reader = BufReader::new(reader);
@@ -1511,7 +1570,7 @@ async fn handle_connection(state: Arc<GatewayState>, stream: tokio::net::UnixStr
 
     loop {
         line.clear();
-        match buf_reader.read_line(&mut line).await {
+        match read_line_bounded(&mut buf_reader, &mut line, MAX_RPC_LINE_BYTES).await {
             Ok(0) => break,
             Ok(_) => {
                 let trimmed = line.trim();
@@ -1686,6 +1745,37 @@ mod tests {
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32602);
         assert_eq!(err.message, "invalid param: message_id must be a UUID");
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_caps_oversized_lines() {
+        // Normal line: returned with its newline, byte count matches.
+        let mut r = BufReader::new(&b"{\"id\":1}\nrest"[..]);
+        let mut line = String::new();
+        let n = read_line_bounded(&mut r, &mut line, 64).await.unwrap();
+        assert_eq!(n, 9);
+        assert_eq!(line, "{\"id\":1}\n");
+
+        // Oversized line with no newline → InvalidData before it is buffered
+        // in full (the whole point: the caller drops the connection).
+        let big = vec![b'x'; 200];
+        let mut r = BufReader::new(&big[..]);
+        let mut line = String::new();
+        let err = read_line_bounded(&mut r, &mut line, 64).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+
+        // Oversized line that DOES end in a newline is rejected too.
+        let mut big_nl = vec![b'y'; 100];
+        big_nl.push(b'\n');
+        let mut r = BufReader::new(&big_nl[..]);
+        let mut line = String::new();
+        assert!(read_line_bounded(&mut r, &mut line, 64).await.is_err());
+
+        // EOF → Ok(0) with nothing appended.
+        let mut r = BufReader::new(&b""[..]);
+        let mut line = String::new();
+        assert_eq!(read_line_bounded(&mut r, &mut line, 64).await.unwrap(), 0);
+        assert!(line.is_empty());
     }
 
     #[test]

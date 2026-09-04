@@ -101,6 +101,13 @@ struct Cli {
     #[arg(long)]
     generate: bool,
 
+    /// With --generate: replace an existing key file instead of refusing.
+    /// The DID is derived from the signing key, so regenerating over a
+    /// live key orphans every credential enrolled against it — overwrite
+    /// is therefore opt-in.
+    #[arg(long)]
+    force: bool,
+
     /// Allow plaintext key file (INSECURE — for development only)
     #[arg(long)]
     unsafe_plaintext_key: bool,
@@ -277,8 +284,19 @@ fn read_passphrase(prompt: &str) -> String {
     rpassword_fallback()
 }
 
-/// Simple passphrase reader (stdin, no echo if terminal).
+/// Passphrase reader. On a terminal, go through `rpassword` so the
+/// passphrase is never echoed (shoulder-surfing, screen shares, terminal
+/// scrollback). When stdin is piped — scripts, tests — there is no echo to
+/// suppress and rpassword would try to open /dev/tty, so fall back to a
+/// plain line read.
 fn rpassword_fallback() -> String {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        return rpassword::read_password()
+            .expect("failed to read passphrase")
+            .trim()
+            .to_string();
+    }
     let mut line = String::new();
     std::io::stdin()
         .read_line(&mut line)
@@ -332,22 +350,60 @@ fn chmod_key_file(path: &Path) {
     }
 }
 
+/// Create (or, with `overwrite`, replace) a key file with mode 0600 from the
+/// first byte. The old write-then-chmod sequence left a window in which the
+/// file existed with the umask default (typically 0644) and its full
+/// contents — ciphertext normally, the raw private key under
+/// `--unsafe-plaintext-key` — readable by any local account. Setting the
+/// mode at `open()` and using `create_new` when not overwriting closes both
+/// that window and the silent-clobber path (audit 2026-09-04).
+fn write_key_file_0600(path: &Path, payload: &[u8], overwrite: bool) -> std::io::Result<()> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true);
+    if overwrite {
+        opts.create(true).truncate(true);
+    } else {
+        opts.create_new(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(payload)?;
+    file.sync_all()
+}
+
 /// Persist a freshly-minted 32-byte key to disk, encrypted with
 /// `passphrase` when present, or plaintext otherwise. Shared writer for
 /// Ed25519 and X25519 key files — the encrypted format is identical.
-fn save_key_bytes(path: &Path, key_bytes: &[u8; 32], passphrase: Option<&str>) {
-    match passphrase {
-        Some(pass) => {
-            let encrypted = encrypt_key(key_bytes, pass);
-            std::fs::write(path, &encrypted).expect("failed to write encrypted key file");
-        }
+/// Refuses to replace an existing file unless `overwrite` (`--force`).
+fn save_key_bytes(path: &Path, key_bytes: &[u8; 32], passphrase: Option<&str>, overwrite: bool) {
+    if !overwrite && path.exists() {
+        eprintln!(
+            "[ERROR] Key file already exists: {}. Refusing to overwrite — the DID is derived \
+             from this key and regenerating would orphan every credential enrolled against it. \
+             Pass --force to replace it deliberately.",
+            path.display()
+        );
+        std::process::exit(1);
+    }
+    let payload: Vec<u8> = match passphrase {
+        Some(pass) => encrypt_key(key_bytes, pass),
         None => {
             eprintln!(
                 "[WARN] Saving key in PLAINTEXT (--unsafe-plaintext-key). Do NOT use in production."
             );
-            std::fs::write(path, key_bytes).expect("failed to write key file");
+            key_bytes.to_vec()
         }
+    };
+    if let Err(e) = write_key_file_0600(path, &payload, overwrite) {
+        eprintln!("[ERROR] Cannot write key file {}: {}", path.display(), e);
+        std::process::exit(1);
     }
+    // Belt and braces for the --force path, where an existing file keeps
+    // whatever mode it had.
     chmod_key_file(path);
 }
 
@@ -382,10 +438,10 @@ fn load_key_bytes(path: &Path, passphrase: Option<&str>) -> [u8; 32] {
 }
 
 /// Generate a new Ed25519 keypair, encrypt it, and write to disk.
-fn generate_and_save_key(path: &Path, passphrase: Option<&str>) -> SigningKey {
+fn generate_and_save_key(path: &Path, passphrase: Option<&str>, overwrite: bool) -> SigningKey {
     let signing_key = SigningKey::generate(&mut OsRng);
     let verifying_key = signing_key.verifying_key();
-    save_key_bytes(path, &signing_key.to_bytes(), passphrase);
+    save_key_bytes(path, &signing_key.to_bytes(), passphrase, overwrite);
 
     let pub_b64 = URL_SAFE_NO_PAD.encode(verifying_key.to_bytes());
     eprintln!("[INFO] Ed25519 signing key generated.");
@@ -405,14 +461,18 @@ fn load_key(path: &Path, passphrase: Option<&str>) -> SigningKey {
 /// disk, and return the in-memory secret. Used at boot when the
 /// operator passed `--generate --encryption-key-file ...` so the daemon
 /// can later fulfil `unwrap_content_key` RPCs.
-fn generate_and_save_encryption_secret(path: &Path, passphrase: Option<&str>) -> StaticSecret {
+fn generate_and_save_encryption_secret(
+    path: &Path,
+    passphrase: Option<&str>,
+    overwrite: bool,
+) -> StaticSecret {
     // Raw 32-byte seed ⇒ StaticSecret (clamping happens during DH).
     // Using `rand::random` keeps the RNG source identical to the
     // Ed25519 path above and avoids taking another crate.
     let raw: [u8; 32] = rand::random();
     let secret = StaticSecret::from(raw);
     let public = X25519PublicKey::from(&secret);
-    save_key_bytes(path, &secret.to_bytes(), passphrase);
+    save_key_bytes(path, &secret.to_bytes(), passphrase, overwrite);
 
     let pub_b64 = URL_SAFE_NO_PAD.encode(public.as_bytes());
     eprintln!("[INFO] X25519 encryption key generated.");
@@ -1004,7 +1064,7 @@ async fn main() {
     };
 
     let signing_key = if cli.generate {
-        generate_and_save_key(&cli.key_file, passphrase.as_deref())
+        generate_and_save_key(&cli.key_file, passphrase.as_deref(), cli.force)
     } else {
         if !cli.key_file.exists() {
             eprintln!(
@@ -1020,7 +1080,7 @@ async fn main() {
         None => None,
         Some(enc_path) => {
             let secret = if cli.generate {
-                generate_and_save_encryption_secret(enc_path, passphrase.as_deref())
+                generate_and_save_encryption_secret(enc_path, passphrase.as_deref(), cli.force)
             } else {
                 if !enc_path.exists() {
                     eprintln!(
@@ -1266,6 +1326,57 @@ async fn main() {
     }
 }
 
+/// Upper bound for one JSON-RPC line on the UDS. A plain `read_line` buffers
+/// until it sees `\n`, so a single peer could grow one line until the
+/// process OOMs (audit 2026-09-04). 64 KiB is ~100x the largest legitimate
+/// request (a wrap/unwrap carrying a base64 envelope).
+const MAX_RPC_LINE_BYTES: usize = 64 * 1024;
+
+/// `read_line` with a byte cap. Returns `Ok(0)` at EOF, `Ok(n)` after
+/// appending a full line (newline included) to `line`, or an `InvalidData`
+/// error as soon as `max` bytes accumulate without a newline — the caller
+/// drops the connection.
+async fn read_line_bounded<R: AsyncBufReadExt + Unpin>(
+    reader: &mut R,
+    line: &mut String,
+    max: usize,
+) -> std::io::Result<usize> {
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let (done, consumed) = {
+            let available = reader.fill_buf().await?;
+            if available.is_empty() {
+                (true, 0)
+            } else if let Some(i) = available.iter().position(|&b| b == b'\n') {
+                buf.extend_from_slice(&available[..=i]);
+                (true, i + 1)
+            } else {
+                buf.extend_from_slice(available);
+                (false, available.len())
+            }
+        };
+        reader.consume(consumed);
+        if buf.len() > max {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("rpc line exceeds {max} bytes"),
+            ));
+        }
+        if done {
+            break;
+        }
+    }
+    let n = buf.len();
+    let text = String::from_utf8(buf).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "rpc line is not valid UTF-8",
+        )
+    })?;
+    line.push_str(&text);
+    Ok(n)
+}
+
 async fn handle_connection(state: Arc<DaemonState>, stream: tokio::net::UnixStream) {
     let (reader, mut writer) = stream.into_split();
     let mut buf_reader = BufReader::new(reader);
@@ -1273,7 +1384,7 @@ async fn handle_connection(state: Arc<DaemonState>, stream: tokio::net::UnixStre
 
     loop {
         line.clear();
-        match buf_reader.read_line(&mut line).await {
+        match read_line_bounded(&mut buf_reader, &mut line, MAX_RPC_LINE_BYTES).await {
             Ok(0) => break, // EOF
             Ok(_) => {
                 let trimmed = line.trim();
@@ -1312,6 +1423,67 @@ async fn handle_connection(state: Arc<DaemonState>, stream: tokio::net::UnixStre
 mod tests {
     use super::*;
     use ed25519_dalek::Verifier;
+
+    #[test]
+    fn test_write_key_file_0600_refuses_overwrite_and_sets_mode() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "nexusinbox-signer-keytest-{}.key",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        // First write creates the file with 0600 from the start.
+        write_key_file_0600(&path, b"first", false).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "key file must be created 0600, got {mode:o}");
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+
+        // Without overwrite, an existing file is refused (create_new) and
+        // its contents are untouched — this is what protects a live key
+        // from a stray `--generate`.
+        let err = write_key_file_0600(&path, b"second", false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+
+        // With overwrite (--force) the file is replaced.
+        write_key_file_0600(&path, b"third", true).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"third");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_caps_oversized_lines() {
+        let mut r = BufReader::new(&b"{\"id\":1}\nrest"[..]);
+        let mut line = String::new();
+        let n = read_line_bounded(&mut r, &mut line, 64).await.unwrap();
+        assert_eq!(n, 9);
+        assert_eq!(line, "{\"id\":1}\n");
+
+        // Oversized line with no newline → InvalidData; the daemon drops
+        // the connection instead of buffering until OOM.
+        let big = vec![b'x'; 200];
+        let mut r = BufReader::new(&big[..]);
+        let mut line = String::new();
+        let err = read_line_bounded(&mut r, &mut line, 64).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+
+        let mut big_nl = vec![b'y'; 100];
+        big_nl.push(b'\n');
+        let mut r = BufReader::new(&big_nl[..]);
+        let mut line = String::new();
+        assert!(read_line_bounded(&mut r, &mut line, 64).await.is_err());
+
+        let mut r = BufReader::new(&b""[..]);
+        let mut line = String::new();
+        assert_eq!(read_line_bounded(&mut r, &mut line, 64).await.unwrap(), 0);
+        assert!(line.is_empty());
+    }
 
     #[test]
     fn test_encrypt_decrypt_key() {

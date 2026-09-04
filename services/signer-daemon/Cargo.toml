@@ -12,6 +12,9 @@ path = "src/main.rs"
 # Ed25519 signing
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
+# Passphrase prompt without terminal echo (audit 2026-09-04: the previous
+# plain stdin read echoed the passphrase to the terminal / scrollback).
+rpassword = "7"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

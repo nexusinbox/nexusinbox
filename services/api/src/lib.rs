@@ -1120,11 +1120,16 @@ fn mask_identifier(raw: &str) -> String {
     if raw.is_empty() {
         return "none".to_string();
     }
-    if raw.len() <= 10 {
+    // Operate on chars, not bytes. `raw` is caller-controlled (e.g. the
+    // nullifier_hash on a failed /auth/verify — a pre-auth path) and
+    // byte-slicing panics when offset 6 or len-4 lands inside a multibyte
+    // UTF-8 sequence.
+    let chars: Vec<char> = raw.chars().collect();
+    if chars.len() <= 10 {
         return "***".to_string();
     }
-    let start = &raw[..6];
-    let end = &raw[raw.len() - 4..];
+    let start: String = chars[..6].iter().collect();
+    let end: String = chars[chars.len() - 4..].iter().collect();
     format!("{start}...{end}")
 }
 
@@ -3550,8 +3555,16 @@ async fn enforce_request_rate_limit(
     request: Request,
     next: Next,
 ) -> Response {
+    // /health is polled by Fly's checks and external monitors and does a DB
+    // round-trip; it must not drain the process-wide budget that every
+    // other route (logins, sends, token refresh) shares — a few monitors
+    // each under their own per-IP cap could otherwise 429 the whole
+    // platform for the rest of the window. It still goes through the
+    // per-IP limiter below.
+    let skip_global = request.uri().path() == "/health";
+
     // Global rate limit
-    if !consume_request_rate_limit(&state) {
+    if !skip_global && !consume_request_rate_limit(&state) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
@@ -10922,9 +10935,13 @@ async fn list_message_attachments(
         None => return Err(database_required_but_unavailable_error()),
     };
 
-    // Ownership check: user must own the message.
-    let owner_row = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM message_index WHERE id = $1 AND owner_user_id = $2",
+    // Ownership check: user must own the message, and an agent token must
+    // be bound to it — the same sender/recipient rule message_content,
+    // flags and delete apply. This endpoint previously checked only
+    // owner_user_id, letting agent-A's token list agent-B's attachments
+    // under the same account (audit 2026-09-04).
+    let owner_row = sqlx::query(
+        "SELECT sender_did, recipient_did FROM message_index WHERE id = $1 AND owner_user_id = $2",
     )
     .bind(message_id)
     .bind(user_uuid)
@@ -10932,9 +10949,12 @@ async fn list_message_attachments(
     .await
     .map_err(|error| internal_error("failed to load message", error))?;
 
-    if owner_row.is_none() {
+    let Some(owner_row) = owner_row else {
         return Err(not_found_error("message not found"));
-    }
+    };
+    let sender_did: String = owner_row.get("sender_did");
+    let recipient_did: String = owner_row.get("recipient_did");
+    enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
 
     let rows = sqlx::query(
         r#"
@@ -11004,18 +11024,25 @@ async fn generate_attachment_download_url(
         None => return Err(database_required_but_unavailable_error()),
     };
 
-    // Step 1: verify user owns the message (same condition as message_content).
-    let msg_owned = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM message_index WHERE id = $1 AND owner_user_id = $2",
+    // Step 1: verify user owns the message AND, for agent tokens, that the
+    // message is bound to the calling agent — same condition as
+    // message_content. Without the agent check a sibling agent's token
+    // could mint a presigned download URL for this message's ciphertext
+    // (audit 2026-09-04).
+    let msg_owned = sqlx::query(
+        "SELECT sender_did, recipient_did FROM message_index WHERE id = $1 AND owner_user_id = $2",
     )
     .bind(message_id)
     .bind(user_uuid)
     .fetch_optional(&pool)
     .await
     .map_err(|error| internal_error("failed to load message", error))?;
-    if msg_owned.is_none() {
+    let Some(msg_owned) = msg_owned else {
         return Err(not_found_error("message not found"));
-    }
+    };
+    let msg_sender_did: String = msg_owned.get("sender_did");
+    let msg_recipient_did: String = msg_owned.get("recipient_did");
+    enforce_agent_bound_message(&pool, &ctx, &msg_sender_did, &msg_recipient_did).await?;
 
     // Step 2: verify the attachment row exists for this message, and the
     // underlying intent row is status='attached'.
@@ -11116,7 +11143,7 @@ async fn delete_attachment(
     // 'attached' rows are tied to a message and removed via message deletion.
     let row = sqlx::query(
         r#"
-        SELECT object_key, status
+        SELECT object_key, status, sender_did
         FROM attachment_uploads
         WHERE id = $1 AND owner_user_id = $2
         "#,
@@ -11131,6 +11158,20 @@ async fn delete_attachment(
     use sqlx::Row as SqlxRow;
     let object_key: String = row.get("object_key");
     let status: String = row.get("status");
+    let intent_sender_did: Option<String> = row.get("sender_did");
+
+    // An agent token may only delete intents its own agent created —
+    // mirrors create_attachment_intent's enforce_agent_bound_aid. Without
+    // this, a sibling agent under the same account could purge another
+    // agent's in-flight upload (audit 2026-09-04).
+    if let Some(did) = intent_sender_did.as_deref() {
+        if let Some(agent) = agent_owned_by_user_in_db(&pool, user_uuid, did)
+            .await
+            .map_err(|message| internal_server_error(&message))?
+        {
+            enforce_agent_bound_aid(&ctx, &agent.aid)?;
+        }
+    }
 
     if status == "attached" {
         return Err((
@@ -13540,6 +13581,21 @@ fn app_with_state(state: AppState) -> Router {
 #[cfg(test)]
 mod internal_tests {
     use super::*;
+
+    #[test]
+    fn mask_identifier_is_char_boundary_safe() {
+        // ASCII behaviour unchanged.
+        assert_eq!(mask_identifier(""), "none");
+        assert_eq!(mask_identifier("short"), "***");
+        assert_eq!(mask_identifier("0x1234567890abcdef"), "0x1234...cdef");
+        // Multibyte input that used to panic: '€' is 3 bytes and straddles
+        // byte offset 6, and len-4 landed mid-sequence too. This is
+        // reachable pre-auth via a bogus nullifier_hash on /auth/verify.
+        let masked = mask_identifier("aaaaa€aaaaaaaa€bb");
+        assert_eq!(masked, "aaaaa€...a€bb");
+        // Exactly the "≤10 chars but >10 bytes" case must not slice at all.
+        assert_eq!(mask_identifier("€€€€€€€€€€"), "***");
+    }
     use serial_test::serial;
 
     fn make_state() -> AppState {
