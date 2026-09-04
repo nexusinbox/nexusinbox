@@ -3708,6 +3708,22 @@ async fn enforce_csrf_protection(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
+/// Stamp `Strict-Transport-Security` on every response. The API is served
+/// over TLS at the edge (Fly) but didn't advertise HSTS, unlike the web app
+/// (which is preloaded). Browsers ignore the header over plain http, so it
+/// is harmless for local dev / the Next.js dev proxy. No `preload` — that
+/// directive belongs on the apex policy, not a subdomain API.
+async fn add_hsts_header(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .entry(axum::http::header::STRICT_TRANSPORT_SECURITY)
+        .or_insert(axum::http::HeaderValue::from_static(
+            "max-age=31536000; includeSubDomains",
+        ));
+    response
+}
+
 async fn enforce_request_timeout(request: Request, next: Next) -> Response {
     match tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS), next.run(request)).await {
         Ok(response) => response,
@@ -13515,6 +13531,9 @@ fn app_with_state(state: AppState) -> Router {
             enforce_request_rate_limit,
         ))
         .layer(axum::middleware::from_fn(enforce_request_timeout))
+        // Outermost so even short-circuited responses (429 / 504 from the
+        // layers above) carry HSTS.
+        .layer(axum::middleware::from_fn(add_hsts_header))
         .with_state(state)
 }
 

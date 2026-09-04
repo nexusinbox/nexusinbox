@@ -12,8 +12,10 @@ path = "src/main.rs"
 # Async runtime + UDS
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client for API proxy
-reqwest = { version = "0.12", features = ["json"] }
+# HTTP client for API proxy. rustls-tls (not the default native-tls) so the
+# Linux build doesn't link openssl — same backend as api / signer-daemon.
+# Verify with: cargo tree -i openssl --target x86_64-unknown-linux-gnu (empty).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

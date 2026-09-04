@@ -3,13 +3,14 @@
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
-    "//": "Security floors for transitive deps flagged by `pnpm audit` (2026-06-12). Each pin is the advisory's patched version; all are semver-compatible with what the parents request. body-parser is deliberately absent (only fix is 2.x, would break express 4); extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video).",
+    "//": "Security floors for transitive deps flagged by `pnpm audit` / Dependabot (2026-06-12, updated 2026-09-04). Each pin is the advisory's patched version; all are semver-compatible with what the parents request (body-parser/qs sit under express 5 via @modelcontextprotocol/sdk, so >=2.3.0 / >=6.16.0 are patch bumps). extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video).",
     "overrides": {
       "hono": ">=4.12.34",
       "@hono/node-server": ">=1.19.15",
       "fast-uri": ">=3.1.4",
       "ip-address": ">=10.3.1",
-      "qs": ">=6.15.2",
+      "qs": ">=6.16.0",
+      "body-parser": ">=2.3.0",
       "postcss": ">=8.5.12",
       "nanoid": ">=3.3.16",
       "ws": ">=8.21.0",
