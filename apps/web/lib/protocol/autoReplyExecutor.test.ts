@@ -71,6 +71,8 @@ function makeApi(overrides: Partial<AutoReplyExecutorApi> = {}): AutoReplyExecut
       content_type: "application/vnd.nexusinbox.a2a+json; v=1",
     })),
     markAutoReplySent: vi.fn(async () => ({ auto_reply_sent_at: "2026-04-24T21:34:00Z" })),
+    claimAutoReply: vi.fn(async () => true),
+    releaseAutoReplyClaim: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -451,5 +453,65 @@ describe("runAutoReplyExecutor: only answers live, well-formed requests", () => 
     expect(sendProtocolReply).toHaveBeenCalledTimes(1);
     const call = (sendProtocolReply as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(call.reply.action).toBe("decline");
+  });
+});
+
+describe("runAutoReplyExecutor claim (docs/29 §2.5)", () => {
+  async function run(api: AutoReplyExecutorApi, sendProtocolReply: SendProtocolReplyFn) {
+    await runAutoReplyExecutor({
+      viewerAgentDid: "did:key:zViewer",
+      viewerHasSigningKey: true,
+      messages: [makeEntry()],
+      policy: { v: 1, default_action: "auto_accept" },
+      masterAutoReplyEnabled: true,
+      isContact: () => true,
+      api,
+      sendProtocolReply,
+      decrypt: async () => scheduleProposeBody,
+    });
+  }
+
+  it("claims the row before sending", async () => {
+    const order: string[] = [];
+    const api = makeApi({
+      claimAutoReply: vi.fn(async () => {
+        order.push("claim");
+        return true;
+      }),
+    });
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {
+      order.push("send");
+    });
+    await run(api, sendProtocolReply);
+    expect(order).toEqual(["claim", "send"]);
+    expect(api.markAutoReplySent).toHaveBeenCalledWith("msg-1", expect.any(Object));
+  });
+
+  it("sends nothing when another executor holds the row", async () => {
+    const api = makeApi({ claimAutoReply: vi.fn(async () => false) });
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
+    await run(api, sendProtocolReply);
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+    expect(api.markAutoReplySent).not.toHaveBeenCalled();
+    expect(api.releaseAutoReplyClaim).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an API refusal (4xx)", Object.assign(new Error("bad request"), { status: 422 }), true],
+    ["a local failure before any request", new Error("encrypt failed"), true],
+    ["a server error (5xx)", Object.assign(new Error("server error"), { status: 503 }), false],
+    ["a network failure", new TypeError("Failed to fetch"), false],
+  ])("after %s, releases the claim only if nothing can have been sent", async (_, error, released) => {
+    const api = makeApi();
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {
+      throw error;
+    });
+    await run(api, sendProtocolReply);
+    expect(api.markAutoReplySent).not.toHaveBeenCalled();
+    if (released) {
+      expect(api.releaseAutoReplyClaim).toHaveBeenCalledWith("msg-1");
+    } else {
+      expect(api.releaseAutoReplyClaim).not.toHaveBeenCalled();
+    }
   });
 });

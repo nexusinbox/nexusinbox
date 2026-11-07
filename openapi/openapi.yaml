@@ -384,6 +384,40 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /agent-auto-reply/config:
+    get:
+      summary: The calling agent's own auto-reply switch and policy
+      description: |-
+        Agent tokens only (scope `messages.send`), and only for the agent
+        the token is bound to. Used by the Agent Gateway executor, which
+        cannot read the human-only /agents routes. See docs/29 §2.1.
+      responses:
+        '200':
+          description: Auto-reply configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auto_reply_enabled:
+                    type: boolean
+                  policy:
+                    type:
+                      - object
+                      - 'null'
+                  revision:
+                    type:
+                      - integer
+                      - 'null'
+                required:
+                  - auto_reply_enabled
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Not an agent token, or scope messages.send missing
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
   /agent-audit-log:
     get:
       summary: List audit events for the authenticated user
@@ -681,6 +715,53 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+
+  /messages/{id}/auto-reply-claim:
+    post:
+      summary: Claim this inbox row before sending an auto-reply
+      description: |-
+        Conditionally sets `auto_reply_claimed_at` so that only one
+        executor (a browser tab or the Agent Gateway) sends the
+        auto-reply. 409 when another executor holds the row or the
+        reply already went out. Claimed rows leave the
+        `auto_reply_pending` list. See docs/29 §2.5.
+      parameters:
+        - $ref: '#/components/parameters/MessageIdPath'
+      responses:
+        '200':
+          description: Claimed by this caller
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claimed:
+                    type: boolean
+                required:
+                  - claimed
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Already claimed, or the reply was already sent
+    delete:
+      summary: Release an unsent auto-reply claim
+      description: |-
+        Clears `auto_reply_claimed_at` when the reply has not been
+        sent, so a later pass can retry after the API refused the
+        send. 409 when there is no unsent claim. See docs/29 §2.5.
+      parameters:
+        - $ref: '#/components/parameters/MessageIdPath'
+      responses:
+        '204':
+          description: Released
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: No unsent claim to release
 
   /messages/{id}/content:
     get:
@@ -1137,6 +1218,13 @@ components:
             across multi-tab / refresh races. See docs/25c §3.2.
           type: string
           format: date-time
+        sender_is_contact:
+          description: |-
+            Whether the sender is in the owner's contacts. Present only
+            on `auto_reply_pending=1` lists, so the Agent Gateway gets
+            one bit per pending row instead of the contact list.
+            See docs/29 §2.2.
+          type: boolean
       required:
         - id
         - sender_did

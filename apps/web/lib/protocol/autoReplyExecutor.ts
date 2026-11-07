@@ -33,14 +33,31 @@ import type { IsoInterval } from "../calendar/gcalFreebusy";
 
 export const AUTO_REPLY_ORIGIN_CLIENT = "client_protocol_v1";
 
-/** Abstraction over the two API client methods the executor needs. */
+/** Abstraction over the API client methods the executor needs. */
 export type AutoReplyExecutorApi = {
   getMessageContent: (id: string) => Promise<MessageContentResponse>;
   markAutoReplySent: (
     id: string,
     params: { replyMessageId?: string },
   ) => Promise<{ auto_reply_sent_at: string }>;
+  /** `false` when another executor holds the row (docs/29 §2.5). */
+  claimAutoReply: (id: string) => Promise<boolean>;
+  releaseAutoReplyClaim: (id: string) => Promise<void>;
 };
+
+/**
+ * Whether a failed send certainly sent nothing, so its claim can be given
+ * back. An HTTP 4xx means the API refused the request; an error without a
+ * status came from local work (encryption, signing) before any request.
+ * A 5xx or a network failure may have happened after the server stored
+ * the reply, so the claim is kept rather than risk a duplicate.
+ */
+function sendCertainlyFailed(error: unknown): boolean {
+  if (error instanceof TypeError) return false; // fetch network failure
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return status >= 400 && status < 500;
+  return true;
+}
 
 /**
  * Callback the inbox provides so the executor can reuse the same
@@ -338,28 +355,47 @@ export async function runAutoReplyExecutor(
         continue;
       }
 
+      // Take the row first, so a second tab or the Agent Gateway cannot
+      // send the same reply (docs/29 §2.5).
+      if (!(await input.api.claimAutoReply(entry.id))) {
+        progress({
+          kind: "skipped",
+          messageId: entry.id,
+          reason: "claimed_by_another_executor",
+        });
+        continue;
+      }
+
       let replyMessageId: string | undefined;
-      await input.sendProtocolReply({
-        protocolType: parsed.protocol.type,
-        reply: replyPayload,
-        threadId: entry.thread_id ?? entry.id,
-        originalProtocolId: parsed.protocol.id,
-        subject: "Re: (auto-reply)",
-        bodySummary: "",
-        viewerAgentDid: input.viewerAgentDid,
-        proposerDid: entry.sender_did,
-        autoReplyOrigin: AUTO_REPLY_ORIGIN_CLIENT,
-        replyMessageIdSink: (id) => {
-          replyMessageId = id;
-        },
-      });
+      try {
+        await input.sendProtocolReply({
+          protocolType: parsed.protocol.type,
+          reply: replyPayload,
+          threadId: entry.thread_id ?? entry.id,
+          originalProtocolId: parsed.protocol.id,
+          subject: "Re: (auto-reply)",
+          bodySummary: "",
+          viewerAgentDid: input.viewerAgentDid,
+          proposerDid: entry.sender_did,
+          autoReplyOrigin: AUTO_REPLY_ORIGIN_CLIENT,
+          replyMessageIdSink: (id) => {
+            replyMessageId = id;
+          },
+        });
+      } catch (error) {
+        if (sendCertainlyFailed(error)) {
+          await input.api.releaseAutoReplyClaim(entry.id).catch(() => undefined);
+        }
+        throw error;
+      }
       await input.api.markAutoReplySent(entry.id, { replyMessageId });
       progress({ kind: "sent", messageId: entry.id, action: resolvedAction });
     } catch (error) {
       progress({ kind: "error", messageId: entry.id, error });
-      // Leave `auto_reply_sent_at` NULL so the next render retries
-      // naturally. The executor is idempotent: a second run that
-      // succeeds will flip the column.
+      // Leave `auto_reply_sent_at` NULL. Failures before the claim, and
+      // sends that certainly failed (claim released above), are retried
+      // on the next render; a send that may have gone out keeps its claim
+      // and is left to the human.
     }
   }
 }

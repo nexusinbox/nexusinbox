@@ -1,0 +1,10 @@
+{
+  "description": "x25519v1 content-key wrap shared by web (TS) and signer-daemon (Rust), docs/29 \u00a74. Each wrapped key must unwrap to content_key with the recipient private key.",
+  "recipient_private_key_b64url": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+  "recipient_public_key_b64url": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+  "content_key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "wrapped_keys": {
+    "ts_format": "x25519v1:7mOzPPcEXTbcx3R89ryapq0z1o_cRxOC8ZxQjDPGFHo:OhevRcuKysxz6qHwGZAvIw:-8gcqz7PRLdBCKvo:ZoazkSwW9kE2HhQvWXNyc65L9hI5KxO3qvL1kcEKub2dzmrC17dB0x8KuhBCRn-r4aUliWzvOZrYCI4",
+    "signer_daemon": "x25519v1:sdtpOqeVNUKnyz3V-nri8gsBmbjrz_kcWy2I4VO4uVg:yKgUaFL9-5-gxtvqjRNQdQ:2W6nTbUgaCixiAd4:lINxHjYAosPthaCKYm1J_PaIJZhm1-urDe-7NfzImnT6_Mu0xFwButyoAL7OPnkm_gr-YOolQVaceBA"
+  }
+}

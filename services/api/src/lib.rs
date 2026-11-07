@@ -783,6 +783,11 @@ struct MessageIndexEntryResponse {
     /// PATCH /messages/:id/auto-reply-sent. See docs/25c §3.2.
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_reply_sent_at: Option<String>,
+    /// Whether the sender is in the owner's contacts. Only set on
+    /// `auto_reply_pending=1` lists, so the Agent Gateway gets one bit per
+    /// pending message instead of the owner's contact list (docs/29 §2.2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender_is_contact: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -12525,6 +12530,12 @@ async fn list_messages(
               m.auto_reply_decision,
               m.auto_reply_reason,
               m.auto_reply_sent_at::text AS auto_reply_sent_at,
+              -- One bit per pending row for the Agent Gateway instead of
+              -- the owner's contact list (docs/29 §2.2). NULL otherwise.
+              CASE WHEN $11::bool THEN EXISTS (
+                SELECT 1 FROM contacts c
+                WHERE c.owner_user_id = m.owner_user_id AND c.did = m.sender_did
+              ) END AS sender_is_contact,
               sa.label AS sender_agent_label,
               su.display_name AS sender_user_name,
               ra.label AS recipient_agent_label,
@@ -12581,6 +12592,8 @@ async fn list_messages(
                 OR (
                   m.auto_reply_decision IN ('auto_accept', 'auto_decline')
                   AND m.auto_reply_sent_at IS NULL
+                  -- Claimed by an executor (docs/29 §2.5).
+                  AND m.auto_reply_claimed_at IS NULL
                 )
               )
             ORDER BY m.created_at DESC
@@ -12637,6 +12650,10 @@ async fn list_messages(
                 auto_reply_decision: row.try_get("auto_reply_decision").ok(),
                 auto_reply_reason: row.try_get("auto_reply_reason").ok(),
                 auto_reply_sent_at: row.try_get("auto_reply_sent_at").ok(),
+                sender_is_contact: row
+                    .try_get::<Option<bool>, _>("sender_is_contact")
+                    .ok()
+                    .flatten(),
             });
         }
         (out, total as usize)
@@ -12710,6 +12727,7 @@ async fn list_messages(
                 auto_reply_decision: None,
                 auto_reply_reason: None,
                 auto_reply_sent_at: None,
+                sender_is_contact: None,
             })
             .collect();
         (messages, total)
@@ -13287,6 +13305,169 @@ async fn update_message_flags(
             message: "message not found".to_string(),
         }),
     ))
+}
+
+/// Shared checks for the auto-reply claim routes: scope, row ownership,
+/// and for agent tokens, that the row belongs to the token's agent.
+async fn auto_reply_claim_target(
+    state: &AppState,
+    method: &Method,
+    uri: &Uri,
+    headers: &HeaderMap,
+    message_id: Uuid,
+) -> Result<(PgPool, Uuid), (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(state, headers, method.as_str(), uri.path()).await?;
+    ctx.require_scope("messages.send")?;
+    let pool = match state
+        .database_pool()
+        .await
+        .map_err(|message| internal_server_error(&message))?
+    {
+        Some(pool) => pool,
+        None => return Err(database_required_but_unavailable_error()),
+    };
+    let user_uuid = parse_user_uuid(ctx.user_id())?;
+    let row = sqlx::query(
+        "SELECT sender_did, recipient_did FROM message_index \
+         WHERE id = $1 AND owner_user_id = $2",
+    )
+    .bind(message_id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("message lookup failed", e))?;
+    let Some(row) = row else {
+        return Err(not_found_error("message not found"));
+    };
+    let sender_did: String = row.get("sender_did");
+    let recipient_did: String = row.get("recipient_did");
+    enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+    Ok((pool, user_uuid))
+}
+
+/// POST /messages/{id}/auto-reply-claim
+///
+/// Takes the row before an executor sends an auto-reply, so two executors
+/// (two browser tabs, or a tab and the Agent Gateway) cannot both reply.
+/// 409 when another executor holds it or the reply already went out. A row
+/// left claimed without `auto_reply_sent_at` was attempted but not
+/// confirmed; it leaves the pending list and stays with the human
+/// (docs/29 §2.5).
+async fn claim_auto_reply(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let (pool, user_uuid) =
+        auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
+    let claimed = sqlx::query(
+        "UPDATE message_index SET auto_reply_claimed_at = NOW() \
+         WHERE id = $1 AND owner_user_id = $2 \
+           AND auto_reply_sent_at IS NULL AND auto_reply_claimed_at IS NULL",
+    )
+    .bind(message_id)
+    .bind(user_uuid)
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("failed to claim auto-reply", e))?
+    .rows_affected();
+    if claimed == 0 {
+        return Err(conflict_error("auto-reply already claimed or sent"));
+    }
+    Ok(Json(serde_json::json!({ "claimed": true })))
+}
+
+/// DELETE /messages/{id}/auto-reply-claim
+///
+/// Gives an unsent claim back, for an executor whose send the API refused,
+/// so the next pass can retry. A claim whose reply went out stays.
+async fn release_auto_reply_claim(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    Path(message_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let (pool, user_uuid) =
+        auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
+    let released = sqlx::query(
+        "UPDATE message_index SET auto_reply_claimed_at = NULL \
+         WHERE id = $1 AND owner_user_id = $2 \
+           AND auto_reply_sent_at IS NULL AND auto_reply_claimed_at IS NOT NULL",
+    )
+    .bind(message_id)
+    .bind(user_uuid)
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("failed to release auto-reply claim", e))?
+    .rows_affected();
+    if released == 0 {
+        return Err(conflict_error("no unsent auto-reply claim to release"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+struct AgentAutoReplyConfigResponse {
+    auto_reply_enabled: bool,
+    policy: Option<serde_json::Value>,
+    revision: Option<i64>,
+}
+
+/// GET /agent-auto-reply/config
+///
+/// The calling agent's own auto-reply switch and policy, for the Agent
+/// Gateway executor (docs/29 §2.1). Agent tokens only, and only for the
+/// agent the token is bound to: the owner's other agents and contact list
+/// stay out of reach. Human sessions use /agents and
+/// /agents/{id}/auto-reply-policy.
+async fn get_agent_auto_reply_config(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Json<AgentAutoReplyConfigResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    let AuthContext::Agent { aid, .. } = &ctx else {
+        return Err(forbidden_error("an agent token is required"));
+    };
+    ctx.require_scope("messages.send")?;
+    let pool = match state
+        .database_pool()
+        .await
+        .map_err(|message| internal_server_error(&message))?
+    {
+        Some(pool) => pool,
+        None => return Err(database_required_but_unavailable_error()),
+    };
+    let user_uuid = parse_user_uuid(ctx.user_id())?;
+    let row = sqlx::query(
+        r#"
+        SELECT a.auto_reply, p.policy, p.revision
+        FROM agent_identities ai
+        JOIN agents a ON a.id = ai.agent_id
+        LEFT JOIN agent_auto_reply_policies p ON p.agent_id = a.id
+        WHERE ai.aid = $1 AND a.user_id = $2
+        "#,
+    )
+    .bind(aid)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("auto-reply config lookup failed", e))?;
+    let Some(row) = row else {
+        return Err(not_found_error("agent not found"));
+    };
+    Ok(Json(AgentAutoReplyConfigResponse {
+        auto_reply_enabled: row.get("auto_reply"),
+        policy: row
+            .try_get::<Option<serde_json::Value>, _>("policy")
+            .ok()
+            .flatten(),
+        revision: row.try_get::<Option<i64>, _>("revision").ok().flatten(),
+    }))
 }
 
 /// PATCH /messages/{id}/auto-reply-sent
@@ -14426,6 +14607,7 @@ fn app_with_state(state: AppState) -> Router {
         .route("/agent-auth/token", post(agent_auth_token))
         .route("/agent-auth/refresh", post(agent_auth_refresh))
         .route("/agent-auth/revoke", post(agent_auth_revoke))
+        .route("/agent-auto-reply/config", get(get_agent_auto_reply_config))
         .route("/agent-audit-log", get(list_agent_audit_log))
         .route("/agent-audit-log/bridge", post(ingest_bridge_audit_event))
         .route(
@@ -14459,6 +14641,10 @@ fn app_with_state(state: AppState) -> Router {
         .route(
             "/messages/{id}/auto-reply-sent",
             axum::routing::patch(mark_auto_reply_sent),
+        )
+        .route(
+            "/messages/{id}/auto-reply-claim",
+            post(claim_auto_reply).delete(release_auto_reply_claim),
         )
         .route(
             "/messages/{id}/flags",
@@ -14951,6 +15137,32 @@ mod internal_tests {
         };
         let err = enforce_agent_bound_aid(&ctx, "aid:ai:other456").expect_err("must reject");
         assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    /// Shared vector (tests/vectors/envelope_signing.json): the API verifies
+    /// exactly the bytes the signer daemon and the web sign (docs/29 §2.4).
+    #[test]
+    fn envelope_signature_matches_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/envelope_signing.json"
+        )))
+        .unwrap();
+        let field = |name: &str| vector["fields"][name].as_str().unwrap().to_string();
+        let payload = build_envelope_signing_payload(
+            &field("sender_did"),
+            &field("recipient_did"),
+            &field("subject_encrypted"),
+            &field("encrypted_content"),
+            &field("encrypted_key"),
+            &field("nonce"),
+        );
+        assert_eq!(payload, vector["payload"].as_str().unwrap());
+        assert!(verify_envelope_signature(
+            vector["public_key_b64url"].as_str().unwrap(),
+            vector["signature_b64url"].as_str().unwrap(),
+            &payload,
+        ));
     }
 
     #[test]

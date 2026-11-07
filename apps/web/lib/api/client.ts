@@ -363,6 +363,48 @@ export class NexusInboxApiClient {
     );
   }
 
+  /**
+   * Takes an inbox row before the auto-reply executor sends, so two
+   * executors (two tabs, or a tab and the Agent Gateway) cannot both
+   * reply. Resolves `false` when another executor holds the row or the
+   * reply already went out (409). See docs/29 §2.5.
+   */
+  async claimAutoReply(id: string): Promise<boolean> {
+    try {
+      await this.request<{ claimed: boolean }>(
+        "/messages/" + encodeURIComponent(id) + "/auto-reply-claim",
+        { method: "POST" },
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Gives back an unsent claim after the API refused the send, so a later
+   * pass can retry. 204 on success, so this skips {@link request}, which
+   * always parses a JSON body.
+   */
+  async releaseAutoReplyClaim(id: string): Promise<void> {
+    const headers = new Headers();
+    const token = this.bearerToken.trim();
+    if (token) headers.set("Authorization", "Bearer " + token);
+    const response = await fetch(
+      this.baseUrl + "/messages/" + encodeURIComponent(id) + "/auto-reply-claim",
+      {
+        method: "DELETE",
+        headers,
+        cache: "no-store",
+        credentials: "include",
+      },
+    );
+    if (!response.ok) {
+      throw new ApiError(response.statusText || "release failed", response.status);
+    }
+  }
+
   async seedMessage(params: {
     senderDid: string;
     recipientDid: string;

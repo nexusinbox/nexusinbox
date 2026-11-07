@@ -245,6 +245,9 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
             getMessageContent: (id) => defaultApiClient.getMessageContent(id),
             markAutoReplySent: (id, params) =>
               defaultApiClient.markAutoReplySent(id, params),
+            claimAutoReply: (id) => defaultApiClient.claimAutoReply(id),
+            releaseAutoReplyClaim: (id) =>
+              defaultApiClient.releaseAutoReplyClaim(id),
           },
           sendProtocolReply: (input) =>
             realSendProtocolReply({

@@ -1727,6 +1727,70 @@ mod tests {
         assert!(did.starts_with("did:key:z"));
     }
 
+    /// Shared vector (tests/vectors/envelope_signing.json): the daemon signs
+    /// exactly the bytes the API verifies and the web signs (docs/29 §2.4).
+    #[test]
+    fn envelope_signing_matches_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/envelope_signing.json"
+        )))
+        .unwrap();
+        let field = |name: &str| vector["fields"][name].as_str().unwrap().to_string();
+        let params = SignEnvelopeParams {
+            sender_did: field("sender_did"),
+            recipient_did: field("recipient_did"),
+            subject_encrypted: field("subject_encrypted"),
+            encrypted_content: field("encrypted_content"),
+            encrypted_key: field("encrypted_key"),
+            nonce: field("nonce"),
+        };
+        let payload = build_envelope_signing_payload(&params);
+        assert_eq!(payload, vector["payload"].as_str().unwrap());
+
+        let seed_hex = vector["signing_seed_hex"].as_str().unwrap();
+        let mut seed = [0u8; 32];
+        for (i, byte) in seed.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&seed_hex[i * 2..i * 2 + 2], 16).unwrap();
+        }
+        let key = SigningKey::from_bytes(&seed);
+        assert_eq!(
+            URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()),
+            vector["public_key_b64url"].as_str().unwrap()
+        );
+        let signature = URL_SAFE_NO_PAD.encode(key.sign(payload.as_bytes()).to_bytes());
+        assert_eq!(signature, vector["signature_b64url"].as_str().unwrap());
+    }
+
+    /// Shared vector (tests/vectors/x25519_wrap.json): keys wrapped by the
+    /// web and by this daemon both unwrap here (docs/29 §4).
+    #[test]
+    fn x25519_wrap_matches_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/x25519_wrap.json"
+        )))
+        .unwrap();
+        let private: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(vector["recipient_private_key_b64url"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let secret = StaticSecret::from(private);
+        assert_eq!(
+            URL_SAFE_NO_PAD.encode(X25519PublicKey::from(&secret).as_bytes()),
+            vector["recipient_public_key_b64url"].as_str().unwrap()
+        );
+        let content_key = vector["content_key"].as_str().unwrap();
+        for (origin, wrapped) in vector["wrapped_keys"].as_object().unwrap() {
+            assert_eq!(
+                unwrap_content_key(&secret, wrapped.as_str().unwrap()).unwrap(),
+                content_key,
+                "wrapped by {origin}"
+            );
+        }
+    }
+
     #[test]
     fn test_rpc_sign_envelope() {
         let key = SigningKey::generate(&mut OsRng);
