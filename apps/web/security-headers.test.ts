@@ -134,6 +134,44 @@ describe("web security headers", () => {
     expect(xfo).toBe("DENY");
   });
 
+  it("allows World ID hosts only on the login pages", () => {
+    for (const isDev of [false, true]) {
+      for (const pathname of ["/login", "/login/idkit"]) {
+        const csp = buildCsp("test-nonce", pathname, { isDev });
+        expect(csp, `${pathname} needs World ID`).toContain("https://bridge.worldcoin.org");
+        expect(csp).toContain("https://world-id-assets.com");
+      }
+      for (const pathname of ["/inbox", "/settings/agents", "/compose", "/help", "/"]) {
+        const csp = buildCsp("test-nonce", pathname, { isDev });
+        for (const host of ["worldcoin.org", "world.org", "world-id-assets.com"]) {
+          expect(csp, `${host} leaked into ${pathname} (isDev=${isDev})`).not.toContain(host);
+        }
+      }
+    }
+  });
+
+  it("pins attachment fetches to ATTACHMENT_STORAGE_ORIGIN when it is a plain https source", () => {
+    const saved = process.env.ATTACHMENT_STORAGE_ORIGIN;
+    try {
+      delete process.env.ATTACHMENT_STORAGE_ORIGIN;
+      expect(buildCsp("n", "/inbox", { isDev: false })).toContain("https://*.r2.cloudflarestorage.com");
+
+      process.env.ATTACHMENT_STORAGE_ORIGIN = "https://abc123.r2.cloudflarestorage.com/agent-inbox-prod/";
+      const pinned = buildCsp("n", "/inbox", { isDev: false });
+      expect(pinned).toContain("https://abc123.r2.cloudflarestorage.com/agent-inbox-prod/");
+      expect(pinned).not.toContain("https://*.r2.cloudflarestorage.com");
+
+      // A value that would smuggle extra sources or directives is ignored.
+      process.env.ATTACHMENT_STORAGE_ORIGIN = "https://evil.example; script-src *";
+      const rejected = buildCsp("n", "/inbox", { isDev: false });
+      expect(rejected).toContain("https://*.r2.cloudflarestorage.com");
+      expect(rejected).not.toContain("evil.example");
+    } finally {
+      if (saved === undefined) delete process.env.ATTACHMENT_STORAGE_ORIGIN;
+      else process.env.ATTACHMENT_STORAGE_ORIGIN = saved;
+    }
+  });
+
   it("sets X-Frame-Options: SAMEORIGIN on /login/idkit", () => {
     const request = new NextRequest("https://app.nexusinbox.ai/login/idkit");
     const response = middleware(request);

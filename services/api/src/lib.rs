@@ -4753,6 +4753,51 @@ async fn enforce_agent_bound_message(
     Ok(())
 }
 
+/// Changes to a message row by an agent token: status, folder, star,
+/// delete, and the auto-reply marks. Stricter than reading. The recipient
+/// agent may change its copy. The sender agent may change only its own
+/// sent copy of a cross-person send: a send between two agents of the same
+/// person is a single row, which is the receiving sibling's inbox entry,
+/// so the sender must not archive, flag or delete it. 404 otherwise, the
+/// same answer as an unknown message. Human sessions pass.
+async fn enforce_agent_may_modify_message(
+    pool: &PgPool,
+    ctx: &AuthContext,
+    sender_did: &str,
+    recipient_did: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let AuthContext::Agent { aid, user_id, .. } = ctx else {
+        return Ok(());
+    };
+    let user_uuid = parse_user_uuid(user_id)?;
+    let row = sqlx::query(
+        r#"
+        SELECT
+          EXISTS (SELECT 1 FROM agent_identity_keys WHERE aid = $1 AND did = $3) AS owns_recipient,
+          EXISTS (SELECT 1 FROM agent_identity_keys WHERE aid = $1 AND did = $2) AS owns_sender,
+          EXISTS (
+            SELECT 1 FROM agent_identity_keys k
+            JOIN agent_identities i ON i.aid = k.aid
+            WHERE k.did = $3 AND i.user_id = $4
+          ) AS recipient_same_person
+        "#,
+    )
+    .bind(aid)
+    .bind(sender_did)
+    .bind(recipient_did)
+    .bind(user_uuid)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| internal_error("agent-bound message lookup failed", e))?;
+    let owns_recipient: bool = row.get("owns_recipient");
+    let owns_sender: bool = row.get("owns_sender");
+    let recipient_same_person: bool = row.get("recipient_same_person");
+    if owns_recipient || (owns_sender && !recipient_same_person) {
+        return Ok(());
+    }
+    Err(not_found_error("message not found"))
+}
+
 /// In-memory twin of {@link enforce_agent_bound_message} for tests
 /// and dev runs without a DB. Walks `state.agents_by_user` for all
 /// agents whose `aid` matches the caller and whose `did` is one of
@@ -13190,7 +13235,9 @@ async fn update_message_status(
 ) -> Result<Json<UpdateMessageStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
     let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
     // Status update (read/archived) requires messages.read scope
-    ctx.require_scope("messages.read")?;
+    // Changing a message is not reading it: a read-only agent token must
+    // not archive, flag or re-file the person's messages (audit 2026-11-07).
+    ctx.require_scope("messages.send")?;
     let user_id = ctx.user_id().to_string();
     let maybe_pool = state
         .database_pool()
@@ -13227,7 +13274,7 @@ async fn update_message_status(
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
-            enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+            enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
         }
         // Archiving a message also moves it out of the inbox folder so the
         // inbox view no longer shows it. This mirrors Gmail's archive
@@ -13331,7 +13378,9 @@ async fn update_message_flags(
     JsonBody(payload): JsonBody<UpdateMessageFlagsRequest>,
 ) -> Result<Json<UpdateMessageFlagsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
-    ctx.require_scope("messages.read")?;
+    // Changing a message is not reading it: a read-only agent token must
+    // not archive, flag or re-file the person's messages (audit 2026-11-07).
+    ctx.require_scope("messages.send")?;
     let user_id = ctx.user_id().to_string();
     let maybe_pool = state
         .database_pool()
@@ -13379,7 +13428,7 @@ async fn update_message_flags(
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
-            enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+            enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
         }
         // Gmail-parity invariant: restoring a message to the inbox clears a
         // lingering 'archived' status. Without this, a message that was
@@ -13501,7 +13550,7 @@ async fn auto_reply_claim_target(
     };
     let sender_did: String = row.get("sender_did");
     let recipient_did: String = row.get("recipient_did");
-    enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+    enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
     Ok((pool, user_uuid))
 }
 
@@ -13690,7 +13739,7 @@ async fn mark_auto_reply_sent(
     };
     let sender_did: String = row.get("sender_did");
     let recipient_did: String = row.get("recipient_did");
-    enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+    enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
 
     // Idempotent UPDATE: sets the column only when it's still NULL,
     // then returns the stamped value (either the NOW() we just wrote
@@ -13816,7 +13865,7 @@ async fn delete_message(
         if let Some(row) = pre {
             let sender_did: String = row.get("sender_did");
             let recipient_did: String = row.get("recipient_did");
-            enforce_agent_bound_message(&pool, &ctx, &sender_did, &recipient_did).await?;
+            enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
         }
         let deleted_storage_ref: Option<String> = sqlx::query_scalar(
             "DELETE FROM message_index WHERE id = $1 AND owner_user_id = $2 \

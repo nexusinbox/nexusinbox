@@ -93,6 +93,31 @@ const UNSAFE_EVAL_PATHS = new Set<string>(["/login/idkit"]);
 const SAME_ORIGIN_FRAME_PATHS = new Set<string>(["/login/idkit"]);
 
 /**
+ * Pages that run World ID (IDKit): the login page and its IDKit iframe.
+ * Every other page drops the World ID hosts from its CSP, so an XSS there
+ * cannot reach them (audit 2026-11-07).
+ */
+const WORLD_ID_PATHS = new Set<string>(["/login", "/login/idkit"]);
+
+const WORLD_ID_HOSTS = "https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org";
+
+/**
+ * Where browsers fetch attachment blobs. `ATTACHMENT_STORAGE_ORIGIN` pins it
+ * to the deployment's own R2 endpoint (optionally with the bucket path,
+ * e.g. `https://<account>.r2.cloudflarestorage.com/<bucket>/`); unset keeps
+ * the R2 wildcard so self-hosted setups keep working. Anything that is not a
+ * plain https source falls back to the wildcard rather than reaching the
+ * header.
+ */
+function attachmentStorageSource(): string {
+  const configured = process.env.ATTACHMENT_STORAGE_ORIGIN?.trim() ?? "";
+  if (/^https:\/\/[a-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._~\/-]*)?$/.test(configured)) {
+    return configured;
+  }
+  return "https://*.r2.cloudflarestorage.com";
+}
+
+/**
  * Build a per-request Content-Security-Policy header with a fresh nonce.
  *
  * Next.js App Router injects inline scripts for hydration. Previously we
@@ -163,8 +188,12 @@ export function buildCsp(
   // Attachment downloads are fetched from a Cloudflare R2 presigned URL
   // (AGENT_INBOX_S3_ENDPOINT, shaped `<account>.r2.cloudflarestorage.com`).
   // Without this entry the production CSP blocks the ConversationThread
-  // attachment fetch. Scoped to the R2 S3-endpoint wildcard, not `*`.
-  const r2Connect = "https://*.r2.cloudflarestorage.com";
+  // attachment fetch. See attachmentStorageSource for pinning it.
+  const r2Connect = attachmentStorageSource();
+
+  // World ID only on the pages that run IDKit.
+  const worldId = WORLD_ID_PATHS.has(pathname);
+  const worldIdConnect = worldId ? ` ${WORLD_ID_HOSTS}` : "";
 
   // Bring-your-own-key integrations the browser calls directly with the
   // user's own credential — nothing here goes through our API:
@@ -184,8 +213,8 @@ export function buildCsp(
 
   // Same `isDev` as script-src so tests can assert the production shape.
   const connectSrc = isDev
-    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} ${byokConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`
-    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} ${byokConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`;
+    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} ${byokConnect}${worldIdConnect}`
+    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} ${byokConnect}${worldIdConnect}`;
 
   return [
     "default-src 'self'",
@@ -194,7 +223,7 @@ export function buildCsp(
     frameAncestors,
     // accounts.google.com: Google Identity Services renews the Calendar
     // token silently (`prompt: "none"`) without opening a popup.
-    "frame-src 'self' https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org https://accounts.google.com",
+    `frame-src 'self'${worldIdConnect} https://accounts.google.com`,
     "form-action 'self'",
     // IDKit v4 fetches TWK Lausanne fonts (5 weights) from
     // `world-id-assets.com` and may pull occasional brand assets /
@@ -203,8 +232,8 @@ export function buildCsp(
     // them explicitly. Without this, the IDKit widget renders in
     // fallback fonts and iOS Safari can show a "content blocked"
     // interstitial when CSP violations pile up.
-    "img-src 'self' data: blob: https://world-id-assets.com",
-    "font-src 'self' data: https://world-id-assets.com",
+    `img-src 'self' data: blob:${worldId ? " https://world-id-assets.com" : ""}`,
+    `font-src 'self' data:${worldId ? " https://world-id-assets.com" : ""}`,
     scriptSrc,
     // style-src stays 'unsafe-inline' — Next.js / styled-jsx emit inline styles
     // without nonces and CSS injection is significantly less dangerous than JS.
