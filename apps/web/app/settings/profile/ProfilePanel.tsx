@@ -2,7 +2,12 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { AuthLogoutButton } from "../../_components/AuthLogoutButton";
-import { useAuthSessionQuery, useUpdateProfileMutation } from "../../../lib/api/hooks";
+import {
+  useAuthSessionQuery,
+  useDeleteAccountMutation,
+  useUpdateProfileMutation,
+} from "../../../lib/api/hooks";
+import { ApiError } from "../../../lib/api/client";
 import { useTranslation } from "../../../lib/i18n";
 
 function formatDate(iso: string | undefined): string {
@@ -37,6 +42,9 @@ export function ProfilePanel() {
 
   const sessionQuery = useAuthSessionQuery();
   const updateProfile = useUpdateProfileMutation();
+  const deleteAccount = useDeleteAccountMutation();
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteError, setDeleteError] = useState<"reauth" | "failed" | null>(null);
   const user = sessionQuery.data?.user;
 
   const [displayName, setDisplayName] = useState("");
@@ -65,6 +73,16 @@ export function ProfilePanel() {
     } catch (error) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : t("profile.updateFailed"));
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleteError(null);
+    try {
+      await deleteAccount.mutateAsync();
+      window.location.assign("/login");
+    } catch (error) {
+      setDeleteError(error instanceof ApiError && error.status === 403 ? "reauth" : "failed");
     }
   };
 
@@ -188,6 +206,67 @@ export function ProfilePanel() {
           </div>
         </div>
         <p className="settings-card-desc">{t("profile.sessionDesc")}</p>
+      </section>
+
+      {/* Delete account (docs/28 §5 P2) */}
+      <section className="settings-card" data-testid="profile-delete">
+        <div className="settings-card-header">
+          <div className="settings-card-heading">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d93025" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+            </svg>
+            <h2 className="settings-card-title">{t("profile.deleteTitle")}</h2>
+          </div>
+        </div>
+        <p className="settings-card-desc">{t("profile.deleteDesc")}</p>
+        <p className="settings-card-desc">{t("profile.deleteKeeps")}</p>
+        <p className="settings-card-desc" style={{ marginBottom: 16 }}>
+          {t("profile.deleteReauthNote")}
+        </p>
+        <div className="settings-form">
+          <div className="field">
+            <label htmlFor="delete-confirm" className="field-label">
+              {t("profile.deleteConfirmLabel", { word: t("profile.deleteConfirmWord") })}
+            </label>
+            <input
+              id="delete-confirm"
+              type="text"
+              className="input"
+              value={deleteConfirm}
+              onChange={(event) => setDeleteConfirm(event.target.value)}
+              autoComplete="off"
+              data-testid="profile-delete-confirm"
+            />
+          </div>
+          <div className="settings-form-actions">
+            <button
+              type="button"
+              className="btn"
+              style={{ color: "#d93025", borderColor: "#d93025" }}
+              disabled={
+                deleteAccount.isPending ||
+                deleteConfirm.trim() !== t("profile.deleteConfirmWord")
+              }
+              onClick={handleDelete}
+              data-testid="profile-delete-button"
+            >
+              {deleteAccount.isPending ? t("profile.deleting") : t("profile.deleteBtn")}
+            </button>
+            {deleteError === "reauth" && (
+              <span className="badge" role="alert">
+                {t("profile.deleteReauth")}{" "}
+                <a href="/login?next=/settings/profile">{t("profile.deleteReauthLink")}</a>
+              </span>
+            )}
+            {deleteError === "failed" && (
+              <span className="badge" role="alert">
+                {t("profile.deleteFailed")}
+              </span>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

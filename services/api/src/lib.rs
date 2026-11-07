@@ -4384,6 +4384,172 @@ async fn auth_logout(
     Ok((response_headers, Json(AuthLogoutResponse { success: true })))
 }
 
+/// How recent the sign-in must be to delete the account.
+const ACCOUNT_DELETE_REAUTH_SECS: i64 = 10 * 60;
+
+/// DELETE /auth/account
+///
+/// Deletes the signed-in person's account and everything that is theirs
+/// alone (docs/28 §5 P2, runbook 18a §11.1). Browser sessions only, and only
+/// within ACCOUNT_DELETE_REAUTH_SECS of a World ID sign-in: an older or
+/// stolen session has to prove the person again first (403
+/// `reauthentication_required`).
+///
+/// Another person's copy of a conversation stays theirs: message bodies they
+/// still reference are kept, and an attachment shared with them is handed to
+/// them before the delete (the link from their message would otherwise
+/// block it). Everything else cascades from `users`: agents, identities,
+/// credentials, tokens, contacts, blocks, sessions, the audit log, this
+/// person's message rows and unshared uploads. Storage objects are removed
+/// after the commit; the bucket's lifecycle rule (docs/28 §5) catches any
+/// that fail.
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(HeaderMap, StatusCode), (StatusCode, Json<ErrorResponse>)> {
+    // Agent tokens are not session JWTs, so they stop here with 401.
+    let claims = authenticated_claims(&state, &headers).await?;
+    let jwt_id = claims
+        .jti
+        .as_deref()
+        .ok_or_else(|| unauthorized_error("token is missing jti"))?;
+    let pool = match state
+        .database_pool()
+        .await
+        .map_err(|message| internal_server_error(&message))?
+    {
+        Some(pool) => pool,
+        None => return Err(database_required_but_unavailable_error()),
+    };
+    let user_uuid = parse_user_uuid(&claims.sub)?;
+
+    // The session's own server-side issue time, not a claim from the token.
+    let recent: Option<bool> = sqlx::query_scalar(
+        "SELECT issued_at > NOW() - ($3::bigint * INTERVAL '1 second') FROM sessions \
+         WHERE user_id = $1 AND jwt_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(user_uuid)
+    .bind(jwt_id)
+    .bind(ACCOUNT_DELETE_REAUTH_SECS)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("failed to look up session", e))?;
+    match recent {
+        None => return Err(unauthorized_error("session not found")),
+        Some(false) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "reauthentication_required".to_string(),
+                    message: "sign in with World ID again to delete the account".to_string(),
+                }),
+            ))
+        }
+        Some(true) => {}
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start account deletion", e))?;
+    sqlx::query("SELECT 1 FROM users WHERE id = $1 FOR UPDATE")
+        .bind(user_uuid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to lock account", e))?;
+
+    // Attachments another person's message still links become theirs.
+    sqlx::query(
+        r#"
+        UPDATE attachment_uploads au
+        SET owner_user_id = ma.owner_user_id
+        FROM message_attachments ma
+        WHERE au.owner_user_id = $1
+          AND ma.attachment_upload_id = au.id
+          AND ma.owner_user_id <> $1
+        "#,
+    )
+    .bind(user_uuid)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to hand over shared attachments", e))?;
+
+    // Storage to remove once the rows are gone: bodies no other person's
+    // row references, and this person's remaining (unshared) uploads.
+    let message_blobs: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT DISTINCT m.storage_ref
+        FROM message_index m
+        WHERE m.owner_user_id = $1
+          AND m.storage_ref <> ''
+          AND NOT EXISTS (
+            SELECT 1 FROM message_index o
+            WHERE o.storage_ref = m.storage_ref AND o.owner_user_id <> $1
+          )
+        "#,
+    )
+    .bind(user_uuid)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to collect message storage", e))?;
+    let attachment_objects: Vec<String> = sqlx::query_scalar(
+        "SELECT object_key FROM attachment_uploads WHERE owner_user_id = $1 AND purged_at IS NULL",
+    )
+    .bind(user_uuid)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to collect attachment storage", e))?;
+
+    // This person's own attachment links go first: the link to an upload is
+    // ON DELETE RESTRICT, checked immediately, so leaving it to the cascade
+    // could fail depending on the order Postgres runs it in.
+    sqlx::query("DELETE FROM message_attachments WHERE owner_user_id = $1")
+        .bind(user_uuid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to delete attachment links", e))?;
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_uuid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to delete account", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit account deletion", e))?;
+
+    let mut storage_failures = 0usize;
+    for storage_ref in &message_blobs {
+        if delete_storage_object_by_ref(&state, &claims.sub, storage_ref)
+            .await
+            .is_err()
+        {
+            storage_failures += 1;
+        }
+    }
+    if !attachment_objects.is_empty() {
+        let client = Client::new();
+        for object_key in &attachment_objects {
+            if s3_delete_object(&client, object_key).await.is_err() {
+                storage_failures += 1;
+            }
+        }
+    }
+    tracing::info!(
+        message_blobs = message_blobs.len(),
+        attachment_objects = attachment_objects.len(),
+        storage_failures,
+        "account deleted"
+    );
+
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear_session_cookie())
+            .map_err(|_| internal_server_error("failed to clear session cookie"))?,
+    );
+    Ok((response_headers, StatusCode::NO_CONTENT))
+}
+
 async fn auth_session(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     match authenticated_claims(&state, &headers).await {
         Ok(claims) => {
@@ -14354,6 +14520,7 @@ fn app_with_state(state: AppState) -> Router {
             get(auth_session).patch(update_auth_profile),
         )
         .route("/auth/logout", post(auth_logout))
+        .route("/auth/account", axum::routing::delete(delete_account))
         .route("/agents", get(list_agents).post(create_agent))
         .route(
             "/agents/{id}",

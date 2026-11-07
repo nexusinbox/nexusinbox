@@ -408,6 +408,19 @@ export function useAuthLogoutMutation() {
   });
 }
 
+export function useDeleteAccountMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => defaultApiClient.deleteAccount(),
+    onSuccess: async () => {
+      // Same clean-up as logout: the session is gone with the account.
+      await queryClient.clear();
+      clearAllBridgeTokens();
+      await disconnectLLM();
+    },
+  });
+}
+
 export function useMessageContentQuery(id: string | null) {
   return useQuery({
     queryKey: queryKeys.messageContent(id),

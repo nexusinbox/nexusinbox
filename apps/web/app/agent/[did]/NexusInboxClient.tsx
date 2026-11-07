@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../../_components/AppShell";
 import { RefreshIconButton } from "../../_components/RefreshIconButton";
 import { ConversationThread } from "../../_components/ConversationThread";
+import { RetentionNotice } from "../../_components/RetentionNotice";
 import { groupMessagesByThread } from "../../../lib/inbox/group-by-thread";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { MessageFolderQuery } from "../../../lib/api/types";
@@ -544,6 +545,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
       ) : null}
       <section className="mail-layout" style={layoutStyle}>
         <aside className="thread-list">
+          <RetentionNotice />
           <div
             className="thread-list-toolbar"
             data-testid="thread-list-toolbar"

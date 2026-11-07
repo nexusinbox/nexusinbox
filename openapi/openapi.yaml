@@ -75,6 +75,23 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /auth/account:
+    delete:
+      summary: Delete the signed-in person's account
+      description: |-
+        Browser sessions only, within 10 minutes of a World ID sign-in
+        (403 `reauthentication_required` otherwise). Deletes the account
+        and everything that is the person's alone; messages in other
+        people's inboxes stay theirs, and attachments shared with them are
+        handed over. Clears the session cookie. See docs/28 §5.
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The sign-in is too old; sign in with World ID again
+
   /auth/logout:
     post:
       summary: Revoke current session and clear auth cookie

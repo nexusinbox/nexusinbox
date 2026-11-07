@@ -652,6 +652,29 @@ export class NexusInboxApiClient {
     );
   }
 
+  /**
+   * Deletes the signed-in person's account (DELETE /auth/account). 204 on
+   * success, so this skips {@link request}, which always parses a JSON body.
+   * A 403 means the sign-in is too old: sign in with World ID again first.
+   */
+  async deleteAccount(): Promise<void> {
+    const response = await fetch(this.baseUrl + "/auth/account", {
+      method: "DELETE",
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      let message = response.statusText;
+      try {
+        const payload = (await response.json()) as { message?: string };
+        message = payload.message ?? message;
+      } catch {
+        // empty body
+      }
+      throw new ApiError(message || "delete account failed", response.status);
+    }
+  }
+
   async logoutAuth(): Promise<AuthLogoutResponse> {
     return this.request<AuthLogoutResponse>(
       "/auth/logout",

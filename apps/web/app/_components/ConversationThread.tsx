@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatThreadExport, threadExportFileName } from "../../lib/inbox/thread-export";
 import { useEffect, useMemo, useState } from "react";
 // Use the browser-safe subpath export — the main `@nexusinbox/core`
 // entry pulls in node:crypto / node:net via the Node API client, which
@@ -380,11 +381,52 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
 
   const threadSubject = rendered[0]?.subjectText ?? t("common.noSubject");
 
+  // Save what this browser decrypted as a text file, so people can keep a
+  // conversation past the server's 90-day retention (docs/28 §5 P2-7).
+  const handleSaveThread = () => {
+    const savedAt = new Date();
+    const text = formatThreadExport({
+      subject: threadSubject,
+      savedAt,
+      notDecryptedNote: t("inbox.exportNotDecrypted"),
+      messages: rendered.map(({ entry, bodyText, subjectText, state, protocol }) => ({
+        senderLabel: resolveParticipantLabel(entry.sender_did, entry.sender_label, contactsByDid),
+        senderDid: entry.sender_did,
+        recipientLabel: resolveParticipantLabel(
+          entry.recipient_did,
+          entry.recipient_label,
+          contactsByDid,
+        ),
+        recipientDid: entry.recipient_did,
+        createdAt: entry.created_at,
+        subject: subjectText,
+        body: state === "readable" ? bodyText : null,
+        protocol: state === "readable" ? protocol : null,
+      })),
+    });
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = threadExportFileName(savedAt);
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   return (
     <div className="conversation-thread">
       <header className="conversation-head">
         <h2 className="reader-subject">{threadSubject}</h2>
         <p className="item-sub">{t("common.items", { count: rendered.length })}</p>
+        <button
+          type="button"
+          className="btn"
+          onClick={handleSaveThread}
+          title={t("inbox.saveThreadTooltip")}
+          data-testid="conversation-save"
+          style={{ fontSize: 12, padding: "2px 8px" }}
+        >
+          {t("inbox.saveThread")}
+        </button>
       </header>
       <div className="conversation-list">
         {rendered.map(({ entry, bodyText, subjectText, state, protocol }, index) => {
