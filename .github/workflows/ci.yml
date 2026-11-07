@@ -164,7 +164,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       # `pnpm lint` runs `turbo run lint` which fans out to every
       # workspace. Cheap (parallel eslint), and catches lint
       # regressions in workspace packages that web depends on
@@ -190,7 +190,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       # mcp-server has its own ESLint config; keep it linted even
       # when only the mcp filter matched (so node-web didn't run
       # the workspace-wide `pnpm lint`).
@@ -220,7 +220,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run lint --filter=@nexusinbox/ui
       - run: pnpm exec turbo run test --filter=@nexusinbox/ui
 
@@ -235,7 +235,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run lint --filter=@nexusinbox/storage-adapters
       - run: pnpm exec turbo run test --filter=@nexusinbox/storage-adapters
 
@@ -250,7 +250,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       # `contract:check` = redocly lint of openapi.yaml + the
       # contract harness vitest suite (64 tests). This is by far the
       # cheapest of the three node jobs — typically ~30 s end-to-end
@@ -265,6 +265,23 @@ jobs:
     defaults:
       run:
         working-directory: services/api
+    # For the DB integration tests (authorization between agents of one
+    # person, account deletion, retention, sealed contacts, ...), which
+    # skip themselves without a database.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: agent_inbox
+          POSTGRES_PASSWORD: agent_inbox
+          POSTGRES_DB: agent_inbox
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_inbox"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -280,6 +297,22 @@ jobs:
       - run: cargo test
       - name: World verify ON regression
         run: env -u WORLD_ID_APP_ID AGENT_INBOX_WORLD_VERIFY_ENABLED=true WORLD_ID_ACTION=login cargo test --test world_verify_ci_test
+      # Only the *_db_integration_test binaries get the database: the rest
+      # of the suite includes tests that expect none.
+      - name: DB integration tests
+        env:
+          AGENT_INBOX_DB_TESTS: "1"
+          DATABASE_URL: postgres://agent_inbox:agent_inbox@localhost:5432/agent_inbox
+        run: |
+          set -euo pipefail
+          for f in migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          tests=()
+          for f in tests/*_db_integration_test.rs; do
+            tests+=(--test "$(basename "$f" .rs)")
+          done
+          cargo test "${tests[@]}" -- --test-threads=1
 
   rust-signer-daemon:
     needs: changes

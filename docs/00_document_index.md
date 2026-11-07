@@ -39,6 +39,7 @@
 | 25f | [AI Draft + Human Approval (Phase 4.5)](./25f_ai_draft_human_approval.md) | BYOK Anthropic で browser から直接 `api.anthropic.com` を叩き、受信メッセージのドラフト返信を生成。ユーザが review/編集して送信。E2E 境界維持、auto-send なし、API キーは IndexedDB のみ |
 | 26 | [Rename: Agent Inbox → NexusInbox](./26_rename_agent_inbox_to_nexusinbox.md) | ブランド・コード・security primitive 一斉リネームの履歴と operator migration ガイド。`AGENT_INBOX_*` env var prefix・Postgres role は意図的に保持 |
 | 27 | [Local Dev → Production 反映フロー](./27_local_dev_workflow.md) | 日常運用手順を 1 箇所に固定。3 ターミナル起動・コミット前チェック・本番 deploy の経路 (Vercel / Fly) 判別表・rollback 手順 |
+| 28 | [運営が持つデータの棚卸しと保持期限](./28_data_inventory_and_retention.md) | 鍵を預からない方針 (機密計算は不採用)、DB / R2 / ログ / 委託先が持つデータの全量、保持期限の決定案、実態とずれているポリシー記述と削除手順 |
 | 29 | [Isolated mode 自動返信を本番で動かす (ADR)](./29_isolated_auto_reply_recovery.md) | 本番で返信できない 7 つの原因、自分の設定だけを読む agent 向け API、連絡先一覧の代わりの `sender_is_contact`、送信前の claim による二重送信防止、署名形式の統一 |
 | 30 | [一意の人間を土台にした、差し替えられる本人確認 (ADR)](./30_unique_human_identity_providers.md) | 証明手段の条件と強さ、`user_identities` (証明 1 つ = アカウント 1 つ、生の識別子は持たない)、人間単位の送信・エージェント数の上限、ブラウザ送信で人間単位のブロックが効かなかった不具合の修正 |
 
