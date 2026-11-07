@@ -12,6 +12,9 @@ SIGNER_SOCKET="${AGENT_INBOX_SIGNER_SOCKET:-/tmp/nexusinbox-signer.sock}"
 GATEWAY_SOCKET="${AGENT_INBOX_GATEWAY_SOCKET:-/tmp/nexusinbox-gateway.sock}"
 API_URL="${AGENT_INBOX_API_URL:-http://localhost:8080}"
 KEY_FILE="${AGENT_INBOX_KEY_FILE:-$ROOT_DIR/.local/nexusinbox-signer.key.enc}"
+# Optional X25519 key for opening incoming messages. Required for the
+# auto-reply executor (AGENT_INBOX_MODE_A_EXECUTOR=on, docs/19 §7).
+ENCRYPTION_KEY_FILE="${AGENT_INBOX_ENCRYPTION_KEY_FILE:-}"
 
 usage() {
   cat <<EOF
@@ -19,6 +22,8 @@ Usage:
   AGENT_INBOX_AID=aid:ai:... \\
   AGENT_INBOX_CREDENTIAL_ID=<uuid> \\
   AGENT_INBOX_KEY_FILE=/path/to/signing.key.enc \\
+  [AGENT_INBOX_ENCRYPTION_KEY_FILE=/path/to/encryption.key.enc] \\
+  [AGENT_INBOX_MODE_A_EXECUTOR=on] \\
   $0 start
 
 Commands:
@@ -66,6 +71,7 @@ start() {
     cargo run --manifest-path services/signer-daemon/Cargo.toml -- \
       --socket "$SIGNER_SOCKET" \
       --key-file "$KEY_FILE" \
+      ${ENCRYPTION_KEY_FILE:+--encryption-key-file "$ENCRYPTION_KEY_FILE"} \
       --aid "$AGENT_INBOX_AID" \
       --credential-id "$AGENT_INBOX_CREDENTIAL_ID" \
       --api-url "$API_URL"

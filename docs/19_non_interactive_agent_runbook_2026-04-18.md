@@ -164,3 +164,41 @@ node scripts/test_agent_api_send.mjs
 - 送信先選択や再送制御などの業務ロジック
 
 つまり、現在の Gateway は「認証・解決・署名付き送信の安全な出入口」であり、完全な agent SDK ではない。
+
+---
+
+## 7. 自動返信 (Isolated mode executor) を動かす (2026-11-07)
+
+鍵を持つ利用者側の daemon と Gateway が、届いた依頼に自動で返信する。設計は [docs/29](./29_isolated_auto_reply_recovery.md)。
+
+### 7.1 前提
+
+- **受信用の鍵**: daemon が受信用の X25519 鍵を持っている必要がある。持っていないと、届いたメッセージの鍵を開けられない (`unwrap_content_key disabled`)。鍵ファイルは `--generate --encryption-key-file <path>` で作る。既存のファイルは `--force` なしでは上書きされない。
+- **Web 側の設定**: Web の「エージェント管理」で、そのエージェントの自動返信スイッチを on にし、ポリシーを保存しておく。
+- **スコープ**: credential に `messages.read` と `messages.send` が付いていること (daemon の既定)。
+
+### 7.2 起動
+
+```bash
+# from repo root
+export AGENT_INBOX_ENCRYPTION_KEY_FILE=/absolute/path/to/encryption.key.enc
+export AGENT_INBOX_MODE_A_EXECUTOR=on
+scripts/run_noninteractive_stack.sh start
+```
+
+- `AGENT_INBOX_ENCRYPTION_KEY_FILE` を設定すると、スクリプトが daemon に `--encryption-key-file` を渡す
+- `AGENT_INBOX_MODE_A_EXECUTOR=on` で、Gateway が executor を起動する (既定は off)
+- 確認の間隔は `AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS` で変えられる (既定は 30 秒)
+
+### 7.3 動作確認
+
+1. 別のエージェントから、このエージェント宛てに `schedule_negotiation` の `propose` を送る
+2. 30 秒ほどで accept が返ることを確かめる
+3. 監査ログに `auto_reply_sent` (`executor_mode: daemon_protocol_v1`) が残ることを確かめる
+4. `gateway.log` に `[auto-reply]` のエラーが出ていないことを確かめる
+
+### 7.4 挙動
+
+- **二重返信はしない**: Web で同じ受信箱を開いていても、送る前に行を取る (claim) ので、二重には返信しない
+- **自動では送り直さない**: 5xx やタイムアウトのように、送れたか分からない失敗の行は claim されたまま残る。自動では送り直さないので、受信箱から人間が対応する
+- **返信しない行は人間に回す**: 依頼でない、期限切れ、ポリシーが人間待ちと判断した行は、返信せずに印を付けて人間に回す

@@ -130,6 +130,26 @@ pub fn decrypt_envelope_text(serialized: &str, content_key: &str) -> Result<Stri
 mod tests {
     use super::*;
 
+    /// Shared vector (tests/vectors/content_encryption.json): enc:v1 text
+    /// made by the web and by this gateway decrypts here (docs/29 §4).
+    #[test]
+    fn content_encryption_matches_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/content_encryption.json"
+        )))
+        .unwrap();
+        let content_key = vector["content_key"].as_str().unwrap();
+        let plaintext = vector["plaintext"].as_str().unwrap();
+        for (origin, serialized) in vector["ciphertexts"].as_object().unwrap() {
+            assert_eq!(
+                decrypt_envelope_text(serialized.as_str().unwrap(), content_key).unwrap(),
+                plaintext,
+                "encrypted by {origin}"
+            );
+        }
+    }
+
     #[test]
     fn generate_content_key_yields_32_bytes_b64url() {
         let k = generate_content_key();

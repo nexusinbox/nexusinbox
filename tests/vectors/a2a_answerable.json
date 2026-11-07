@@ -1,0 +1,656 @@
+{
+  "description": "Whether the auto-reply executor may answer an incoming A2A message (docs/29 \u00a72.6). Shared by the web (canRespondToProtocol + assertValidA2APayload after parseA2APayload) and the Agent Gateway (a2a_rust::check_answerable after parse_a2a_payload). `plaintext` is the decrypted body: a JSON string is used verbatim, any other value is serialised first. `now` is the clock for response_deadline. Timestamps follow V8's Date.parse, which the TS test runs on.",
+  "cases": [
+    {
+      "name": "schedule propose without a deadline",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"Let's meet","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "schedule propose before its deadline",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-08T00:00:00Z"}}}
+    },
+    {
+      "name": "schedule propose exactly at its deadline is not expired yet",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-07T00:00:00.000Z"}}}
+    },
+    {
+      "name": "deadline with an offset and fractional seconds, 1 ms ahead",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-07T09:00:00.001+09:00"}}}
+    },
+    {
+      "name": "schedule propose in the archive folder",
+      "folder": "archive",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "schedule propose with a string reply_to",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":"p-0","payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "schedule propose with the maximum of 20 candidates",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00Z","end":"2026-12-01T10:00:00Z"},{"start":"2026-12-02T09:00:00Z","end":"2026-12-02T10:00:00Z"},{"start":"2026-12-03T09:00:00Z","end":"2026-12-03T10:00:00Z"},{"start":"2026-12-04T09:00:00Z","end":"2026-12-04T10:00:00Z"},{"start":"2026-12-05T09:00:00Z","end":"2026-12-05T10:00:00Z"},{"start":"2026-12-06T09:00:00Z","end":"2026-12-06T10:00:00Z"},{"start":"2026-12-07T09:00:00Z","end":"2026-12-07T10:00:00Z"},{"start":"2026-12-08T09:00:00Z","end":"2026-12-08T10:00:00Z"},{"start":"2026-12-09T09:00:00Z","end":"2026-12-09T10:00:00Z"},{"start":"2026-12-10T09:00:00Z","end":"2026-12-10T10:00:00Z"},{"start":"2026-12-11T09:00:00Z","end":"2026-12-11T10:00:00Z"},{"start":"2026-12-12T09:00:00Z","end":"2026-12-12T10:00:00Z"},{"start":"2026-12-13T09:00:00Z","end":"2026-12-13T10:00:00Z"},{"start":"2026-12-14T09:00:00Z","end":"2026-12-14T10:00:00Z"},{"start":"2026-12-15T09:00:00Z","end":"2026-12-15T10:00:00Z"},{"start":"2026-12-16T09:00:00Z","end":"2026-12-16T10:00:00Z"},{"start":"2026-12-17T09:00:00Z","end":"2026-12-17T10:00:00Z"},{"start":"2026-12-18T09:00:00Z","end":"2026-12-18T10:00:00Z"},{"start":"2026-12-19T09:00:00Z","end":"2026-12-19T10:00:00Z"},{"start":"2026-12-20T09:00:00Z","end":"2026-12-20T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate of exactly 24 hours",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T00:00:00Z","end":"2026-12-02T00:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidates with Z, negative offsets and fractional seconds",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00.5Z","end":"2026-12-01T10:00:00.250-05:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "end at 24:00:00 is midnight of the next day (V8 Date.parse)",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T23:00:00Z","end":"2026-12-01T24:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "February 30 rolls over into March (V8 Date.parse)",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2027-02-30T10:00:00Z","end":"2027-02-30T11:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "fraction past 9 digits: V8 reads .0012345678 as 12 ms, so not expired yet",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.005Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-07T00:00:00.0012345678Z"}}}
+    },
+    {
+      "name": "event_title with surrounding spaces",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"  Sync  ","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "event_title of U+0085 only, which JS trim keeps",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"\u0085","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "empty required_participants",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":[]}}}
+    },
+    {
+      "name": "unknown extra payload fields are ignored",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"location":"Room 4","extra":{"a":1}}}}
+    },
+    {
+      "name": "task delegate with only a title",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report"}}}
+    },
+    {
+      "name": "task delegate with every optional field",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","description":"Q4 numbers","due_date":"2026-12-01T17:00:00+09:00","priority":"low"}}}
+    },
+    {
+      "name": "task title of exactly 200 UTF-16 units (emoji counts 2)",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude00"}}}
+    },
+    {
+      "name": "task description of exactly 4000 characters",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": true,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","description":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}}}
+    },
+    {
+      "name": "sent folder",
+      "folder": "sent",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "expired proposal",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-06T23:59:59Z"}}}
+    },
+    {
+      "name": "expired by one millisecond",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.001Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-07T00:00:00.000Z"}}}
+    },
+    {
+      "name": "schedule accept is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"accept","reply_to":"p-0","payload":{"selected_candidate":{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}}}}
+    },
+    {
+      "name": "schedule decline is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"decline","reply_to":"p-0","payload":{}}}
+    },
+    {
+      "name": "schedule counter is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"counter","reply_to":"p-0","payload":{"candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}]}}}
+    },
+    {
+      "name": "task accept is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"accept","reply_to":"t-0","payload":{}}}
+    },
+    {
+      "name": "task decline is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"decline","reply_to":"t-0","payload":{}}}
+    },
+    {
+      "name": "task complete is not a request",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"complete","reply_to":"t-0","payload":{"result":"done"}}}
+    },
+    {
+      "name": "delegate action under schedule_negotiation",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"delegate","reply_to":null,"payload":{"title":"x"}}}
+    },
+    {
+      "name": "propose action under task_delegation",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "plaintext is not JSON",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": "Let's meet tomorrow at 9"
+    },
+    {
+      "name": "top-level JSON array",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": [{"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}]
+    },
+    {
+      "name": "schema version 2",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":2,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "body missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "body not a string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":5,"protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "no protocol block",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"just text"}
+    },
+    {
+      "name": "protocol null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":null}
+    },
+    {
+      "name": "reply_to missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "reply_to a number",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":7,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "protocol id empty",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "protocol id missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "unknown protocol type",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"meeting_request","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "payload missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null}}
+    },
+    {
+      "name": "payload is an array",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":[{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}]}}
+    },
+    {
+      "name": "payload null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":null}}
+    },
+    {
+      "name": "event_title missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "event_title blank",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"  \t\n ","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "event_title of U+FEFF and U+3000 only (JS whitespace)",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"\ufeff\u3000","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "event_title not a string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":42,"candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidates missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidates not an array",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":{"0":{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}},"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidates empty",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "21 candidates",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00Z","end":"2026-12-01T10:00:00Z"},{"start":"2026-12-02T09:00:00Z","end":"2026-12-02T10:00:00Z"},{"start":"2026-12-03T09:00:00Z","end":"2026-12-03T10:00:00Z"},{"start":"2026-12-04T09:00:00Z","end":"2026-12-04T10:00:00Z"},{"start":"2026-12-05T09:00:00Z","end":"2026-12-05T10:00:00Z"},{"start":"2026-12-06T09:00:00Z","end":"2026-12-06T10:00:00Z"},{"start":"2026-12-07T09:00:00Z","end":"2026-12-07T10:00:00Z"},{"start":"2026-12-08T09:00:00Z","end":"2026-12-08T10:00:00Z"},{"start":"2026-12-09T09:00:00Z","end":"2026-12-09T10:00:00Z"},{"start":"2026-12-10T09:00:00Z","end":"2026-12-10T10:00:00Z"},{"start":"2026-12-11T09:00:00Z","end":"2026-12-11T10:00:00Z"},{"start":"2026-12-12T09:00:00Z","end":"2026-12-12T10:00:00Z"},{"start":"2026-12-13T09:00:00Z","end":"2026-12-13T10:00:00Z"},{"start":"2026-12-14T09:00:00Z","end":"2026-12-14T10:00:00Z"},{"start":"2026-12-15T09:00:00Z","end":"2026-12-15T10:00:00Z"},{"start":"2026-12-16T09:00:00Z","end":"2026-12-16T10:00:00Z"},{"start":"2026-12-17T09:00:00Z","end":"2026-12-17T10:00:00Z"},{"start":"2026-12-18T09:00:00Z","end":"2026-12-18T10:00:00Z"},{"start":"2026-12-19T09:00:00Z","end":"2026-12-19T10:00:00Z"},{"start":"2026-12-20T09:00:00Z","end":"2026-12-20T10:00:00Z"},{"start":"2026-12-21T09:00:00Z","end":"2026-12-21T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate without a timezone",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate with a lowercase z",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00z","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate offset without a colon",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+0900","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate date-only",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01","end":"2026-12-02"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate start equals end",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00Z","end":"2026-12-01T09:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate end before start",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T10:00:00Z","end":"2026-12-01T09:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate longer than 24 hours by 1 ms",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T00:00:00Z","end":"2026-12-02T00:00:00.001Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate is null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[null],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate is a string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":["2026-12-01T09:00:00Z/2026-12-01T10:00:00Z"],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate start is a number",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":1764579600000,"end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate month 13",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-13-01T09:00:00Z","end":"2026-13-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate day 32",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-32T09:00:00Z","end":"2026-12-32T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate day 00",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-00T09:00:00Z","end":"2026-12-00T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "candidate hour 25",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00Z","end":"2026-12-01T25:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "24:00 with non-zero minutes",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T23:00:00Z","end":"2026-12-01T24:01:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "24:00 with a non-zero fraction",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T23:00:00Z","end":"2026-12-01T24:00:00.0005Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "second 60",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:60Z","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "offset +24:00",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+24:00","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "offset minutes 60",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:60","end":"2026-12-01T10:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "second candidate invalid",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"},{"start":"2026-12-02T10:00:00Z","end":"2026-12-02T09:00:00Z"}],"required_participants":["did:key:zAlice","did:key:zBob"]}}}
+    },
+    {
+      "name": "required_participants missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}]}}}
+    },
+    {
+      "name": "required_participants not an array",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":"did:key:zAlice"}}}
+    },
+    {
+      "name": "response_deadline null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":null}}}
+    },
+    {
+      "name": "response_deadline empty string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":""}}}
+    },
+    {
+      "name": "response_deadline not a timestamp",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"tomorrow"}}}
+    },
+    {
+      "name": "response_deadline without a timezone",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"p-1","type":"schedule_negotiation","action":"propose","reply_to":null,"payload":{"event_title":"Sync","candidates":[{"start":"2026-12-01T09:00:00+09:00","end":"2026-12-01T10:00:00+09:00"}],"required_participants":["did:key:zAlice","did:key:zBob"],"response_deadline":"2026-11-08T00:00:00"}}}
+    },
+    {
+      "name": "task title missing",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{}}}
+    },
+    {
+      "name": "task title blank",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":" \u00a0 "}}}
+    },
+    {
+      "name": "task title not a string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":["Write"]}}}
+    },
+    {
+      "name": "task title of 201 UTF-16 units",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude00"}}}
+    },
+    {
+      "name": "task description not a string",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","description":5}}}
+    },
+    {
+      "name": "task description null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","description":null}}}
+    },
+    {
+      "name": "task description of 4001 characters",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","description":"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}}}
+    },
+    {
+      "name": "task due_date without a timezone",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","due_date":"2026-12-01T17:00:00"}}}
+    },
+    {
+      "name": "task due_date null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","due_date":null}}}
+    },
+    {
+      "name": "task priority not allowed",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","priority":"urgent"}}}
+    },
+    {
+      "name": "task priority background (a message priority, not a task one)",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","priority":"background"}}}
+    },
+    {
+      "name": "task priority null",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","priority":null}}}
+    },
+    {
+      "name": "task priority a number",
+      "folder": "inbox",
+      "now": "2026-11-07T00:00:00.000Z",
+      "answerable": false,
+      "plaintext": {"v":1,"body":"","protocol":{"id":"t-1","type":"task_delegation","action":"delegate","reply_to":null,"payload":{"title":"Write the report","priority":1}}}
+    }
+  ]
+}

@@ -91,6 +91,10 @@ jobs:
           # explicit (instead of a blanket `packages/**`) is what
           # lets a packages/mcp-server-only PR skip node-web.
           #
+          # `tests/vectors/**` holds the shared cross-implementation
+          # vectors (envelope signing, key wrap, enc:v1, A2A answerability;
+          # docs/29), so every job that reads them re-runs when they change.
+          #
           # `.github/workflows/ci.yml` is listed in every filter so
           # a CI change re-runs every job. Without that, a workflow
           # rewrite that breaks (say) the rust-api job would land
@@ -98,6 +102,7 @@ jobs:
           filters: |
             web:
               - 'apps/web/**'
+              - 'tests/vectors/**'
               - 'packages/core/**'
               - 'packages/crypto/**'
               - 'pnpm-lock.yaml'
@@ -137,12 +142,15 @@ jobs:
               - '.github/workflows/ci.yml'
             api:
               - 'services/api/**'
+              - 'tests/vectors/**'
               - '.github/workflows/ci.yml'
             signer:
               - 'services/signer-daemon/**'
+              - 'tests/vectors/**'
               - '.github/workflows/ci.yml'
             gateway:
               - 'services/agent-gateway/**'
+              - 'tests/vectors/**'
               - '.github/workflows/ci.yml'
 
   node-web:

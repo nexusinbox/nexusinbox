@@ -1,0 +1,9 @@
+{
+  "description": "enc:v1 envelope text shared by web (TS) and Agent Gateway (Rust), docs/29 §4. Each ciphertext must decrypt to plaintext with content_key.",
+  "content_key": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+  "plaintext": "{\"v\":1,\"body\":\"来週の打ち合わせ候補です\",\"protocol\":{\"id\":\"proto-vector\",\"type\":\"schedule_negotiation\",\"action\":\"accept\"}}",
+  "ciphertexts": {
+    "ts_format": "enc:v1:PBKDF2-SHA256:AES-GCM-256:120000:_ZsdW5tyDRGvybK3_d4T_w:HKoq4DTi3VecKEme:FzpnTymYs2fWBKPBER8DnCvEANylgDUZwimp-Yp5z6wHm3bMItgEj5ZnSSXxSt0QsE5xJvM_4PxiLz4TdItEKIVFCk1I-UqIBasvMVKIqqFEUuAx4Ce3-Z64Dc1bQRu1Fk20PDAzb87gp3SQsT1ZjRRBvxxqba5FU9fVKiLmokUMWbTMJQ65W6aY7jI12-nPWM12-0FM",
+    "agent_gateway": "enc:v1:PBKDF2-SHA256:AES-GCM-256:120000:QIDD9uCcKNPXmMpsTLPxfg:8V34_uSAh7zHS-bE:dfh3fsGS7biv9QXcqXjsMze27XVxr4urvQeglfpbj-JSNAJp1lVWiir8_Tis6yi6Md6iGliSqx8xeMwS2ilQxliMvXoaPpVfk9sY96YkJN-j6o24VgS_421RE3M9FUgSkis7xlTJdPLDTvzN9C4_dg21hFVMTddJsj9HBS61QBH5EHsPMRSaDFTYYsWhxqvVTM5Do54T"
+  }
+}

@@ -1213,7 +1213,7 @@ async fn main() {
             interval
         );
         tokio::spawn(async move {
-            let backend = Arc::new(GatewayExecutorBackend::new(exec_state).await);
+            let backend = Arc::new(GatewayExecutorBackend::new(exec_state));
             auto_reply_executor::run_loop(backend, interval).await;
         });
     } else {
@@ -1279,29 +1279,71 @@ async fn main() {
 
 struct GatewayExecutorBackend {
     state: Arc<GatewayState>,
-    our_did: String,
 }
 
 impl GatewayExecutorBackend {
-    async fn new(state: Arc<GatewayState>) -> Self {
-        let did = match get_signer_identity(state.as_ref()).await {
-            Ok(id) => id.did,
-            Err(e) => {
-                eprintln!(
-                    "[auto-reply] failed to resolve our DID from signer: {e}; executor will error until daemon is reachable"
-                );
-                String::new()
-            }
-        };
-        GatewayExecutorBackend {
-            state,
-            our_did: did,
-        }
+    fn new(state: Arc<GatewayState>) -> Self {
+        GatewayExecutorBackend { state }
     }
+}
+
+/// Authenticated API call that hands back the raw response, for the
+/// executor paths that branch on the status (409, 429, 5xx) instead of
+/// folding every non-2xx into one error like `api_get` / `api_post` /
+/// `api_patch`. Also fine with an empty 204 body.
+async fn api_send(
+    state: &GatewayState,
+    method: reqwest::Method,
+    url: &str,
+    token: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<reqwest::Response, String> {
+    let dpop = build_dpop_proof(state, method.as_str(), url, token)?;
+    let mut request = state
+        .http_client
+        .request(method, url)
+        .header("Authorization", format!("DPoP {}", token))
+        .header("DPoP", dpop);
+    if let Some(body) = body {
+        request = request.json(body);
+    }
+    request
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {}", e))
+}
+
+/// The `message` of an API error body, or the start of the raw text.
+fn api_error_message(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+        .unwrap_or_else(|| body.chars().take(200).collect())
 }
 
 #[async_trait::async_trait]
 impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
+    /// The token's own agent only (docs/29 §2.1). The human-only `/agents`
+    /// and `/contacts` routes answer 401 to agent tokens.
+    async fn fetch_config(&self) -> Result<auto_reply_executor::AutoReplyConfig, String> {
+        let token = ensure_token(&self.state).await?;
+        let url = format!("{}/agent-auto-reply/config", self.state.api_url);
+        let body = api_get(&self.state, &url, &token).await?;
+        let auto_reply_enabled = body
+            .get("auto_reply_enabled")
+            .and_then(|v| v.as_bool())
+            .ok_or("auto-reply config has no auto_reply_enabled")?;
+        let policy = match body.get("policy") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(policy @ serde_json::Value::Object(_)) => Some(policy.clone()),
+            Some(_) => return Err("auto-reply config policy is not an object".into()),
+        };
+        Ok(auto_reply_executor::AutoReplyConfig {
+            auto_reply_enabled,
+            policy,
+        })
+    }
+
     async fn fetch_pending_messages(
         &self,
     ) -> Result<Vec<auto_reply_executor::PendingMessage>, String> {
@@ -1319,14 +1361,19 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
             .unwrap_or_default();
         let mut out = Vec::with_capacity(messages.len());
         for m in messages {
-            let (Some(id), Some(sender_did), Some(recipient_did), Some(decision)) = (
+            let (Some(id), Some(sender_did), Some(recipient_did), Some(decision), Some(folder)) = (
                 m.get("id").and_then(|v| v.as_str()),
                 m.get("sender_did").and_then(|v| v.as_str()),
                 m.get("recipient_did").and_then(|v| v.as_str()),
                 m.get("auto_reply_decision").and_then(|v| v.as_str()),
+                m.get("folder").and_then(|v| v.as_str()),
             ) else {
                 continue;
             };
+            // The id goes into request paths (claim, content, mark).
+            if !is_uuid(id) {
+                continue;
+            }
             out.push(auto_reply_executor::PendingMessage {
                 id: id.into(),
                 sender_did: sender_did.into(),
@@ -1335,6 +1382,7 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
                     .get("thread_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                folder: folder.into(),
                 decision: decision.into(),
                 priority: m
                     .get("priority")
@@ -1346,6 +1394,12 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
                     .get("auto_reply_reason")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                // Missing reads as "not a contact": a policy that needs a
+                // contact then holds the row for the human.
+                sender_is_contact: m
+                    .get("sender_is_contact")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
             });
         }
         Ok(out)
@@ -1388,10 +1442,12 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
         );
         let body = api_get(&self.state, &url, &token).await?;
         Ok(auto_reply_executor::RecipientPubkey {
+            // Signed and sent as the recipient, so it must be there.
             did: body
                 .get("did")
                 .and_then(|v| v.as_str())
-                .unwrap_or_default()
+                .filter(|d| !d.is_empty())
+                .ok_or_else(|| "recipient resolution has no did".to_string())?
                 .into(),
             encryption_public_key: body
                 .get("encryption_public_key")
@@ -1399,6 +1455,10 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
                 .ok_or_else(|| "recipient has no encryption_public_key".to_string())?
                 .into(),
         })
+    }
+
+    async fn fetch_our_did(&self) -> Result<String, String> {
+        get_signer_identity(&self.state).await.map(|id| id.did)
     }
 
     async fn daemon_unwrap_content_key(&self, encrypted_key: &str) -> Result<String, String> {
@@ -1436,30 +1496,97 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
 
     async fn daemon_sign_envelope(
         &self,
-        sender_did: &str,
-        recipient: &str,
-        payload_b64: &str,
+        params: &auto_reply_executor::EnvelopeSigningParams,
     ) -> Result<String, String> {
-        let result = call_signer(
-            &self.state.signer_socket,
-            "sign_envelope",
-            serde_json::json!({
-                "sender_did": sender_did,
-                "recipient": recipient,
-                "payload_b64": payload_b64,
-            }),
-        )
-        .await?;
+        // Exactly the daemon's `SignEnvelopeParams`; it builds the signed
+        // bytes itself, the same way the API rebuilds them to verify.
+        let params = serde_json::to_value(params)
+            .map_err(|e| format!("invalid sign_envelope params: {}", e))?;
+        let result = call_signer(&self.state.signer_socket, "sign_envelope", params).await?;
         result["signature"]
             .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "daemon sign_envelope returned no signature".into())
     }
 
-    async fn post_reply(&self, body: &serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn claim_auto_reply(&self, message_id: &str) -> Result<bool, String> {
         let token = ensure_token(&self.state).await?;
+        let url = format!(
+            "{}/messages/{}/auto-reply-claim",
+            self.state.api_url, message_id
+        );
+        let resp = api_send(&self.state, reqwest::Method::POST, &url, &token, None).await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::CONFLICT {
+            return Ok(false);
+        }
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(format!(
+                "claim returned {}: {}",
+                status,
+                api_error_message(&text)
+            ));
+        }
+        let claimed = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("claimed").and_then(|c| c.as_bool()));
+        if claimed == Some(true) {
+            Ok(true)
+        } else {
+            Err(format!("claim returned {} without claimed=true", status))
+        }
+    }
+
+    async fn release_auto_reply_claim(&self, message_id: &str) -> Result<(), String> {
+        let token = ensure_token(&self.state).await?;
+        let url = format!(
+            "{}/messages/{}/auto-reply-claim",
+            self.state.api_url, message_id
+        );
+        let resp = api_send(&self.state, reqwest::Method::DELETE, &url, &token, None).await?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let text = resp.text().await.unwrap_or_default();
+        Err(format!(
+            "release returned {}: {}",
+            status,
+            api_error_message(&text)
+        ))
+    }
+
+    async fn post_reply(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, auto_reply_executor::PostReplyError> {
+        use auto_reply_executor::PostReplyError;
+        // Nothing has left the gateway before the request is sent.
+        let token = ensure_token(&self.state)
+            .await
+            .map_err(PostReplyError::NotSent)?;
         let url = format!("{}/messages", self.state.api_url);
-        api_post(&self.state, &url, &token, body).await
+        let resp = api_send(&self.state, reqwest::Method::POST, &url, &token, Some(body))
+            .await
+            .map_err(PostReplyError::Unknown)?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if status.is_success() {
+            // Stored even if the body is unreadable; the reply id is optional.
+            return Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null));
+        }
+        if status.is_client_error() {
+            return Err(PostReplyError::Rejected {
+                status: status.as_u16(),
+                message: api_error_message(&text),
+            });
+        }
+        Err(PostReplyError::Unknown(format!(
+            "API returned {}: {}",
+            status,
+            api_error_message(&text)
+        )))
     }
 
     async fn mark_auto_reply_sent(
@@ -1480,65 +1607,6 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
         }
         api_patch(&self.state, &url, &token, &body).await?;
         Ok(())
-    }
-
-    fn our_did(&self) -> &str {
-        &self.our_did
-    }
-
-    async fn fetch_policy(&self) -> Result<Option<serde_json::Value>, String> {
-        let token = ensure_token(&self.state).await?;
-        // The /agents response narrows to the authenticated agent's
-        // own record when the caller is an agent token (docs/07).
-        // Pick the first row and use its id.
-        let agents_url = format!("{}/agents", self.state.api_url);
-        let agents_body = api_get(&self.state, &agents_url, &token).await?;
-        let Some(agent_id) = agents_body
-            .get("agents")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|a| a.get("id"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-        else {
-            return Ok(None);
-        };
-        let policy_url = format!(
-            "{}/agents/{}/auto-reply-policy",
-            self.state.api_url, agent_id
-        );
-        let policy_resp = api_get(&self.state, &policy_url, &token).await?;
-        Ok(policy_resp.get("policy").cloned())
-    }
-
-    async fn fetch_master_switch(&self) -> Result<bool, String> {
-        let token = ensure_token(&self.state).await?;
-        let agents_url = format!("{}/agents", self.state.api_url);
-        let agents_body = api_get(&self.state, &agents_url, &token).await?;
-        // Missing / non-boolean means "off": the executor must not send on
-        // a switch it could not read.
-        Ok(agents_body
-            .get("agents")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|a| a.get("auto_reply"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false))
-    }
-
-    async fn fetch_contact_dids(&self) -> Result<Vec<String>, String> {
-        let token = ensure_token(&self.state).await?;
-        let url = format!("{}/contacts", self.state.api_url);
-        let body = api_get(&self.state, &url, &token).await?;
-        let contacts = body
-            .get("contacts")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        Ok(contacts
-            .into_iter()
-            .filter_map(|c| c.get("did").and_then(|v| v.as_str()).map(|s| s.to_string()))
-            .collect())
     }
 }
 
@@ -1915,7 +1983,7 @@ mod tests {
 
         // Oversized line with no newline → InvalidData before it is buffered
         // in full (the whole point: the caller drops the connection).
-        let big = vec![b'x'; 200];
+        let big = [b'x'; 200];
         let mut r = BufReader::new(&big[..]);
         let mut line = String::new();
         let err = read_line_bounded(&mut r, &mut line, 64).await.unwrap_err();
@@ -2067,5 +2135,534 @@ mod tests {
     fn test_allowed_methods_do_not_include_arbitrary_signer_access() {
         assert!(!ALLOWED_METHODS.contains(&"sign_assertion"));
         assert!(!ALLOWED_METHODS.contains(&"sign_envelope"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Isolated mode executor backend against an API double and a daemon
+    // double (docs/29 §4: request paths, JSON bodies, claim → send → mark).
+    // -----------------------------------------------------------------------
+
+    /// One request the API double received.
+    #[derive(Debug, Clone)]
+    struct SeenRequest {
+        method: String,
+        path: String,
+        body: Option<serde_json::Value>,
+    }
+
+    type SeenRequests = std::sync::Arc<Mutex<Vec<SeenRequest>>>;
+
+    /// HTTP/1.1 API double: records every request and answers from
+    /// `route(method, path_and_query, json_body)`. One request per
+    /// connection, like `spawn_refresh_mock`.
+    async fn spawn_api_mock<F>(route: F) -> (String, SeenRequests)
+    where
+        F: Fn(&str, &str, Option<&serde_json::Value>) -> (u16, String) + Send + Sync + 'static,
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen: SeenRequests = Default::default();
+        let seen_for_server = seen.clone();
+        let route = std::sync::Arc::new(route);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let seen = seen_for_server.clone();
+                let route = route.clone();
+                tokio::spawn(async move {
+                    let mut buf: Vec<u8> = Vec::new();
+                    let mut chunk = [0u8; 8192];
+                    let (head, body) = loop {
+                        let n = sock.read(&mut chunk).await.unwrap_or(0);
+                        if n == 0 {
+                            return;
+                        }
+                        buf.extend_from_slice(&chunk[..n]);
+                        let Some(head_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                            continue;
+                        };
+                        let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
+                        let content_length = head
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        if buf.len() >= head_end + 4 + content_length {
+                            let body = buf[head_end + 4..head_end + 4 + content_length].to_vec();
+                            break (head, body);
+                        }
+                    };
+                    let mut request_line = head.lines().next().unwrap_or("").split_whitespace();
+                    let method = request_line.next().unwrap_or("").to_string();
+                    let path = request_line.next().unwrap_or("").to_string();
+                    let body = (!body.is_empty())
+                        .then(|| serde_json::from_slice(&body).expect("request body is JSON"));
+                    let (status, response_body) = route(&method, &path, body.as_ref());
+                    seen.lock()
+                        .unwrap()
+                        .push(SeenRequest { method, path, body });
+                    let response = format!(
+                        "HTTP/1.1 {} Mock\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        status,
+                        response_body.len(),
+                        response_body
+                    );
+                    let _ = sock.write_all(response.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        (format!("http://{}", addr), seen)
+    }
+
+    type DaemonCalls = std::sync::Arc<Mutex<Vec<(String, serde_json::Value)>>>;
+
+    const DAEMON_DID: &str = "did:key:z6MkDaemonViewer";
+
+    /// Signer daemon double on a Unix socket in `dir`: records every RPC
+    /// and answers the four the executor uses.
+    async fn spawn_daemon_mock(
+        dir: &std::path::Path,
+        content_key: String,
+    ) -> (String, DaemonCalls) {
+        let path = dir.join("signer.sock");
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let calls: DaemonCalls = Default::default();
+        let calls_for_server = calls.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let (reader, mut writer) = stream.into_split();
+                let mut line = String::new();
+                if BufReader::new(reader).read_line(&mut line).await.is_err() {
+                    continue;
+                }
+                let req: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+                let method = req["method"].as_str().unwrap_or_default().to_string();
+                calls_for_server
+                    .lock()
+                    .unwrap()
+                    .push((method.clone(), req["params"].clone()));
+                let result = match method.as_str() {
+                    "get_public_key" => json!({ "aid": "aid:ai:viewer", "did": DAEMON_DID }),
+                    "unwrap_content_key" => json!({ "content_key": content_key }),
+                    "wrap_content_key" => {
+                        json!({ "wrapped_key": "x25519v1:wrapped:for:proposer:key" })
+                    }
+                    "sign_envelope" => json!({ "sender_did": DAEMON_DID, "signature": "SIG" }),
+                    other => panic!("unexpected daemon method {other}"),
+                };
+                let mut out = json!({ "id": req["id"], "result": result }).to_string();
+                out.push('\n');
+                let _ = writer.write_all(out.as_bytes()).await;
+            }
+        });
+        (path.to_string_lossy().into_owned(), calls)
+    }
+
+    /// Short-lived directory for a test socket (kept short: macOS caps
+    /// socket paths at 104 bytes).
+    fn socket_dir() -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("nxgw-{}-{}", std::process::id(), random_b64url(6)));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Gateway state pointed at the doubles, with a valid token installed
+    /// so no request goes to /agent-auth.
+    fn executor_state(api_url: String, signer_socket: String) -> std::sync::Arc<GatewayState> {
+        let mut state = make_test_state();
+        state.api_url = api_url;
+        state.signer_socket = signer_socket;
+        {
+            let mut ts = state.token.lock().unwrap();
+            ts.access_token = Some("agt_executor_test".into());
+            ts.expires_at = Some(Utc::now() + chrono::Duration::seconds(600));
+        }
+        std::sync::Arc::new(state)
+    }
+
+    const MSG_A: &str = "00000000-0000-0000-0000-00000000000a";
+    const MSG_B: &str = "00000000-0000-0000-0000-00000000000b";
+    const MSG_C: &str = "00000000-0000-0000-0000-00000000000c";
+    const REPLY_ID: &str = "00000000-0000-0000-0000-0000000000ff";
+
+    #[tokio::test]
+    async fn test_executor_backend_request_shapes() {
+        use auto_reply_executor::{ExecutorBackend, PostReplyError};
+
+        let pending = json!({
+            "messages": [
+                {
+                    "id": MSG_A, "sender_did": "did:key:zProposer", "recipient_did": DAEMON_DID,
+                    "thread_id": null, "folder": "inbox", "priority": "high", "trust_score": 0.5,
+                    "auto_reply_decision": "auto_accept", "auto_reply_reason": "default_match",
+                    "sender_is_contact": true
+                },
+                // Not a UUID: never interpolated into a request path.
+                {
+                    "id": "../agents", "sender_did": "did:key:zX", "recipient_did": DAEMON_DID,
+                    "folder": "inbox", "auto_reply_decision": "auto_accept"
+                },
+                // No folder: the sent-folder check could not run.
+                {
+                    "id": MSG_B, "sender_did": "did:key:zX", "recipient_did": DAEMON_DID,
+                    "auto_reply_decision": "auto_accept"
+                }
+            ],
+            "total": 3, "page": 1, "per_page": 10
+        })
+        .to_string();
+        let claim_path = |id: &str| format!("/messages/{id}/auto-reply-claim");
+        let (api_url, seen) = spawn_api_mock(move |method, path, body| match method {
+            "GET" if path == "/agent-auto-reply/config" => (
+                200,
+                r#"{"auto_reply_enabled":true,"policy":{"v":1,"default_action":"auto_accept"},"revision":4}"#.into(),
+            ),
+            "GET" if path.starts_with("/messages?") => (200, pending.clone()),
+            "POST" if path == claim_path(MSG_A) => (200, r#"{"claimed":true}"#.into()),
+            "POST" if path == claim_path(MSG_B) => (
+                409,
+                r#"{"error":"conflict","message":"auto-reply already claimed or sent"}"#.into(),
+            ),
+            "POST" if path == claim_path(MSG_C) => (
+                404,
+                r#"{"error":"not_found","message":"message not found"}"#.into(),
+            ),
+            "DELETE" if path == claim_path(MSG_A) => (204, String::new()),
+            "DELETE" if path == claim_path(MSG_B) => (
+                409,
+                r#"{"error":"conflict","message":"no unsent auto-reply claim to release"}"#.into(),
+            ),
+            "PATCH" if path == format!("/messages/{MSG_A}/auto-reply-sent") => (
+                200,
+                r#"{"auto_reply_sent_at":"2026-11-07T00:00:00+00"}"#.into(),
+            ),
+            "POST" if path == "/messages" => {
+                match body.and_then(|b| b["recipient_did"].as_str()) {
+                    Some("did:key:z400") => (
+                        400,
+                        r#"{"error":"validation_error","message":"bad envelope"}"#.into(),
+                    ),
+                    Some("did:key:z429") => (
+                        429,
+                        r#"{"error":"rate_limited","message":"slow down"}"#.into(),
+                    ),
+                    Some("did:key:z502") => (502, "<html>bad gateway</html>".into()),
+                    _ => (200, format!(r#"{{"message_id":"{REPLY_ID}","status":"sent"}}"#)),
+                }
+            }
+            _ => (500, r#"{"message":"unexpected route"}"#.into()),
+        })
+        .await;
+        let backend =
+            GatewayExecutorBackend::new(executor_state(api_url, "/nonexistent/signer.sock".into()));
+
+        // Config: the agent's own route, policy passed through.
+        let config = backend.fetch_config().await.unwrap();
+        assert!(config.auto_reply_enabled);
+        assert_eq!(
+            config.policy,
+            Some(json!({ "v": 1, "default_action": "auto_accept" }))
+        );
+
+        // Pending rows: folder and sender_is_contact plumbed through;
+        // malformed rows dropped.
+        let rows = backend.fetch_pending_messages().await.unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(
+            (row.id.as_str(), row.folder.as_str(), row.sender_is_contact),
+            (MSG_A, "inbox", true)
+        );
+        assert_eq!(
+            (row.priority.as_str(), row.thread_id.as_deref()),
+            ("high", None)
+        );
+
+        // Claim: 200 → won, 409 → someone else's, anything else → error.
+        assert_eq!(backend.claim_auto_reply(MSG_A).await, Ok(true));
+        assert_eq!(backend.claim_auto_reply(MSG_B).await, Ok(false));
+        assert!(backend.claim_auto_reply(MSG_C).await.is_err());
+
+        // Release: 204 → ok, 409 → error.
+        assert_eq!(backend.release_auto_reply_claim(MSG_A).await, Ok(()));
+        assert!(backend.release_auto_reply_claim(MSG_B).await.is_err());
+
+        // Mark: with and without a reply id.
+        backend
+            .mark_auto_reply_sent(MSG_A, Some(REPLY_ID))
+            .await
+            .unwrap();
+        backend.mark_auto_reply_sent(MSG_A, None).await.unwrap();
+
+        // Send: 2xx → body, 4xx → rejected with status, 5xx → unknown.
+        let ok = backend
+            .post_reply(&json!({ "recipient_did": "did:key:zOk" }))
+            .await
+            .unwrap();
+        assert_eq!(ok["message_id"], REPLY_ID);
+        for (recipient, expected_status) in [("did:key:z400", 400), ("did:key:z429", 429)] {
+            match backend
+                .post_reply(&json!({ "recipient_did": recipient }))
+                .await
+            {
+                Err(PostReplyError::Rejected { status, .. }) => assert_eq!(status, expected_status),
+                other => panic!("{recipient}: expected Rejected, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            backend
+                .post_reply(&json!({ "recipient_did": "did:key:z502" }))
+                .await,
+            Err(PostReplyError::Unknown(_))
+        ));
+
+        let seen = seen.lock().unwrap().clone();
+        let by_route = |method: &str, path: &str| -> Vec<Option<serde_json::Value>> {
+            seen.iter()
+                .filter(|r| r.method == method && r.path == path)
+                .map(|r| r.body.clone())
+                .collect()
+        };
+        assert_eq!(by_route("GET", "/agent-auto-reply/config"), vec![None]);
+        assert_eq!(
+            by_route("GET", "/messages?auto_reply_pending=1&per_page=10"),
+            vec![None]
+        );
+        // Claim and release carry no body.
+        assert_eq!(by_route("POST", &claim_path(MSG_A)), vec![None]);
+        assert_eq!(by_route("DELETE", &claim_path(MSG_A)), vec![None]);
+        assert_eq!(
+            by_route("PATCH", &format!("/messages/{MSG_A}/auto-reply-sent")),
+            vec![
+                Some(
+                    json!({ "executor_mode": "daemon_protocol_v1", "reply_message_id": REPLY_ID })
+                ),
+                Some(json!({ "executor_mode": "daemon_protocol_v1" })),
+            ]
+        );
+        // The human-only routes are never touched.
+        assert!(seen
+            .iter()
+            .all(|r| !r.path.starts_with("/agents") && !r.path.starts_with("/contacts")));
+    }
+
+    #[tokio::test]
+    async fn test_executor_backend_rejects_unusable_config() {
+        use auto_reply_executor::ExecutorBackend;
+
+        for (status, body) in [
+            (500, r#"{"message":"database unavailable"}"#),
+            (401, r#"{"message":"unauthorized"}"#),
+            (200, r#"{"policy":null,"revision":null}"#),
+            (200, r#"{"auto_reply_enabled":true,"policy":"auto_accept"}"#),
+        ] {
+            let (api_url, _) = spawn_api_mock(move |_, _, _| (status, body.to_string())).await;
+            let backend = GatewayExecutorBackend::new(executor_state(
+                api_url,
+                "/nonexistent/signer.sock".into(),
+            ));
+            assert!(backend.fetch_config().await.is_err(), "{status} {body}");
+        }
+
+        // A policy that was never saved comes back as null: no policy.
+        let (api_url, _) = spawn_api_mock(|_, _, _| {
+            (
+                200,
+                r#"{"auto_reply_enabled":false,"policy":null,"revision":null}"#.into(),
+            )
+        })
+        .await;
+        let backend =
+            GatewayExecutorBackend::new(executor_state(api_url, "/nonexistent/signer.sock".into()));
+        let config = backend.fetch_config().await.unwrap();
+        assert!(!config.auto_reply_enabled);
+        assert!(config.policy.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_executor_tick_end_to_end_through_gateway_backend() {
+        // One pending proposal from a contact, a policy that needs a
+        // contact, and a daemon that unwraps / wraps / signs. The tick must
+        // claim, send what was signed, then mark with the reply id.
+        let content_key = envelope_crypto::generate_content_key();
+        let proposal = json!({
+            "v": 1,
+            "body": "Sync?",
+            "protocol": {
+                "id": "proto-e2e",
+                "type": "schedule_negotiation",
+                "action": "propose",
+                "reply_to": null,
+                "payload": {
+                    "event_title": "Sync",
+                    "candidates": [
+                        { "start": "2026-12-01T09:00:00+09:00", "end": "2026-12-01T10:00:00+09:00" }
+                    ],
+                    "required_participants": ["did:key:zProposer", DAEMON_DID]
+                }
+            }
+        });
+        let incoming = envelope_crypto::encrypt_envelope_text(&proposal.to_string(), &content_key)
+            .unwrap()
+            .serialized;
+
+        let pending = json!({
+            "messages": [{
+                "id": MSG_A, "sender_did": "did:key:zProposer", "recipient_did": DAEMON_DID,
+                "thread_id": null, "folder": "inbox", "priority": "normal", "trust_score": 0.8,
+                "auto_reply_decision": "auto_accept", "auto_reply_reason": "default_match",
+                "sender_is_contact": true
+            }],
+            "total": 1, "page": 1, "per_page": 10
+        })
+        .to_string();
+        let content = json!({
+            "encrypted_content": incoming,
+            "encrypted_key": "x25519v1:incoming:wrapped:key:data",
+            "nonce": "n",
+            "sender_did": "did:key:zProposer",
+            "recipient_did": DAEMON_DID,
+            "subject_encrypted": "s",
+            "thread_id": null,
+            "content_type": a2a_rust::A2A_CONTENT_TYPE,
+        })
+        .to_string();
+        let (api_url, seen) = spawn_api_mock(move |method, path, _| match (method, path) {
+            ("GET", "/messages?auto_reply_pending=1&per_page=10") => (200, pending.clone()),
+            ("GET", "/agent-auto-reply/config") => (
+                200,
+                r#"{"auto_reply_enabled":true,"policy":{"v":1,"default_action":"auto_accept","default_conditions":{"require_contact":true}},"revision":1}"#.into(),
+            ),
+            ("GET", p) if p == format!("/messages/{MSG_A}/content") => (200, content.clone()),
+            ("POST", p) if p == format!("/messages/{MSG_A}/auto-reply-claim") => {
+                (200, r#"{"claimed":true}"#.into())
+            }
+            ("GET", "/recipients/resolve?identifier=did%3Akey%3AzProposer") => (
+                200,
+                r#"{"input":"did:key:zProposer","aid":"aid:ai:proposer","did":"did:key:zProposer","signing_public_key":"sig","encryption_public_key":"cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"}"#.into(),
+            ),
+            ("POST", "/messages") => (200, format!(r#"{{"message_id":"{REPLY_ID}","status":"sent"}}"#)),
+            ("PATCH", p) if p == format!("/messages/{MSG_A}/auto-reply-sent") => {
+                (200, r#"{"auto_reply_sent_at":"2026-11-07T00:00:00+00"}"#.into())
+            }
+            _ => (500, r#"{"message":"unexpected route"}"#.into()),
+        })
+        .await;
+        let dir = socket_dir();
+        let (signer_socket, daemon_calls) = spawn_daemon_mock(&dir, content_key.clone()).await;
+        let backend = GatewayExecutorBackend::new(executor_state(api_url, signer_socket));
+
+        let mut exec_state = auto_reply_executor::ExecutorState::default();
+        let report = auto_reply_executor::run_one_tick(&backend, &mut exec_state, Utc::now()).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((report.sent, report.skipped, report.errors), (1, 0, 0));
+
+        let seen = seen.lock().unwrap().clone();
+        let route: Vec<(&str, &str)> = seen
+            .iter()
+            .map(|r| (r.method.as_str(), r.path.as_str()))
+            .collect();
+        let content_path = format!("/messages/{MSG_A}/content");
+        let claim_path = format!("/messages/{MSG_A}/auto-reply-claim");
+        let mark_path = format!("/messages/{MSG_A}/auto-reply-sent");
+        assert_eq!(
+            route,
+            vec![
+                ("GET", "/messages?auto_reply_pending=1&per_page=10"),
+                ("GET", "/agent-auto-reply/config"),
+                ("GET", content_path.as_str()),
+                ("POST", claim_path.as_str()),
+                (
+                    "GET",
+                    "/recipients/resolve?identifier=did%3Akey%3AzProposer"
+                ),
+                ("POST", "/messages"),
+                ("PATCH", mark_path.as_str()),
+            ]
+        );
+
+        let sent = seen[5].body.clone().expect("POST /messages body");
+        let envelope = &sent["envelope"];
+        assert_eq!(sent["sender_did"], DAEMON_DID);
+        assert_eq!(sent["recipient_did"], "did:key:zProposer");
+        assert_eq!(envelope["signature"], "SIG");
+        assert_eq!(
+            envelope["encrypted_key"],
+            "x25519v1:wrapped:for:proposer:key"
+        );
+        assert_eq!(envelope["metadata"]["thread_id"], MSG_A);
+        assert_eq!(
+            envelope["metadata"]["auto_reply_origin"],
+            "daemon_protocol_v1"
+        );
+        assert_eq!(
+            envelope["metadata"]["content_type"],
+            a2a_rust::A2A_CONTENT_TYPE
+        );
+        assert_eq!(
+            seen[6].body,
+            Some(json!({ "executor_mode": "daemon_protocol_v1", "reply_message_id": REPLY_ID }))
+        );
+
+        let daemon_calls = daemon_calls.lock().unwrap().clone();
+        let methods: Vec<&str> = daemon_calls.iter().map(|(m, _)| m.as_str()).collect();
+        assert_eq!(
+            methods,
+            [
+                "unwrap_content_key",
+                "get_public_key",
+                "wrap_content_key",
+                "sign_envelope"
+            ]
+        );
+        assert_eq!(
+            daemon_calls[0].1,
+            json!({ "encrypted_key": "x25519v1:incoming:wrapped:key:data" })
+        );
+        assert_eq!(
+            daemon_calls[2].1["recipient_encryption_pub"],
+            "cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"
+        );
+        // sign_envelope gets exactly the daemon's six fields, with the
+        // values the POST body then carries.
+        assert_eq!(
+            daemon_calls[3].1,
+            json!({
+                "sender_did": sent["sender_did"],
+                "recipient_did": sent["recipient_did"],
+                "subject_encrypted": envelope["metadata"]["subject_encrypted"],
+                "encrypted_content": envelope["encrypted_content"],
+                "encrypted_key": envelope["encrypted_key"],
+                "nonce": envelope["nonce"],
+            })
+        );
+
+        // The reply opens with the key handed to wrap_content_key.
+        let reply_key = daemon_calls[2].1["content_key"].as_str().unwrap();
+        let reply: serde_json::Value = serde_json::from_str(
+            &envelope_crypto::decrypt_envelope_text(
+                envelope["encrypted_content"].as_str().unwrap(),
+                reply_key,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reply["protocol"]["action"], "accept");
+        assert_eq!(reply["protocol"]["reply_to"], "proto-e2e");
+        assert_eq!(
+            reply["protocol"]["payload"]["selected_candidate"]["start"],
+            "2026-12-01T09:00:00+09:00"
+        );
     }
 }

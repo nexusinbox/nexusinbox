@@ -64,6 +64,8 @@ evaluator は pure で副作用なし。`ExecutorBackend` trait に `fetch_polic
 
 Standard mode と Isolated mode が同時稼働しても、(2) の conditional UPDATE で片方だけが勝つ。重複送信は不可能。
 
+> **2026-11-07 注記**: 実装では印付けが送信の後にあり、`COALESCE` で常に成功するため、この保証は成り立っていない。本番で返信できないほかの原因とあわせ、対処は [29](./29_isolated_auto_reply_recovery.md) にまとめた。
+
 ### 2.5 Polling 設計
 
 - Interval: 30 秒 (`AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS` で上書き可能)
