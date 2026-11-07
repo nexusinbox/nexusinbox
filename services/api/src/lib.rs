@@ -43,7 +43,10 @@ use tracing::{debug, error, info, warn};
 
 const AUTH_COOKIE_NAME: &str = "nexusinbox_session";
 const MAX_REQUEST_BODY_BYTES: usize = 64 * 1024;
-const RATE_LIMIT_REQUESTS_PER_WINDOW: u64 = 300;
+/// Process-wide circuit breaker, sized to what one machine can serve and far
+/// above any one caller's cap. It used to be 300, which five IPs at their
+/// own cap used up, answering 429 to everyone else (review 2026-11-07).
+const RATE_LIMIT_REQUESTS_PER_WINDOW: u64 = 3000;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const AUTH_REPLAY_WINDOW_SECS: i64 = 300;
@@ -75,9 +78,14 @@ const MAX_AGENT_LABEL_LENGTH: usize = 200;
 const MAX_KEY_FIELD_LENGTH: usize = 128;
 /// Per-IP rate limit: requests per window
 const PER_IP_RATE_LIMIT_REQUESTS: u64 = 60;
-/// Per-IP rate limit window (seconds)
+/// Per signed-in person (valid session JWT): requests per window. Web
+/// traffic arrives through Vercel, whose few IPs everyone using the web app
+/// shares, so a person's own budget is what keeps one of them from using up
+/// the others'.
+const PER_PERSON_RATE_LIMIT_REQUESTS: u64 = 300;
+/// Per-caller rate limit window (seconds), for both of the above
 const PER_IP_RATE_LIMIT_WINDOW_SECS: u64 = 60;
-/// Maximum number of tracked IPs in the rate limiter map
+/// Maximum number of tracked callers (IPs and people) in the rate limiter map
 const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 
 // --- Attachment constants (see docs/17_attachment_upload_r2_spec.md) ---
@@ -165,7 +173,8 @@ struct AppState {
     seen_message_nonces: Arc<Mutex<HashMap<String, i64>>>,
     revoked_session_jtis: Arc<Mutex<HashMap<String, i64>>>,
     request_budget: Arc<Mutex<RequestBudget>>,
-    per_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
+    /// Keyed `ip:<addr>` or `user:<id>`; see `rate_limit_caller`.
+    caller_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     /// Dedicated per-IP budget for POST /attachments/intents. See
     /// ATTACHMENT_INTENT_RATE_LIMIT_PER_IP.
     attachment_intent_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
@@ -365,7 +374,7 @@ impl AppState {
                 window_started_at: Utc::now().timestamp(),
                 count: 0,
             })),
-            per_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
+            caller_budgets: Arc::new(Mutex::new(HashMap::new())),
             attachment_intent_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             ws_connections_per_user: Arc::new(Mutex::new(HashMap::new())),
             blocks_by_user: Arc::new(Mutex::new(HashMap::new())),
@@ -3622,10 +3631,10 @@ fn client_ip_from_headers(
     header_ip(headers, "x-real-ip").unwrap_or_else(|| "unknown".to_string())
 }
 
-fn consume_per_ip_rate_limit(state: &AppState, client_ip: &str) -> bool {
+fn consume_caller_rate_limit(state: &AppState, caller: &str, limit: u64) -> bool {
     let now = Utc::now().timestamp();
     let mut budgets = state
-        .per_ip_budgets
+        .caller_budgets
         .lock()
         .unwrap_or_else(|e| e.into_inner());
 
@@ -3634,24 +3643,45 @@ fn consume_per_ip_rate_limit(state: &AppState, client_ip: &str) -> bool {
         budgets.retain(|_, b| now - b.window_started_at < PER_IP_RATE_LIMIT_WINDOW_SECS as i64 * 2);
     }
 
-    let budget = budgets
-        .entry(client_ip.to_string())
-        .or_insert(RequestBudget {
-            window_started_at: now,
-            count: 0,
-        });
+    let budget = budgets.entry(caller.to_string()).or_insert(RequestBudget {
+        window_started_at: now,
+        count: 0,
+    });
 
     if now - budget.window_started_at >= PER_IP_RATE_LIMIT_WINDOW_SECS as i64 {
         budget.window_started_at = now;
         budget.count = 0;
     }
 
-    if budget.count >= PER_IP_RATE_LIMIT_REQUESTS {
+    if budget.count >= limit {
         return false;
     }
 
     budget.count += 1;
     true
+}
+
+/// Who a request is counted against. A session JWT whose signature and
+/// expiry check out (no database round-trip) counts against its person;
+/// everything else — agent tokens, forged or expired sessions, no
+/// credentials — against the client IP, so minting fake tokens never buys
+/// a fresh budget.
+fn rate_limit_caller(headers: &HeaderMap) -> (String, u64, &'static str) {
+    let token = token_from_headers(headers);
+    if token.split('.').count() == 3 {
+        if let Ok(claims) = verify_dev_jwt(&token) {
+            return (
+                format!("user:{}", claims.sub),
+                PER_PERSON_RATE_LIMIT_REQUESTS,
+                "too many requests for this account in current window",
+            );
+        }
+    }
+    (
+        format!("ip:{}", extract_client_ip(headers)),
+        PER_IP_RATE_LIMIT_REQUESTS,
+        "too many requests from this IP in current window",
+    )
 }
 
 async fn enforce_request_rate_limit(
@@ -3667,17 +3697,17 @@ async fn enforce_request_rate_limit(
     // per-IP limiter below.
     let skip_global = request.uri().path() == "/health";
 
-    // Per-IP first. A request this check rejects must not also spend the
-    // process-wide budget: when the global bucket was charged first, one
-    // client sending faster than its own cap drained the shared 300/min
-    // and 429'd every other caller on the machine (review 2026-11-07).
-    let client_ip = extract_client_ip(request.headers());
-    if !consume_per_ip_rate_limit(&state, &client_ip) {
+    // Per caller (person or IP) first. A request this check rejects must not
+    // also spend the process-wide budget: when the global bucket was charged
+    // first, one client sending faster than its own cap drained the shared
+    // budget and 429'd every other caller on the machine (review 2026-11-07).
+    let (caller, limit, message) = rate_limit_caller(request.headers());
+    if !consume_caller_rate_limit(&state, &caller, limit) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
                 error: "rate_limited".to_string(),
-                message: "too many requests from this IP in current window".to_string(),
+                message: message.to_string(),
             }),
         )
             .into_response();

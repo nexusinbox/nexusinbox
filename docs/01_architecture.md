@@ -148,7 +148,7 @@ Phase 1 は単一プロセスであるため以下の制約がある。
 | コンポーネント | Phase 1 (単一VPS) | Phase 2+ (複数インスタンス) |
 |---------------|-------------------|--------------------------|
 | DPoP jti replay cache | in-memory `HashMap` (120s TTL) | Redis `SET` + TTL |
-| Rate limiting | in-memory per-IP counter | Redis sliding window |
+| Rate limiting | in-memory counters: per signed-in person (session JWT, 300/min) or per IP (60/min), plus a process-wide circuit breaker (3000/min) | Redis sliding window |
 | Token revocation check | DB polling | Redis pub/sub + local cache |
 | WebSocket 接続管理 | per-process counter | Redis Adapter (sticky session) |
 
