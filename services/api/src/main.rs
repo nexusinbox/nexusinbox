@@ -45,6 +45,12 @@ async fn main() {
         tracing::info!("replay_nonces cleanup job started");
     }
 
+    // Daily data-retention pass (docs/28). Unless AGENT_INBOX_RETENTION_MODE
+    // is `enforce`, it only logs how many rows would be deleted.
+    if nexusinbox_api::spawn_retention_job_if_configured().await {
+        tracing::info!("data retention job started");
+    }
+
     let app = nexusinbox_api::app();
 
     let port: u16 = std::env::var("PORT")

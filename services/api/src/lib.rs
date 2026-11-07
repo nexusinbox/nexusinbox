@@ -11916,6 +11916,371 @@ pub async fn spawn_attachment_cleanup_if_configured() -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// Data retention (docs/28_data_inventory_and_retention.md §4)
+// ---------------------------------------------------------------------------
+
+/// What the daily retention pass does with rows past their retention period.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionMode {
+    /// The job is not started.
+    Off,
+    /// Count what would be deleted and log the numbers. Deletes nothing.
+    DryRun,
+    /// Delete.
+    Enforce,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RetentionConfig {
+    pub mode: RetentionMode,
+    /// Applies to message bodies, message index rows and the audit log.
+    pub retention_days: i64,
+}
+
+const RETENTION_DEFAULT_DAYS: i64 = 90;
+/// Floor for AGENT_INBOX_RETENTION_DAYS so a typo cannot wipe recent data.
+const RETENTION_MIN_DAYS: i64 = 7;
+/// Sessions go one day after they expire. A revoked session is kept until
+/// then too: its row is what keeps a logged-out JWT rejected until the JWT
+/// itself expires.
+const RETENTION_SESSION_GRACE_DAYS: i64 = 1;
+const RETENTION_TOKEN_GRACE_DAYS: i64 = 7;
+const RETENTION_REVOKED_CREDENTIAL_DAYS: i64 = 30;
+const RETENTION_PENDING_CREDENTIAL_GRACE_DAYS: i64 = 7;
+const RETENTION_PURGED_UPLOAD_GRACE_DAYS: i64 = 7;
+const RETENTION_MESSAGE_BATCH_SIZE: i64 = 500;
+/// Upper bound on message batches per pass. A larger backlog is finished by
+/// the following passes.
+const RETENTION_MAX_MESSAGE_BATCHES: usize = 100;
+const RETENTION_FIRST_RUN_DELAY_SECS: u64 = 5 * 60;
+const RETENTION_INTERVAL_SECS: u64 = 24 * 60 * 60;
+
+impl RetentionConfig {
+    /// Reads AGENT_INBOX_RETENTION_MODE (`off` / `dry_run` / `enforce`) and
+    /// AGENT_INBOX_RETENTION_DAYS. Anything but an explicit `enforce` never
+    /// deletes, so an unset or misspelt mode fails safe.
+    pub fn from_env() -> Self {
+        let mode = match std::env::var("AGENT_INBOX_RETENTION_MODE")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "off" => RetentionMode::Off,
+            "enforce" => RetentionMode::Enforce,
+            _ => RetentionMode::DryRun,
+        };
+        let retention_days = std::env::var("AGENT_INBOX_RETENTION_DAYS")
+            .ok()
+            .and_then(|raw| raw.trim().parse::<i64>().ok())
+            .map(|days| days.max(RETENTION_MIN_DAYS))
+            .unwrap_or(RETENTION_DEFAULT_DAYS);
+        Self {
+            mode,
+            retention_days,
+        }
+    }
+}
+
+/// Rows and blobs deleted by one pass, or that would be deleted in dry-run
+/// mode.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RetentionSummary {
+    pub messages: u64,
+    pub message_blobs: u64,
+    pub attachment_uploads: u64,
+    pub agent_tokens: u64,
+    pub agent_credentials: u64,
+    pub sessions: u64,
+    pub audit_log: u64,
+    pub errors: u64,
+}
+
+/// Runs one retention pass with an `AppState` built from the environment.
+/// Entry point for the DB integration tests.
+pub async fn run_retention_pass(config: RetentionConfig) -> RetentionSummary {
+    let state = AppState::default();
+    run_retention_pass_with_state(&state, config).await
+}
+
+async fn run_retention_pass_with_state(
+    state: &AppState,
+    config: RetentionConfig,
+) -> RetentionSummary {
+    let mut summary = RetentionSummary::default();
+    if config.mode == RetentionMode::Off {
+        return summary;
+    }
+    let pool = match state.database_pool().await {
+        Ok(Some(pool)) => pool,
+        Ok(None) => return summary,
+        Err(error) => {
+            tracing::warn!(error = %error, "retention: database unavailable");
+            summary.errors += 1;
+            return summary;
+        }
+    };
+
+    if config.mode == RetentionMode::Enforce {
+        retention_delete_messages(state, &pool, config.retention_days, &mut summary).await;
+    } else {
+        retention_count_messages(&pool, config.retention_days, &mut summary).await;
+    }
+
+    // Each step is a fixed predicate from this module. A failing step is
+    // logged and counted, and the remaining steps still run. Message rows
+    // go first: deleting them cascades to message_attachments, and the
+    // attachment cleanup job then purges the unlinked blobs.
+    let steps: [(&str, &str, &[i64]); 5] = [
+        (
+            "attachment_uploads",
+            "purged_at < NOW() - ($1::bigint * INTERVAL '1 day') \
+             AND NOT EXISTS (SELECT 1 FROM message_attachments ma \
+                             WHERE ma.attachment_upload_id = attachment_uploads.id)",
+            &[RETENTION_PURGED_UPLOAD_GRACE_DAYS],
+        ),
+        (
+            "agent_tokens",
+            "COALESCE(refresh_expires_at, access_expires_at) \
+               < NOW() - ($1::bigint * INTERVAL '1 day') \
+             OR revoked_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[RETENTION_TOKEN_GRACE_DAYS],
+        ),
+        (
+            "agent_credentials",
+            "(status IN ('revoked', 'compromised') \
+               AND revoked_at < NOW() - ($1::bigint * INTERVAL '1 day')) \
+             OR (status = 'pending' \
+               AND enrollment_expires < NOW() - ($2::bigint * INTERVAL '1 day'))",
+            &[
+                RETENTION_REVOKED_CREDENTIAL_DAYS,
+                RETENTION_PENDING_CREDENTIAL_GRACE_DAYS,
+            ],
+        ),
+        (
+            "sessions",
+            "expires_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[RETENTION_SESSION_GRACE_DAYS],
+        ),
+        (
+            "agent_audit_log",
+            "created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[config.retention_days],
+        ),
+    ];
+    for (table, predicate, binds) in steps {
+        match retention_step(&pool, config.mode, table, predicate, binds).await {
+            Ok(rows) => match table {
+                "attachment_uploads" => summary.attachment_uploads = rows,
+                "agent_tokens" => summary.agent_tokens = rows,
+                "agent_credentials" => summary.agent_credentials = rows,
+                "sessions" => summary.sessions = rows,
+                _ => summary.audit_log = rows,
+            },
+            Err(error) => {
+                tracing::warn!(table, error = %error, "retention: step failed");
+                summary.errors += 1;
+            }
+        }
+    }
+    summary
+}
+
+/// `DELETE FROM {table} WHERE {predicate}`, or the matching COUNT in
+/// dry-run mode. `table` and `predicate` are constants from
+/// `run_retention_pass_with_state`, never request input.
+async fn retention_step(
+    pool: &PgPool,
+    mode: RetentionMode,
+    table: &str,
+    predicate: &str,
+    binds: &[i64],
+) -> Result<u64, sqlx::Error> {
+    if mode == RetentionMode::Enforce {
+        let sql = format!("DELETE FROM {table} WHERE {predicate}");
+        let mut query = sqlx::query(&sql);
+        for value in binds {
+            query = query.bind(*value);
+        }
+        Ok(query.execute(pool).await?.rows_affected())
+    } else {
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for value in binds {
+            query = query.bind(*value);
+        }
+        Ok(query.fetch_one(pool).await?.max(0) as u64)
+    }
+}
+
+async fn retention_count_messages(pool: &PgPool, days: i64, summary: &mut RetentionSummary) {
+    let rows = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM message_index \
+         WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+    )
+    .bind(days)
+    .fetch_one(pool)
+    .await;
+    // Blobs whose every referencing row is past the cutoff.
+    let blobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(DISTINCT m.storage_ref) FROM message_index m \
+         WHERE m.storage_ref <> '' \
+           AND m.created_at < NOW() - ($1::bigint * INTERVAL '1 day') \
+           AND NOT EXISTS (SELECT 1 FROM message_index o \
+                           WHERE o.storage_ref = m.storage_ref \
+                             AND o.created_at >= NOW() - ($1::bigint * INTERVAL '1 day'))",
+    )
+    .bind(days)
+    .fetch_one(pool)
+    .await;
+    match (rows, blobs) {
+        (Ok(rows), Ok(blobs)) => {
+            summary.messages = rows.max(0) as u64;
+            summary.message_blobs = blobs.max(0) as u64;
+        }
+        (Err(error), _) | (_, Err(error)) => {
+            tracing::warn!(error = %error, "retention: message count failed");
+            summary.errors += 1;
+        }
+    }
+}
+
+async fn retention_delete_messages(
+    state: &AppState,
+    pool: &PgPool,
+    days: i64,
+    summary: &mut RetentionSummary,
+) {
+    for _ in 0..RETENTION_MAX_MESSAGE_BATCHES {
+        let rows = match sqlx::query(
+            r#"
+            DELETE FROM message_index
+            WHERE id IN (
+              SELECT id FROM message_index
+              WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')
+              ORDER BY created_at
+              LIMIT $2
+            )
+            RETURNING owner_user_id::text AS owner_user_id, storage_ref
+            "#,
+        )
+        .bind(days)
+        .bind(RETENTION_MESSAGE_BATCH_SIZE)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(error = %error, "retention: message delete failed");
+                summary.errors += 1;
+                return;
+            }
+        };
+        if rows.is_empty() {
+            return;
+        }
+        summary.messages += rows.len() as u64;
+
+        // A cross-user send stores one blob for two rows. Delete a blob
+        // only once no row references it, the same rule as delete_message.
+        let mut blobs: HashMap<String, Vec<String>> = HashMap::new();
+        for row in &rows {
+            let storage_ref: String = row.get("storage_ref");
+            if !storage_ref.is_empty() {
+                let owner: String = row.get("owner_user_id");
+                let owners = blobs.entry(storage_ref).or_default();
+                if !owners.contains(&owner) {
+                    owners.push(owner);
+                }
+            }
+        }
+        for (storage_ref, owners) in blobs {
+            match sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM message_index WHERE storage_ref = $1",
+            )
+            .bind(&storage_ref)
+            .fetch_one(pool)
+            .await
+            {
+                Ok(0) => {
+                    // Local backends file the blob under the storing user's
+                    // directory, which may be either owner; a miss is a
+                    // no-op. Remote backends ignore the user, so one call
+                    // is enough.
+                    let local = matches!(
+                        parse_storage_ref(&storage_ref).map(|parsed| parsed.backend),
+                        Some(StorageBackend::LocalFs | StorageBackend::GoogleDriveMock)
+                    );
+                    let tries = if local { owners.len() } else { 1 };
+                    let mut failed = false;
+                    for owner in owners.iter().take(tries) {
+                        if let Err(error) =
+                            delete_storage_object_by_ref(state, owner, &storage_ref).await
+                        {
+                            // The bucket's lifecycle rule removes it later
+                            // (docs/28 §5).
+                            tracing::warn!(error = %error, "retention: blob delete failed");
+                            failed = true;
+                        }
+                    }
+                    if failed {
+                        summary.errors += 1;
+                    } else {
+                        summary.message_blobs += 1;
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error, "retention: blob ref count failed");
+                    summary.errors += 1;
+                }
+            }
+        }
+        if (rows.len() as i64) < RETENTION_MESSAGE_BATCH_SIZE {
+            return;
+        }
+    }
+}
+
+/// Starts the daily retention job. Returns false when no database is
+/// configured or AGENT_INBOX_RETENTION_MODE=off.
+pub async fn spawn_retention_job_if_configured() -> bool {
+    if std::env::var("DATABASE_URL").is_err() {
+        return false;
+    }
+    let config = RetentionConfig::from_env();
+    if config.mode == RetentionMode::Off {
+        return false;
+    }
+    tokio::spawn(async move {
+        let state = AppState::default();
+        // Also run shortly after boot: every deploy restarts the machine,
+        // and a plain 24h ticker would never fire if deploys come more
+        // often than that.
+        tokio::time::sleep(Duration::from_secs(RETENTION_FIRST_RUN_DELAY_SECS)).await;
+        let mut ticker = tokio::time::interval(Duration::from_secs(RETENTION_INTERVAL_SECS));
+        loop {
+            ticker.tick().await;
+            let summary = run_retention_pass_with_state(&state, config).await;
+            tracing::info!(
+                mode = ?config.mode,
+                retention_days = config.retention_days,
+                messages = summary.messages,
+                message_blobs = summary.message_blobs,
+                attachment_uploads = summary.attachment_uploads,
+                agent_tokens = summary.agent_tokens,
+                agent_credentials = summary.agent_credentials,
+                sessions = summary.sessions,
+                audit_log = summary.audit_log,
+                errors = summary.errors,
+                "data retention pass completed"
+            );
+        }
+    });
+    true
+}
+
 async fn list_messages(
     State(state): State<AppState>,
     method: Method,

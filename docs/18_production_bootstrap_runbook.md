@@ -446,9 +446,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 - アカウント全体の削除請求はお問い合わせフォーム (`/privacy` と `/terms` 記載) 経由
 
 **手動対応手順 (請求が来たとき運営者が行うこと)**:
+
+(2026-11-07 更新: R2 の添付と、相手方と共有している本文・添付の扱いを追加した。[docs/28 §6](./28_data_inventory_and_retention.md))
+
 1. フォーム記入の `aid` / `did` で該当 `user_id` を特定 (`users` テーブル)
 2. 本人確認 (同一 aid の credential で署名されたメッセージを送信してもらう等)
-3. 関連テーブルの削除順序:
+3. 行を消す前に、R2 から消すものを控える (行を消すと参照先が分からなくなる):
+   - 本文: この利用者の `message_index.storage_ref` のうち、ほかの利用者の行が参照していないもの
+   - 添付: この利用者の `attachment_uploads.object_key` のうち、ほかの利用者の `message_attachments` が参照していないもの
+   - 相手方の受信箱が参照している本文と添付は、相手方のデータとして残す
+4. 関連テーブルの削除順序 (相手方の `message_attachments` が参照している添付の行は外部キー (RESTRICT) で消せず、`users` の削除もそこで止まる。その場合の扱いはセルフサービス削除 (docs/28 §5 P2) で設計する。それまでは相手方への影響を確認して個別に判断する):
    - `agent_audit_log` (user_id FK)
    - `agent_tokens`
    - `agent_credentials`
@@ -460,9 +467,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
    - `message_index`
    - `sessions`
    - `users`
-4. BYOS object の掃除 (storage_ref を拾って R2 から削除)
-5. World ID nullifier hash は deny list に退避しておくか検討 (再登録の扱い)
-6. 請求者にメールで完了通知
+5. 3 で控えた本文と添付を R2 から削除する
+6. World ID nullifier hash は deny list に退避しておくか検討 (再登録の扱い)
+7. 請求者にメールで完了通知
 
 **自動化するとしたら**:
 - `DELETE /auth/account` エンドポイント (Cookie 認証必須、パスフレーズや IDKit 再認証で二段階確認)

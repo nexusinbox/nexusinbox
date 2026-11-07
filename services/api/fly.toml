@@ -21,6 +21,10 @@ primary_region = 'nrt'
   # proxy sets; a client-supplied CF-Connecting-IP would be trusted
   # otherwise. Change it together with the topology.
   AGENT_INBOX_CLIENT_IP_HEADER = 'fly-client-ip'
+  # Daily data-retention pass (docs/28). dry_run only logs how many rows
+  # would be deleted; switch to 'enforce' once those numbers are approved.
+  AGENT_INBOX_RETENTION_MODE = 'dry_run'
+  AGENT_INBOX_RETENTION_DAYS = '90'
   AGENT_INBOX_WORLD_VERIFY_ENABLED = 'true'
   LOG_FORMAT = 'json'
   NODE_ENV = 'production'
