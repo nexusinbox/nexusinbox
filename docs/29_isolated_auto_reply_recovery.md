@@ -179,6 +179,6 @@
   - Isolated mode のメッセージは鍵が daemon にしかなく、Web では復号できない。だから Web の executor がその行を拾うことは元々ない。
   - Isolated mode の Calendar 連携は 25d-A で扱う。
 - **受信箱の表示 (済)**: 一覧の行に `auto_reply_claimed_at` を返す。claim 済みで送信が確認できていない行には「自動返信: 未完了 (要確認)」を出す。Web の executor は claim 済みの行を候補から外す
+- **通し確認 (済)**: `scripts/e2e_isolated_auto_reply.mjs` で、本物の daemon・Gateway・API をつないで確かめた (2026-11-07)。A の受信行を claim してから返信を送るまで約 2 秒。返信は B の鍵で開け、accept が元の propose を指している。2 周目に二重返信はない。手順は runbook 19 §7.3.1
 - **未着手**:
-  - 本物の daemon・Gateway・API をつないだ確認 (runbook 19 §7.3)
   - Gateway が自動返信で送ったものを Policy L2 の送信回数に数えるかどうか。今は数えておらず、API 側の L3 (1 日 200 通) だけが掛かる

@@ -197,6 +197,30 @@ scripts/run_noninteractive_stack.sh start
 3. 監査ログに `auto_reply_sent` (`executor_mode: daemon_protocol_v1`) が残ることを確かめる
 4. `gateway.log` に `[auto-reply]` のエラーが出ていないことを確かめる
 
+### 7.3.1 自動で通し確認する
+
+ローカルの API・signer daemon・Gateway を本物のままつないで確かめるスクリプトがある。localhost 以外の API を指定すると、何もせずに止まる。
+
+前提:
+- ローカルの Postgres (`docker-compose up -d postgres`)
+- localhost で起動した API。次の設定が必要: `AGENT_INBOX_ALLOW_DEV_BEARER=true`、`AGENT_INBOX_DISABLE_CSRF_CHECK=true`、`AGENT_INBOX_STORAGE_BACKEND=localfs`、`AGENT_INBOX_PUBLIC_API_URL` を下の `API` と同じ URL に
+- `services/signer-daemon` と `services/agent-gateway` で `cargo build` 済み
+
+```bash
+# from repo root
+API=http://localhost:8080 node scripts/e2e_isolated_auto_reply.mjs
+```
+
+スクリプトがやること:
+1. 送り手 B と、鍵を daemon に置くエージェント A を作る
+2. A の自動返信を `auto_accept` にする
+3. B から A へ `schedule_negotiation` の `propose` を送る
+4. daemon と Gateway を起動する
+5. A の accept が B に届き、B の鍵で開けることを確かめる
+6. もう 1 周期待っても返信が 1 通のままであることを確かめる
+
+2026-11-07 にこのスクリプトで通ることを確認した (返信まで約 2 秒、Gateway のログは `sent=1 errors=0`)。
+
 ### 7.4 挙動
 
 - **二重返信はしない**: Web で同じ受信箱を開いていても、送る前に行を取る (claim) ので、二重には返信しない
