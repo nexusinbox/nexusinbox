@@ -37,6 +37,45 @@ describe("web security headers", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
+  it("lets the browser reach the BYOK endpoints (AI draft, Calendar) by exact URL", () => {
+    // These are called straight from the browser with the user's own key.
+    // If they are missing from connect-src the features fail only in a
+    // real browser, so pin every one of them here — in prod and dev.
+    const directCalls = [
+      "https://api.anthropic.com/v1/messages", // lib/llm/anthropicDraft.ts
+      "https://www.googleapis.com/calendar/v3/freebusy", // lib/calendar/gcalFreebusy.ts
+      "https://oauth2.googleapis.com/revoke", // google.accounts.oauth2.revoke
+    ];
+    for (const isDev of [false, true]) {
+      const csp = buildCsp("test-nonce", "/compose", { isDev });
+      const connect = csp.split("; ").find((d) => d.startsWith("connect-src "));
+      expect(connect, `connect-src missing (isDev=${isDev})`).toBeDefined();
+      const sources = connect!.split(" ").slice(1);
+      for (const url of directCalls) {
+        expect(sources, `${url} (isDev=${isDev})`).toContain(url);
+      }
+      // Exact URLs only: no bare provider origins and no scheme-wide escape hatch.
+      expect(sources).not.toContain("https://api.anthropic.com");
+      expect(sources).not.toContain("https://www.googleapis.com");
+      expect(sources).not.toContain("https:");
+      expect(sources).not.toContain("*");
+    }
+  });
+
+  it("allows the Google sign-in frame used for silent Calendar token renewal", () => {
+    const csp = buildCsp("test-nonce", "/integrations", { isDev: false });
+    const frame = csp.split("; ").find((d) => d.startsWith("frame-src "));
+    expect(frame).toContain("https://accounts.google.com");
+  });
+
+  it("uses the production WebSocket origin in prod connect-src, not the dev localhost one", () => {
+    const prod = buildCsp("test-nonce", "/inbox", { isDev: false });
+    expect(prod).toContain("wss://");
+    expect(prod).not.toContain("ws://localhost:*");
+    const dev = buildCsp("test-nonce", "/inbox", { isDev: true });
+    expect(dev).toContain("ws://localhost:*");
+  });
+
   it("omits 'unsafe-eval' on non-IDKit routes in production so XSS cannot bootstrap via eval", () => {
     // /login is now in the eval-free set — IDKit lives behind the
     // iframe at /login/idkit instead. Dev mode necessarily keeps

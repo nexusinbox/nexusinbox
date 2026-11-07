@@ -118,28 +118,95 @@ export const TOOL_CATALOG: ToolDefinition[] = [
   },
 ];
 
+type PropertySchema = {
+  type?: "string" | "integer" | "boolean";
+  pattern?: string;
+  enum?: readonly unknown[];
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+};
+
 /**
- * Enforce the `pattern` constraints a tool's inputSchema declares.
+ * Enforce the constraints a tool's inputSchema declares: unknown
+ * arguments (when `additionalProperties: false`), `type`, `enum`,
+ * `pattern`, `maxLength`, `minimum` and `maximum`.
  *
  * The low-level MCP SDK `Server` hands tool arguments through without
- * checking them against the advertised schema, so without this a client
- * could pass any string where the schema promises a UUID. Presence of
- * required fields is left to the runtime, which already reports missing
- * ids with its own error text.
+ * checking them against the advertised schema. Checking only `pattern`
+ * left `mode` fail-open — any value other than "draft" (say "preview" or
+ * "SEND") took the send branch — and let `provider_hint` past its
+ * 128-character cap into the audit log (review 2026-11-07). Presence of
+ * required fields is left to the runtime, which reports missing ids with
+ * its own error text; `null` is treated like an omitted optional field.
  */
 export function validateToolArguments(
   tool: ToolDefinition,
   args: Record<string, unknown>,
 ): void {
-  const properties =
-    (tool.inputSchema.properties as Record<string, { pattern?: string }> | undefined) ?? {};
-  for (const [key, schema] of Object.entries(properties)) {
-    if (!schema.pattern) continue;
-    const value = args[key];
-    if (value === undefined) continue;
-    if (typeof value !== "string" || !new RegExp(schema.pattern).test(value)) {
-      throw new Error(`${key} must match ${schema.pattern}`);
+  const schema = tool.inputSchema as {
+    properties?: Record<string, PropertySchema>;
+    additionalProperties?: boolean;
+  };
+  const properties = schema.properties ?? {};
+  if (schema.additionalProperties === false) {
+    for (const key of Object.keys(args)) {
+      if (!Object.prototype.hasOwnProperty.call(properties, key)) {
+        throw new Error(`unexpected argument: ${key}`);
+      }
     }
+  }
+  for (const [key, prop] of Object.entries(properties)) {
+    const value = args[key];
+    if (value === undefined || value === null) continue;
+    if (prop.type === "string" && typeof value !== "string") {
+      throw new Error(`${key} must be a string`);
+    }
+    if (prop.type === "integer" && !Number.isInteger(value)) {
+      throw new Error(`${key} must be an integer`);
+    }
+    if (prop.type === "boolean" && typeof value !== "boolean") {
+      throw new Error(`${key} must be a boolean`);
+    }
+    if (prop.enum && !prop.enum.includes(value)) {
+      throw new Error(`${key} must be one of: ${prop.enum.join(", ")}`);
+    }
+    if (typeof value === "string") {
+      if (prop.maxLength !== undefined && value.length > prop.maxLength) {
+        throw new Error(`${key} must be at most ${prop.maxLength} characters`);
+      }
+      if (prop.pattern && !new RegExp(prop.pattern).test(value)) {
+        throw new Error(`${key} must match ${prop.pattern}`);
+      }
+    } else if (prop.pattern) {
+      throw new Error(`${key} must match ${prop.pattern}`);
+    }
+    if (typeof value === "number") {
+      if (prop.minimum !== undefined && value < prop.minimum) {
+        throw new Error(`${key} must be >= ${prop.minimum}`);
+      }
+      if (prop.maximum !== undefined && value > prop.maximum) {
+        throw new Error(`${key} must be <= ${prop.maximum}`);
+      }
+    }
+  }
+}
+
+/**
+ * `send_text_message` takes `from_agent` from the model, but the message
+ * is always signed and sent as the agent this server is bound to. Refuse
+ * a mismatching value instead of echoing it into the draft, where the
+ * human confirming the send would read a sender that is not the real one.
+ */
+export function assertFromBoundAgent(
+  fromAgent: string,
+  bound: { aid: string; did: string },
+): void {
+  const value = fromAgent.trim();
+  if (value !== bound.aid && value !== bound.did) {
+    throw new Error(
+      `from_agent must be the agent this server is bound to (${bound.aid}); got ${value || "(empty)"}`,
+    );
   }
 }
 

@@ -166,16 +166,35 @@ export function buildCsp(
   // attachment fetch. Scoped to the R2 S3-endpoint wildcard, not `*`.
   const r2Connect = "https://*.r2.cloudflarestorage.com";
 
-  const connectSrc = IS_DEV
-    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`
-    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`;
+  // Bring-your-own-key integrations the browser calls directly with the
+  // user's own credential — nothing here goes through our API:
+  //   - AI reply drafts            lib/llm/anthropicDraft.ts
+  //   - Calendar free/busy         lib/calendar/gcalFreebusy.ts
+  //   - Calendar token revocation  google.accounts.oauth2.revoke (GIS)
+  // Listed as exact URLs, not origins: a path-bearing source matches only
+  // that path, so these entries do not open a general exfiltration
+  // channel to the provider if an XSS ever lands. Without them the
+  // features fail only in a real browser — unit tests never see CSP —
+  // which is how they shipped broken (review 2026-09-07).
+  const byokConnect = [
+    "https://api.anthropic.com/v1/messages",
+    "https://www.googleapis.com/calendar/v3/freebusy",
+    "https://oauth2.googleapis.com/revoke",
+  ].join(" ");
+
+  // Same `isDev` as script-src so tests can assert the production shape.
+  const connectSrc = isDev
+    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} ${byokConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`
+    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} ${byokConnect} https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org`;
 
   return [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
     frameAncestors,
-    "frame-src 'self' https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org",
+    // accounts.google.com: Google Identity Services renews the Calendar
+    // token silently (`prompt: "none"`) without opening a popup.
+    "frame-src 'self' https://bridge.worldcoin.org https://*.worldcoin.org https://*.world.org https://accounts.google.com",
     "form-action 'self'",
     // IDKit v4 fetches TWK Lausanne fonts (5 weights) from
     // `world-id-assets.com` and may pull occasional brand assets /

@@ -94,6 +94,15 @@ pub trait ExecutorBackend: Send + Sync {
     async fn fetch_contact_dids(&self) -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }
+
+    /// The owner's per-agent auto-reply master switch (`agents.auto_reply`).
+    /// Rows the server stamped `auto_accept` / `auto_decline` while the
+    /// switch was on stay pending after the owner turns it off, so the
+    /// executor must re-read it every tick. Default `false`: a backend that
+    /// cannot tell must not send.
+    async fn fetch_master_switch(&self) -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -173,10 +182,26 @@ pub async fn run_one_tick<B: ExecutorBackend>(backend: &B) -> TickReport {
             std::collections::HashSet::new()
         }
     };
+    // Fail closed: if the switch cannot be read, treat it as off.
+    let master_auto_reply_enabled = match backend.fetch_master_switch().await {
+        Ok(on) => on,
+        Err(e) => {
+            eprintln!("[auto-reply] fetch master switch failed: {e}");
+            false
+        }
+    };
 
     let take = pending.len().min(MAX_PER_TICK);
     for entry in pending.into_iter().take(take) {
-        match dispatch_one(backend, &entry, policy.as_ref(), &contacts).await {
+        match dispatch_one(
+            backend,
+            &entry,
+            policy.as_ref(),
+            &contacts,
+            master_auto_reply_enabled,
+        )
+        .await
+        {
             DispatchOutcome::Sent => report.sent += 1,
             DispatchOutcome::Skipped => report.skipped += 1,
             DispatchOutcome::Error => report.errors += 1,
@@ -205,6 +230,7 @@ async fn dispatch_one<B: ExecutorBackend>(
     entry: &PendingMessage,
     policy: Option<&Value>,
     contacts: &std::collections::HashSet<String>,
+    master_auto_reply_enabled: bool,
 ) -> DispatchOutcome {
     // 1. Fetch encrypted body + unwrap content key.
     let content = match backend.fetch_message_content(&entry.id).await {
@@ -248,7 +274,10 @@ async fn dispatch_one<B: ExecutorBackend>(
     // evaluator. Mirrors Standard mode's merge so a `protocols.*` override
     // can upgrade a queued decision or downgrade an auto-accept one.
     let eval_ctx = EvaluationContext {
-        master_auto_reply_enabled: true,
+        // Read from the owner's live switch each tick. This was hard-coded
+        // to `true`, so turning auto-reply off did not stop replies to rows
+        // already stamped while it was on (review 2026-11-07).
+        master_auto_reply_enabled,
         priority: entry.priority.clone(),
         trust_score: entry.trust_score,
         sender_did: entry.sender_did.clone(),
@@ -469,6 +498,7 @@ mod tests {
         content_key: String,
         policy: Option<Value>,
         contacts: Vec<String>,
+        master: bool,
     }
 
     #[async_trait::async_trait]
@@ -534,6 +564,10 @@ mod tests {
         async fn fetch_contact_dids(&self) -> Result<Vec<String>, String> {
             Ok(self.contacts.clone())
         }
+
+        async fn fetch_master_switch(&self) -> Result<bool, String> {
+            Ok(self.master)
+        }
     }
 
     fn fixture_propose_body_encrypted(content_key: &str) -> String {
@@ -597,6 +631,7 @@ mod tests {
                 "default_action": "auto_accept",
             })),
             contacts: Vec::new(),
+            master: true,
         }
     }
 
@@ -619,6 +654,19 @@ mod tests {
         );
         let marked = backend.marked.lock().unwrap();
         assert_eq!(marked.as_slice(), &["msg-1".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn run_one_tick_sends_nothing_once_the_master_switch_is_off() {
+        // Regression (review 2026-11-07): the switch was hard-coded on, so a
+        // row stamped `auto_accept` while auto-reply was enabled was still
+        // answered after the owner turned it off.
+        let mut backend = make_backend();
+        backend.master = false;
+        let report = run_one_tick(&backend).await;
+        assert_eq!(report.sent, 0);
+        assert!(backend.sent.lock().unwrap().is_empty());
+        assert!(backend.marked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

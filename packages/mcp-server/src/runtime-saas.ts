@@ -30,6 +30,7 @@ import {
 } from "./audit.js";
 import { decryptEnvelopeTextForRecipient } from "./decrypt.js";
 import { loadOrActivateCredential, type LoadedCredential } from "./keystore.js";
+import { assertFromBoundAgent } from "./tools.js";
 import type {
   NexusInboxMcpRuntime,
   AgentSummary,
@@ -191,6 +192,7 @@ function buildRuntime(
     },
 
     async sendTextMessage(input): Promise<DraftEnvelopeResult | SentMessageResult> {
+      assertFromBoundAgent(input.from_agent, { aid: config.aid, did: credential.did });
       const mode = input.mode ?? "draft";
       const body_hash = sha256Hex(input.body_markdown);
       const recipient = await client.resolveRecipient(input.to);
@@ -206,7 +208,7 @@ function buildRuntime(
         });
         return {
           mode: "draft",
-          sender_aid: input.from_agent,
+          sender_aid: config.aid,
           recipient_aid: recipient.aid,
           recipient_did: recipient.did,
           subject: input.subject,

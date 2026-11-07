@@ -40,6 +40,7 @@ import {
 import {
   decryptAttachment,
   decodeAttachmentKey,
+  readCiphertextWithLimit,
   sha256OfBytes,
 } from "../../lib/crypto/attachment";
 import { indexContactsByDid, resolveParticipantLabel } from "../../lib/api/labels";
@@ -1215,7 +1216,8 @@ function AttachmentList({
       );
       const blobResp = await fetch(urlResp.download_url);
       if (!blobResp.ok) throw new Error("download-failed");
-      const ciphertext = await blobResp.arrayBuffer();
+      // Never read more than the size the server verified at upload time.
+      const ciphertext = await readCiphertextWithLimit(blobResp, att.ciphertext_size_bytes);
 
       // Decrypt locally and verify integrity.
       const plaintext = await decryptAttachment(

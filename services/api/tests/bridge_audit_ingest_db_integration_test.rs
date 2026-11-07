@@ -418,15 +418,25 @@ async fn bridge_audit_rejects_jti_replay() {
     let payload = response_json(second).await;
     assert_eq!(payload["error"], "replay_rejected");
 
-    // Only one audit row should exist.
-    let cnt: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM agent_audit_log \
-         WHERE credential_id = $1 AND event = 'bridged_decrypt'",
-    )
-    .bind(credential_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    // Only one audit row should exist. The accepted request writes it via
+    // record_audit_event, which is fire-and-forget (tokio::spawn), so give
+    // that task a moment to land before counting — counting immediately
+    // raced it and read 0.
+    let mut cnt: i64 = 0;
+    for _ in 0..40 {
+        cnt = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM agent_audit_log \
+             WHERE credential_id = $1 AND event = 'bridged_decrypt'",
+        )
+        .bind(credential_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if cnt >= 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     assert_eq!(cnt, 1, "replay must not insert a second audit row");
 }
 

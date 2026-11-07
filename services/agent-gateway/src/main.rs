@@ -232,6 +232,12 @@ struct GatewayState {
     signer_socket: String,
     token: Mutex<TokenState>,
     policy: Mutex<PolicyL2>,
+    /// Serialises the token slow path (refresh / new assertion). Concurrent
+    /// RPCs that all observe an expired access token must not each POST the
+    /// same refresh token: the API treats a second use of a rotated refresh
+    /// token as theft, revokes the family and flips the credential to
+    /// `compromised` — a self-inflicted lockout (review 2026-09-07).
+    refresh_gate: tokio::sync::Mutex<()>,
     http_client: reqwest::Client,
     start_time: Instant,
     /// If set, only accept UDS connections from this UID (SO_PEERCRED, §4.3).
@@ -390,14 +396,30 @@ fn build_dpop_proof(
 // Token lifecycle
 // ---------------------------------------------------------------------------
 
+/// The current access token, if it is still valid.
+fn current_valid_token(state: &GatewayState) -> Option<String> {
+    let ts = state.token.lock().unwrap();
+    if ts.is_valid() {
+        ts.access_token.clone()
+    } else {
+        None
+    }
+}
+
 /// Ensure we have a valid access token. If not, obtain one via the Signer Daemon.
 async fn ensure_token(state: &GatewayState) -> Result<String, String> {
-    // Check if current token is still valid
-    {
-        let ts = state.token.lock().unwrap();
-        if ts.is_valid() {
-            return Ok(ts.access_token.clone().unwrap());
-        }
+    // Fast path: no gate needed while the token is valid.
+    if let Some(at) = current_valid_token(state) {
+        return Ok(at);
+    }
+
+    // The slow path is single-file. Every RPC that raced past the fast path
+    // queues here; whoever holds the gate installs a fresh token and the
+    // others pick it up in the re-check below instead of replaying the same
+    // refresh token (which the API would treat as theft).
+    let _gate = state.refresh_gate.lock().await;
+    if let Some(at) = current_valid_token(state) {
+        return Ok(at);
     }
 
     // Try refresh first
@@ -528,6 +550,15 @@ async fn refresh_token(state: &GatewayState, rt: &str) -> Result<String, String>
         ts.access_token = Some(access_token.clone());
         ts.refresh_token = refresh_token;
         ts.expires_at = Some(Utc::now() + chrono::Duration::seconds(expires_in as i64));
+    }
+
+    // Policy L2 is "N sends per access token", and a refresh mints a new
+    // access token. Resetting only in obtain_new_token left a gateway that
+    // kept refreshing stuck at the cap forever, since nothing ever fell back
+    // to a new assertion.
+    {
+        let mut policy = state.policy.lock().unwrap();
+        policy.reset();
     }
 
     Ok(access_token)
@@ -1132,6 +1163,7 @@ async fn main() {
         signer_socket: cli.signer_socket,
         token: Mutex::new(TokenState::new()),
         policy: Mutex::new(PolicyL2::new(cli.max_sends_per_token)),
+        refresh_gate: tokio::sync::Mutex::new(()),
         http_client: reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -1479,6 +1511,21 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
         Ok(policy_resp.get("policy").cloned())
     }
 
+    async fn fetch_master_switch(&self) -> Result<bool, String> {
+        let token = ensure_token(&self.state).await?;
+        let agents_url = format!("{}/agents", self.state.api_url);
+        let agents_body = api_get(&self.state, &agents_url, &token).await?;
+        // Missing / non-boolean means "off": the executor must not send on
+        // a switch it could not read.
+        Ok(agents_body
+            .get("agents")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|a| a.get("auto_reply"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false))
+    }
+
     async fn fetch_contact_dids(&self) -> Result<Vec<String>, String> {
         let token = ensure_token(&self.state).await?;
         let url = format!("{}/contacts", self.state.api_url);
@@ -1681,6 +1728,116 @@ mod tests {
         assert!(!ts.is_valid());
     }
 
+    /// Minimal HTTP/1.1 responder for `/agent-auth/refresh`: counts
+    /// requests, waits a little so concurrent callers overlap, then returns
+    /// a rotated token pair. Only what `ensure_token` needs — no routing,
+    /// no keep-alive.
+    async fn spawn_refresh_mock() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hits_for_server = hits.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let hits = hits_for_server.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 16 * 1024];
+                    let mut filled = 0usize;
+                    loop {
+                        let n = sock.read(&mut buf[filled..]).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        filled += n;
+                        let so_far = String::from_utf8_lossy(&buf[..filled]).into_owned();
+                        if let Some(head_end) = so_far.find("\r\n\r\n") {
+                            let content_length = so_far[..head_end]
+                                .lines()
+                                .find_map(|line| {
+                                    line.to_ascii_lowercase()
+                                        .strip_prefix("content-length:")
+                                        .and_then(|v| v.trim().parse::<usize>().ok())
+                                })
+                                .unwrap_or(0);
+                            if filled >= head_end + 4 + content_length {
+                                break;
+                            }
+                        }
+                        if filled == buf.len() {
+                            break;
+                        }
+                    }
+                    hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    let body = r#"{"access_token":"agt_rotated","refresh_token":"agr_rotated","expires_in":900}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = sock.write_all(response.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        (format!("http://{}", addr), hits)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_ensure_token_refreshes_once_under_concurrency() {
+        // Regression (review 2026-09-07): every RPC that saw an expired
+        // access token copied the same refresh token and POSTed it in
+        // parallel. The API's reuse detection then revoked the family and
+        // flipped the credential to `compromised`. The refresh gate must
+        // collapse a burst into exactly one refresh.
+        let (api_url, hits) = spawn_refresh_mock().await;
+        let mut state = make_test_state();
+        state.api_url = api_url;
+        {
+            let mut ts = state.token.lock().unwrap();
+            ts.access_token = Some("agt_expired".into());
+            ts.refresh_token = Some("agr_original".into());
+            ts.expires_at = Some(Utc::now() - chrono::Duration::seconds(60));
+        }
+        // The old token already used up its L2 send budget.
+        {
+            let mut policy = state.policy.lock().unwrap();
+            while policy.check_send().is_ok() {}
+        }
+        let state = std::sync::Arc::new(state);
+
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let state = state.clone();
+            tasks.push(tokio::spawn(async move { ensure_token(&state).await }));
+        }
+        for task in tasks {
+            let token = task.await.unwrap().expect("ensure_token must succeed");
+            assert_eq!(token, "agt_rotated");
+        }
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "a concurrent burst must perform exactly one refresh"
+        );
+        {
+            let ts = state.token.lock().unwrap();
+            assert_eq!(ts.refresh_token.as_deref(), Some("agr_rotated"));
+            assert!(ts.is_valid());
+        }
+        // A refreshed access token is a new token: its L2 budget is fresh.
+        assert!(state.policy.lock().unwrap().check_send().is_ok());
+
+        // With a valid token installed the fast path serves it without
+        // touching the API at all.
+        assert_eq!(ensure_token(&state).await.unwrap(), "agt_rotated");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn test_allowed_methods() {
         assert!(ALLOWED_METHODS.contains(&"whoami"));
@@ -1798,6 +1955,7 @@ mod tests {
             signer_socket: "/tmp/signer.sock".into(),
             token: Mutex::new(TokenState::new()),
             policy: Mutex::new(PolicyL2::new(20)),
+            refresh_gate: tokio::sync::Mutex::new(()),
             http_client: reqwest::Client::new(),
             start_time: Instant::now(),
             allowed_uid: None,

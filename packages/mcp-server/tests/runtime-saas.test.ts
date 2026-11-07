@@ -22,6 +22,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { sha256Hex, type AuditEntry } from "../src/audit.js";
+import { assertFromBoundAgent } from "../src/tools.js";
 
 type MockClient = {
   resolveRecipient: ReturnType<typeof vi.fn>;
@@ -102,6 +103,7 @@ function buildMockRuntime(
       confirmed_by_user?: boolean;
       provider_hint?: string;
     }) {
+      assertFromBoundAgent(input.from_agent, { aid, did: "did:key:self-current" });
       const mode = input.mode ?? "draft";
       const body_hash = sha256Hex(input.body_markdown);
       const recipient = await client.resolveRecipient(input.to);
@@ -116,7 +118,7 @@ function buildMockRuntime(
         });
         return {
           mode: "draft" as const,
-          sender_aid: input.from_agent,
+          sender_aid: aid,
           recipient_aid: recipient.aid,
           recipient_did: recipient.did,
           subject: input.subject,
@@ -235,6 +237,23 @@ const RECIPIENT_BOB = {
 };
 
 describe("Phase 1B: send_text_message", () => {
+  it("refuses a from_agent other than the bound agent instead of echoing it", async () => {
+    // Regression (review 2026-11-07): the draft showed the model-supplied
+    // from_agent as the sender while the message would go out as the bound
+    // credential, so the human confirming it read the wrong sender.
+    const { client, runtime } = buildFixture();
+    client.resolveRecipient.mockResolvedValue(RECIPIENT_BOB);
+    await expect(
+      runtime.sendTextMessage({
+        from_agent: "aid:ai:someone-else",
+        to: "aid:ai:bob",
+        subject: "hi",
+        body_markdown: "hello bob",
+      }),
+    ).rejects.toThrow(/from_agent/);
+    expect(client.sendTextMessage).not.toHaveBeenCalled();
+  });
+
   it("draft mode returns envelope + emits draft_body_hash to audit", async () => {
     const { client, audit, runtime } = buildFixture();
     client.resolveRecipient.mockResolvedValueOnce(RECIPIENT_BOB);

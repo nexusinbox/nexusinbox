@@ -14,6 +14,7 @@
 
 import {
   A2A_CONTENT_TYPE,
+  assertValidA2APayload,
   parseA2APayload,
   type A2AProtocolBlock,
   type ScheduleProposePayload,
@@ -27,7 +28,7 @@ import {
   type ProtocolKey,
   type AutoReplyAction,
 } from "./autoReplyClientEvaluator";
-import type { A2ARespondPayload } from "./a2aReply";
+import { canRespondToProtocol, type A2ARespondPayload } from "./a2aReply";
 import type { IsoInterval } from "../calendar/gcalFreebusy";
 
 export const AUTO_REPLY_ORIGIN_CLIENT = "client_protocol_v1";
@@ -123,6 +124,23 @@ function eligibleMessages(messages: MessageIndexEntry[]): MessageIndexEntry[] {
 }
 
 /**
+ * True when an incoming protocol block is something the executor may
+ * answer: a request (`propose` / `delegate`) that the manual reply UI
+ * would also offer to answer (not expired, not in the sent folder) and
+ * whose payload passes the same validation senders run before sending
+ * (candidate count, timezones, 24 h windows).
+ */
+function isAnswerableRequest(entry: MessageIndexEntry, protocol: A2AProtocolBlock): boolean {
+  if (!canRespondToProtocol({ folder: entry.folder, protocol })) return false;
+  try {
+    assertValidA2APayload(protocol);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Pick the first candidate the executor can safely commit to. Phase
  * 4.4c isn't aware of the user's calendar (that's 4.4d), so we accept
  * the first candidate verbatim. A future change can replace this with
@@ -195,6 +213,19 @@ export async function runAutoReplyExecutor(
       const parsed = parseA2APayload(plaintext, A2A_CONTENT_TYPE);
       if (!parsed.protocol) {
         progress({ kind: "skipped", messageId: entry.id, reason: "not_a2a" });
+        continue;
+      }
+      // Answer only live, well-formed requests. The server stamps its
+      // decision without seeing plaintext, so a stamped row can carry any
+      // A2A action. Replying to an accept / decline / complete / counter
+      // let an allowed sender collect signed accepts that a per-action
+      // policy override (say `task_delegation.delegate = decline`) was
+      // meant to prevent, and a malformed proposal crashed the executor
+      // and was retried on every render. Same gate as the Rust executor
+      // and the manual reply UI (review 2026-11-07).
+      if (!isAnswerableRequest(entry, parsed.protocol)) {
+        progress({ kind: "skipped", messageId: entry.id, reason: "not_a_request" });
+        await input.api.markAutoReplySent(entry.id, {}).catch(() => undefined);
         continue;
       }
       const protocolKey: ProtocolKey = {

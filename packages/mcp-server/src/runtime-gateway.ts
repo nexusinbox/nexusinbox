@@ -46,6 +46,7 @@ import {
   type Auditor,
 } from "./audit.js";
 import { decryptEnvelopeTextWithContentKey } from "./decrypt.js";
+import { assertFromBoundAgent } from "./tools.js";
 import type {
   NexusInboxMcpRuntime,
   DraftEnvelopeResult,
@@ -184,6 +185,7 @@ function buildGatewayRuntime(
     },
 
     async sendTextMessage(input): Promise<DraftEnvelopeResult | SentMessageResult> {
+      assertFromBoundAgent(input.from_agent, { aid: whoami.aid, did: whoami.did });
       const mode = input.mode ?? "draft";
       const body_hash = sha256Hex(input.body_markdown);
       const recipient = await gw.resolveRecipient(input.to);
@@ -199,7 +201,7 @@ function buildGatewayRuntime(
         });
         return {
           mode: "draft",
-          sender_aid: input.from_agent,
+          sender_aid: whoami.aid,
           recipient_aid: recipient.aid,
           recipient_did: recipient.did,
           subject: input.subject,

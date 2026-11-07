@@ -373,3 +373,83 @@ describe("runAutoReplyExecutor", () => {
     expect(api.markAutoReplySent).not.toHaveBeenCalled();
   });
 });
+
+describe("runAutoReplyExecutor: only answers live, well-formed requests", () => {
+  // Regression (review 2026-11-07): the browser executor looked at the
+  // protocol type only, so any stamped A2A action (accept / decline /
+  // complete / counter) got a signed accept back, and a per-action policy
+  // override such as `task_delegation.delegate = decline` could be
+  // sidestepped by sending `complete` instead.
+  function block(type: string, action: string, payload: unknown): string {
+    return JSON.stringify({
+      v: 1,
+      body: "",
+      protocol: { id: "proto-x", type, action, reply_to: null, payload },
+    });
+  }
+
+  async function run(body: string) {
+    const api = makeApi();
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
+    await runAutoReplyExecutor({
+      viewerAgentDid: "did:key:zViewer",
+      viewerHasSigningKey: true,
+      messages: [makeEntry()],
+      policy: {
+        v: 1,
+        default_action: "auto_accept",
+        protocols: { task_delegation: { delegate: { action: "auto_decline" } } },
+      },
+      masterAutoReplyEnabled: true,
+      isContact: () => true,
+      api,
+      sendProtocolReply,
+      decrypt: async () => body,
+    });
+    return { api, sendProtocolReply };
+  }
+
+  it("does not answer a non-request action, and marks the row so it is not retried", async () => {
+    for (const [type, action, payload] of [
+      ["task_delegation", "complete", { result: "done" }],
+      ["task_delegation", "accept", {}],
+      ["schedule_negotiation", "accept", { selected_candidate: candidate }],
+      ["schedule_negotiation", "decline", { reason: "busy" }],
+    ] as const) {
+      const { api, sendProtocolReply } = await run(block(type, action, payload));
+      expect(sendProtocolReply, `${type}.${action}`).not.toHaveBeenCalled();
+      expect(api.markAutoReplySent, `${type}.${action}`).toHaveBeenCalledWith("msg-1", {});
+    }
+  });
+
+  it("does not answer a malformed proposal (and does not retry it forever)", async () => {
+    const { api, sendProtocolReply } = await run(
+      block("schedule_negotiation", "propose", {
+        event_title: "Sync",
+        candidates: "not-an-array",
+        required_participants: [],
+      }),
+    );
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+    expect(api.markAutoReplySent).toHaveBeenCalledWith("msg-1", {});
+  });
+
+  it("does not answer a proposal whose response deadline has passed", async () => {
+    const { sendProtocolReply } = await run(
+      block("schedule_negotiation", "propose", {
+        event_title: "Sync",
+        candidates: [candidate],
+        required_participants: ["did:key:zSender", "did:key:zViewer"],
+        response_deadline: "2000-01-01T00:00:00Z",
+      }),
+    );
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+  });
+
+  it("still applies the per-action override to the real request", async () => {
+    const { sendProtocolReply } = await run(taskDelegateBody);
+    expect(sendProtocolReply).toHaveBeenCalledTimes(1);
+    const call = (sendProtocolReply as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.reply.action).toBe("decline");
+  });
+});

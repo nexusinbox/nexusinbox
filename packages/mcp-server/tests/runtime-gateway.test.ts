@@ -280,6 +280,35 @@ describe("Isolated mode runtime (Gateway)", () => {
     expect(methods).not.toContain("send_message");
   });
 
+  it("send_text_message refuses a from_agent other than the Gateway-bound agent", async () => {
+    // Regression (review 2026-11-07): the draft echoed the model-supplied
+    // from_agent as sender_aid while the Gateway always sends as its bound
+    // agent, so the human confirming the send read the wrong sender.
+    const rpcTransport = buildFakeTransport({
+      whoami: GATEWAY_WHOAMI,
+      resolve_recipient: RECIPIENT_BOB,
+    });
+    const { runtime } = await createGatewayRuntime({ rpcTransport, auditSink: () => {} });
+
+    await expect(
+      runtime.sendTextMessage({
+        from_agent: "aid:ai:someone-else",
+        to: "aid:ai:bob",
+        subject: "hi",
+        body_markdown: "hello",
+      }),
+    ).rejects.toThrow(/from_agent/);
+
+    const draft = await runtime.sendTextMessage({
+      from_agent: GATEWAY_WHOAMI.did,
+      to: "aid:ai:bob",
+      subject: "hi",
+      body_markdown: "hello",
+    });
+    expect(draft.mode).toBe("draft");
+    expect(draft.sender_aid).toBe(GATEWAY_WHOAMI.aid);
+  });
+
   it("send_text_message draft returns the envelope without a send_message RPC", async () => {
     const audit: AuditEntry[] = [];
     const rpcTransport = buildFakeTransport({

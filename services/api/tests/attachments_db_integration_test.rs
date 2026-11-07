@@ -1255,3 +1255,110 @@ async fn deleting_both_message_copies_retires_attachment_upload() {
 
     restore_s3_env(saved_s3_env);
 }
+
+#[tokio::test]
+#[serial]
+async fn send_refuses_an_upload_made_for_another_agent() {
+    // Regression (review 2026-09-07): send only checked owner_user_id, so a
+    // second agent under the same account could pull the first agent's
+    // upload into its own message.
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    // SAFETY: test-local env tweak; rejected at startup when NODE_ENV=production.
+    unsafe {
+        std::env::set_var("AGENT_INBOX_ALLOW_SKIP_S3_HEAD_IN_TESTS", "true");
+    }
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    // `valid_attachment_id` is bound to the fixture's first sender agent.
+    let fx = seed_cross_user_send_fixture(&pool).await;
+
+    // A second agent under the same sender account.
+    let second_key = SigningKey::from_bytes(&{
+        let mut b = [0u8; 32];
+        b[0] = 0x52;
+        b
+    });
+    let second_did = derive_did_key(&second_key.verifying_key());
+    let second_pub = URL_SAFE_NO_PAD.encode(second_key.verifying_key().to_bytes());
+    let second_agent_id = Uuid::new_v4();
+    let second_aid = format!("aid:ai:xsecond{}", Uuid::new_v4().simple());
+    sqlx::query(
+        "INSERT INTO agents (id, user_id, did, label, public_key, encryption_key, is_active) \
+         VALUES ($1, $2, $3, 'second', $4, $5, true)",
+    )
+    .bind(second_agent_id)
+    .bind(fx.sender_user_id)
+    .bind(&second_did)
+    .bind(&second_pub)
+    .bind("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU")
+    .execute(&pool)
+    .await
+    .expect("seed second agent");
+    sqlx::query("INSERT INTO agent_identities (aid, agent_id, user_id) VALUES ($1, $2, $3)")
+        .bind(&second_aid)
+        .bind(second_agent_id)
+        .bind(fx.sender_user_id)
+        .execute(&pool)
+        .await
+        .expect("seed second agent_identity");
+    sqlx::query(
+        "INSERT INTO agent_identity_keys (aid, did, signing_public_key, encryption_public_key, status) \
+         VALUES ($1, $2, $3, $4, 'active')",
+    )
+    .bind(&second_aid)
+    .bind(&second_did)
+    .bind(&second_pub)
+    .bind("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU")
+    .execute(&pool)
+    .await
+    .expect("seed second identity_key");
+
+    let from_second = CrossUserSendFixture {
+        sender_did: second_did,
+        signing_key: second_key,
+        ..fx.clone()
+    };
+    let body = build_cross_user_send_body(
+        &from_second,
+        vec![json!({
+            "attachment_id": fx.valid_attachment_id.to_string(),
+            "metadata_encrypted": "meta-ct-opaque",
+            "metadata_nonce": "meta-nonce-opaque",
+        })],
+    );
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/messages")
+                .header("authorization", &fx.sender_auth)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM attachment_uploads WHERE id = $1")
+        .bind(fx.valid_attachment_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        status, "uploaded",
+        "the refused send must not consume the upload"
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_index")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0, "the refused send must not write a message row");
+}

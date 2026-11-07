@@ -869,3 +869,466 @@ async fn same_user_send_appears_in_sent_view() {
         "Sent across all agents must include the same-user send",
     );
 }
+
+// ============================================================================
+// Review 2026-11-07 regressions: agent-token boundaries, refresh after an
+// owner revoke, and auto-purge of blobs shared by two owners.
+// ============================================================================
+
+fn sha256_hex(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(input.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+async fn aid_for_did(pool: &PgPool, did: &str) -> String {
+    sqlx::query_scalar("SELECT aid FROM agent_identity_keys WHERE did = $1")
+        .bind(did)
+        .fetch_one(pool)
+        .await
+        .expect("aid for did")
+}
+
+/// Seed a credential for `aid` plus one plain-bearer token (`dpop_jkt =
+/// 'none'`, which `validate_agent_token` accepts without a DPoP proof).
+/// Returns (Authorization header value, refresh token, credential id).
+async fn seed_agent_token(
+    pool: &PgPool,
+    user_id: Uuid,
+    aid: &str,
+    credential_status: &str,
+    token_revoked: bool,
+) -> (String, String, Uuid) {
+    let credential_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO agent_credentials \
+           (id, aid, user_id, label, status, signing_public_key, activated_at, revoked_at) \
+         VALUES ($1, $2, $3, 'test', $4, 'unused', NOW(), \
+           CASE WHEN $4 = 'active' THEN NULL ELSE NOW() END)",
+    )
+    .bind(credential_id)
+    .bind(aid)
+    .bind(user_id)
+    .bind(credential_status)
+    .execute(pool)
+    .await
+    .expect("seed credential");
+    let access = format!("agt_test{}", Uuid::new_v4().simple());
+    let refresh = format!("agr_test{}", Uuid::new_v4().simple());
+    sqlx::query(
+        "INSERT INTO agent_tokens \
+           (credential_id, access_hash, refresh_hash, dpop_jkt, scopes, \
+            access_expires_at, refresh_expires_at, revoked_at) \
+         VALUES ($1, $2, $3, 'none', $4, NOW() + interval '1 hour', NOW() + interval '1 day', \
+           CASE WHEN $5 THEN NOW() ELSE NULL END)",
+    )
+    .bind(credential_id)
+    .bind(sha256_hex(&access))
+    .bind(sha256_hex(&refresh))
+    .bind(vec![
+        "messages.read".to_string(),
+        "messages.send".to_string(),
+    ])
+    .bind(token_revoked)
+    .execute(pool)
+    .await
+    .expect("seed token");
+    (format!("Bearer {access}"), refresh, credential_id)
+}
+
+async fn seed_index_row(pool: &PgPool, owner: Uuid, sender_did: &str, recipient_did: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO message_index \
+           (id, owner_user_id, sender_did, recipient_did, subject_encrypted, storage_ref, \
+            status, priority, folder, starred) \
+         VALUES ($1, $2, $3, $4, 'subject-ct', $5, 'unread', 'normal', 'inbox', FALSE)",
+    )
+    .bind(id)
+    .bind(owner)
+    .bind(sender_did)
+    .bind(recipient_did)
+    .bind(format!("localfs:v1://{id}"))
+    .execute(pool)
+    .await
+    .expect("seed message row");
+    id
+}
+
+#[tokio::test]
+#[serial]
+async fn agent_token_cannot_list_a_sibling_agents_non_active_did() {
+    // A DID that no longer resolves to an *active* key (rotated, or its
+    // agent deleted) used to fall through to an unchecked filter, so agent
+    // A's token could list sibling agent B's history by passing B's old DID.
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    let agent_a = seed_user_with_agent(&pool, "0xowner-siblings", "agent-a", 0x51).await;
+    let agent_b = seed_additional_agent(
+        &pool,
+        agent_a.user_id,
+        agent_a.auth.clone(),
+        "agent-b",
+        0x52,
+    )
+    .await;
+    let aid_a = aid_for_did(&pool, &agent_a.did).await;
+
+    // Both agents have rotated away from these DIDs; messages still
+    // address the old ones.
+    sqlx::query("UPDATE agent_identity_keys SET status = 'rotating' WHERE did IN ($1, $2)")
+        .bind(&agent_a.did)
+        .bind(&agent_b.did)
+        .execute(&pool)
+        .await
+        .unwrap();
+    seed_index_row(
+        &pool,
+        agent_a.user_id,
+        "did:key:zExternalSender",
+        &agent_b.did,
+    )
+    .await;
+    let own_row = seed_index_row(
+        &pool,
+        agent_a.user_id,
+        "did:key:zExternalSender",
+        &agent_a.did,
+    )
+    .await;
+
+    let (token_a, _, _) = seed_agent_token(&pool, agent_a.user_id, &aid_a, "active", false).await;
+    let list = |did: &str| {
+        Request::builder()
+            .uri(format!("/messages?agent_did={did}"))
+            .header("authorization", &token_a)
+            .body(Body::empty())
+            .unwrap()
+    };
+
+    let sibling = app.clone().oneshot(list(&agent_b.did)).await.unwrap();
+    assert_eq!(
+        sibling.status(),
+        StatusCode::FORBIDDEN,
+        "a sibling agent's old DID must not be listable"
+    );
+
+    let own = app.clone().oneshot(list(&agent_a.did)).await.unwrap();
+    assert_eq!(
+        own.status(),
+        StatusCode::OK,
+        "the agent's own old DID stays listable"
+    );
+    let own_json = body_json(own).await;
+    assert_eq!(own_json["messages"].as_array().unwrap().len(), 1);
+
+    // Per-message routes accept messages addressed to the agent's own
+    // rotated DID (they answered 404 after a rotation before).
+    let patched = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/messages/{own_row}"))
+                .header("authorization", &token_a)
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "status": "read" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(patched.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+#[serial]
+async fn agent_token_cannot_touch_a_sibling_agents_upload() {
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    let agent_a = seed_user_with_agent(&pool, "0xowner-uploads", "agent-a", 0x71).await;
+    let agent_b = seed_additional_agent(
+        &pool,
+        agent_a.user_id,
+        agent_a.auth.clone(),
+        "agent-b",
+        0x72,
+    )
+    .await;
+    let aid_b = aid_for_did(&pool, &agent_b.did).await;
+
+    // An in-flight upload agent A created.
+    let upload_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO attachment_uploads \
+           (id, owner_user_id, sender_did, r2_bucket, object_key, ciphertext_size_limit, \
+            status, issued_at, upload_expires_at) \
+         VALUES ($1, $2, $3, 'test-bucket', $4, 5242880, 'issued', NOW(), \
+           NOW() + interval '5 minutes')",
+    )
+    .bind(upload_id)
+    .bind(agent_a.user_id)
+    .bind(&agent_a.did)
+    .bind(format!("attachments/{upload_id}/blob.bin"))
+    .execute(&pool)
+    .await
+    .expect("seed upload");
+
+    let (token_b, _, _) = seed_agent_token(&pool, agent_a.user_id, &aid_b, "active", false).await;
+
+    let complete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/attachments/{upload_id}/complete"))
+                .header("authorization", &token_b)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "ciphertext_size_bytes": 10 }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(complete.status(), StatusCode::FORBIDDEN);
+
+    let delete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/attachments/{upload_id}"))
+                .header("authorization", &token_b)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delete.status(), StatusCode::FORBIDDEN);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM attachment_uploads WHERE id = $1")
+        .bind(upload_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        status, "issued",
+        "the sibling's attempts must leave the upload untouched"
+    );
+
+    // An agent token may not create an intent that is bound to no agent.
+    let unbound = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/attachments/intents")
+                .header("authorization", &token_b)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "ciphertext_size_bytes": 10 }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unbound.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+#[serial]
+async fn refresh_after_owner_revoke_does_not_escalate_to_compromised() {
+    // The owner's revoke also revokes the tokens. The gateway's next refresh
+    // with its (now revoked) refresh token used to trip reuse detection and
+    // flip the credential to `compromised`, which purge refuses.
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    let agent = seed_user_with_agent(&pool, "0xowner-revoke", "agent", 0x61).await;
+    let aid = aid_for_did(&pool, &agent.did).await;
+    let (_, refresh, credential_id) =
+        seed_agent_token(&pool, agent.user_id, &aid, "revoked", true).await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/agent-auth/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "refresh_token": refresh }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM agent_credentials WHERE id = $1")
+        .bind(credential_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        status, "revoked",
+        "a revoked credential must stay purgeable"
+    );
+}
+
+fn count_json_files(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                count_json_files(&path)
+            } else if path.extension().is_some_and(|ext| ext == "json") {
+                1
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+#[tokio::test]
+#[serial]
+async fn auto_purge_keeps_a_blob_the_peer_still_references() {
+    // A cross-user send stores ONE blob referenced by the sender's and the
+    // recipient's rows. Auto-purge used to delete the blob as soon as either
+    // row qualified, so a sender archiving their own copy destroyed the
+    // recipient's message.
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    let storage_root =
+        std::env::temp_dir().join(format!("nexusinbox-purge-test-{}", Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&storage_root).unwrap();
+    let saved_root = std::env::var("AGENT_INBOX_STORAGE_ROOT").ok();
+    // SAFETY: test-local env mutation under #[serial]; restored below.
+    unsafe {
+        std::env::set_var("AGENT_INBOX_STORAGE_ROOT", &storage_root);
+        std::env::set_var("AGENT_INBOX_AUTO_PURGE_ENABLED", "true");
+        std::env::set_var("AGENT_INBOX_ADMIN_TOKEN", "purge-test-token");
+    }
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+
+    let alice = seed_user_with_agent(&pool, "0xalice-purge", "alice", 0x81).await;
+    let bob = seed_user_with_agent(&pool, "0xbob-purge", "bob", 0x82).await;
+    let sent = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/messages")
+                .header("authorization", &alice.auth)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    build_send_body(&alice, &bob.did, 0x83).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent.status(), StatusCode::ACCEPTED);
+    let sender_row_id = body_json(sent).await["message_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        count_json_files(&storage_root),
+        1,
+        "the send stores one blob"
+    );
+
+    // Alice archives her sent copy, and both copies are old enough to purge.
+    sqlx::query("UPDATE message_index SET status = 'archived' WHERE id::text = $1")
+        .bind(&sender_row_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE message_index SET created_at = NOW() - interval '200 days'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let purge = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/purge/run")
+                .header("x-admin-token", "purge-test-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(purge.status(), StatusCode::OK);
+
+    let sender_status: String =
+        sqlx::query_scalar("SELECT status FROM message_index WHERE id::text = $1")
+            .bind(&sender_row_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        sender_status, "auto_purged",
+        "the archived sender copy is tombstoned"
+    );
+    let bob_refs: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM message_index WHERE owner_user_id = $1 AND storage_ref <> ''",
+    )
+    .bind(bob.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        bob_refs, 1,
+        "the recipient's copy still references the blob"
+    );
+    assert_eq!(
+        count_json_files(&storage_root),
+        1,
+        "the blob the recipient still references must survive the purge"
+    );
+
+    // SAFETY: restore env.
+    unsafe {
+        match saved_root {
+            Some(value) => std::env::set_var("AGENT_INBOX_STORAGE_ROOT", value),
+            None => std::env::remove_var("AGENT_INBOX_STORAGE_ROOT"),
+        }
+        std::env::remove_var("AGENT_INBOX_AUTO_PURGE_ENABLED");
+        std::env::remove_var("AGENT_INBOX_ADMIN_TOKEN");
+    }
+    let _ = std::fs::remove_dir_all(&storage_root);
+}

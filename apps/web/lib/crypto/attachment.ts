@@ -107,6 +107,50 @@ export async function decryptAttachment(
 }
 
 /**
+ * Read a downloaded attachment body, refusing anything other than the
+ * ciphertext size the server verified at upload time.
+ *
+ * The presigned upload URL stays usable for a few minutes after the
+ * server verified the object, so the stored blob can in principle be
+ * swapped for a much larger one. Reading it blindly with `arrayBuffer()`
+ * would let a sender exhaust the recipient's tab before decryption even
+ * gets a chance to fail; this stops at the first byte past the limit.
+ */
+export async function readCiphertextWithLimit(
+  response: Response,
+  expectedBytes: number,
+): Promise<ArrayBuffer> {
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0) {
+    throw new Error("attachment-size-mismatch");
+  }
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > expectedBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error("attachment-size-mismatch");
+  }
+  if (!response.body) {
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength !== expectedBytes) throw new Error("attachment-size-mismatch");
+    return buffer;
+  }
+  const reader = response.body.getReader();
+  const out = new Uint8Array(expectedBytes);
+  let filled = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (filled + value.byteLength > expectedBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("attachment-size-mismatch");
+    }
+    out.set(value, filled);
+    filled += value.byteLength;
+  }
+  if (filled !== expectedBytes) throw new Error("attachment-size-mismatch");
+  return out.buffer;
+}
+
+/**
  * Base64url SHA-256 of the plaintext bytes. Stored inside encrypted metadata
  * so the recipient can independently verify integrity after decryption
  * (defence in depth on top of GCM's built-in auth tag).

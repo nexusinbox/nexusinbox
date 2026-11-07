@@ -1295,6 +1295,25 @@ fn internal_error(
     internal_server_error(public_msg)
 }
 
+/// 500 for a failed message-payload write. Keeps the `storage_error` code
+/// clients already branch on and names the backend, but like
+/// [`internal_error`] the backend's error text (bucket, endpoint, response
+/// body) stays in the server log.
+fn storage_persist_error(
+    backend: &str,
+    detail: impl std::fmt::Display,
+) -> (StatusCode, Json<ErrorResponse>) {
+    let public_msg = format!("failed to persist encrypted payload to {backend}");
+    error!("{public_msg}: {detail}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse {
+            error: "storage_error".to_string(),
+            message: public_msg,
+        }),
+    )
+}
+
 fn database_required_but_unavailable_error() -> (StatusCode, Json<ErrorResponse>) {
     internal_server_error("database is required but unavailable")
 }
@@ -3485,46 +3504,74 @@ fn consume_request_rate_limit(state: &AppState) -> bool {
     true
 }
 
-/// Extract client IP from X-Forwarded-For or X-Real-IP headers, falling back to peer addr.
+/// Header that carries the caller's address in this deployment, if any.
+///
+/// Production must name a header that the edge proxy *sets* rather than
+/// passes through, otherwise every per-IP limit is keyed on a value the
+/// caller chose. The API is served straight from Fly (2026-11-07:
+/// `server: Fly`, no Cloudflare in front), so the old `CF-Connecting-IP`
+/// was attacker-controlled there; Fly's proxy stamps `Fly-Client-IP`.
+/// Set `AGENT_INBOX_CLIENT_IP_HEADER` when the topology changes (e.g.
+/// `cf-connecting-ip` once a Cloudflare proxy sits in front of Fly).
+fn trusted_client_ip_header() -> Option<String> {
+    match std::env::var("AGENT_INBOX_CLIENT_IP_HEADER") {
+        Ok(value) if !value.trim().is_empty() => Some(value.trim().to_ascii_lowercase()),
+        _ if is_production_env() => Some("fly-client-ip".to_string()),
+        _ => None,
+    }
+}
+
 fn extract_client_ip(headers: &HeaderMap) -> String {
-    // Cloudflare stamps CF-Connecting-IP with the real client address; when
-    // traffic actually transits the tunnel the client cannot forge it.
-    // Prefer it over the client-supplied X-Forwarded-For, which a caller can
-    // set to any value to rotate past the per-IP rate limit (the primary
-    // brute-force defense on credential activation).
-    if let Some(cf_ip) = headers
-        .get("cf-connecting-ip")
-        .and_then(|v| v.to_str().ok())
-    {
-        let trimmed = cf_ip.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
+    client_ip_from_headers(
+        headers,
+        trusted_client_ip_header().as_deref(),
+        is_production_env(),
+    )
+}
+
+/// Pure core of [`extract_client_ip`], split out so tests can exercise the
+/// production rules without touching process-wide env vars.
+///
+/// With a trusted header configured, only that header counts, and only
+/// when it parses as an IP address; anything else lands in the shared
+/// `"unknown"` bucket instead of minting a fresh, forgeable per-IP bucket.
+/// Outside production (local / docker) the usual proxy headers are
+/// accepted for convenience.
+fn client_ip_from_headers(
+    headers: &HeaderMap,
+    trusted_header: Option<&str>,
+    production: bool,
+) -> String {
+    fn header_ip(headers: &HeaderMap, name: &str) -> Option<String> {
+        let raw = headers.get(name)?.to_str().ok()?.trim();
+        raw.parse::<std::net::IpAddr>()
+            .ok()
+            .map(|ip| ip.to_string())
+    }
+
+    if let Some(name) = trusted_header {
+        if let Some(ip) = header_ip(headers, name) {
+            return ip;
+        }
+        if production {
+            return "unknown".to_string();
         }
     }
-    // In production we trust ONLY CF-Connecting-IP. Falling through to the
-    // client-controlled XFF / X-Real-IP would reopen the spoofing hole, so a
-    // request that reached us without the Cloudflare header lands in a shared
-    // "unknown" bucket rather than a forgeable per-IP one.
-    if is_production_env() {
+    if production {
         return "unknown".to_string();
     }
-    // Non-production (local / docker): accept proxy headers for convenience.
-    // X-Forwarded-For: client, proxy1, proxy2 — take the first (leftmost)
+    if let Some(ip) = header_ip(headers, "cf-connecting-ip") {
+        return ip;
+    }
+    // X-Forwarded-For: client, proxy1, proxy2 — take the first (leftmost).
     if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         if let Some(first) = xff.split(',').next() {
-            let trimmed = first.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_string();
+            if let Ok(ip) = first.trim().parse::<std::net::IpAddr>() {
+                return ip.to_string();
             }
         }
     }
-    if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        let trimmed = real_ip.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    "unknown".to_string()
+    header_ip(headers, "x-real-ip").unwrap_or_else(|| "unknown".to_string())
 }
 
 fn consume_per_ip_rate_limit(state: &AppState, client_ip: &str) -> bool {
@@ -3572,19 +3619,10 @@ async fn enforce_request_rate_limit(
     // per-IP limiter below.
     let skip_global = request.uri().path() == "/health";
 
-    // Global rate limit
-    if !skip_global && !consume_request_rate_limit(&state) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(ErrorResponse {
-                error: "rate_limited".to_string(),
-                message: "too many requests in current window".to_string(),
-            }),
-        )
-            .into_response();
-    }
-
-    // Per-IP rate limit
+    // Per-IP first. A request this check rejects must not also spend the
+    // process-wide budget: when the global bucket was charged first, one
+    // client sending faster than its own cap drained the shared 300/min
+    // and 429'd every other caller on the machine (review 2026-11-07).
     let client_ip = extract_client_ip(request.headers());
     if !consume_per_ip_rate_limit(&state, &client_ip) {
         return (
@@ -3592,6 +3630,18 @@ async fn enforce_request_rate_limit(
             Json(ErrorResponse {
                 error: "rate_limited".to_string(),
                 message: "too many requests from this IP in current window".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Global rate limit
+    if !skip_global && !consume_request_rate_limit(&state) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "rate_limited".to_string(),
+                message: "too many requests in current window".to_string(),
             }),
         )
             .into_response();
@@ -4527,11 +4577,13 @@ fn enforce_agent_bound_aid(
 /// under the same human user — a cross-agent privilege escalation
 /// inside a single account.
 ///
-/// This helper resolves every active DID owned by the calling
-/// agent's aid and checks that the message's `sender_did` or
-/// `recipient_did` is one of them. Human (cookie) contexts are
-/// passed through unchanged — humans can read their own user's
-/// full inbox as before.
+/// This helper resolves every DID owned by the calling agent's aid —
+/// in any key status, so messages addressed to a DID the agent has
+/// since rotated away from stay reachable (a DID belongs to exactly one
+/// aid; `agent_identity_keys.did` is unique) — and checks that the
+/// message's `sender_did` or `recipient_did` is one of them. Human
+/// (cookie) contexts are passed through unchanged — humans can read
+/// their own user's full inbox as before.
 ///
 /// Returns `404 not_found` on mismatch, not `403`, so the endpoint
 /// does not confirm the presence of a message the caller shouldn't
@@ -4550,7 +4602,6 @@ async fn enforce_agent_bound_message(
         SELECT 1
         FROM agent_identity_keys
         WHERE aid = $1
-          AND status = 'active'
           AND did IN ($2, $3)
         LIMIT 1
         "#,
@@ -6673,25 +6724,55 @@ async fn put_auto_reply_policy(
     let new_rev = prev_rev + 1;
     let is_create = prev_policy.is_none();
 
-    sqlx::query(
-        r#"
-        INSERT INTO agent_auto_reply_policies
-            (agent_id, schema_version, revision, policy, updated_by_user_id, created_at, updated_at)
-        VALUES ($1, 1, $2, $3, $4, NOW(), NOW())
-        ON CONFLICT (agent_id) DO UPDATE
-            SET revision = EXCLUDED.revision,
-                policy = EXCLUDED.policy,
-                updated_by_user_id = EXCLUDED.updated_by_user_id,
+    // Write only if the row is still where we read it. The revision check
+    // above runs in application code, so without a predicate in the write
+    // two PUTs carrying the same If-Match both passed it and the second
+    // silently replaced the first — e.g. a stale permissive policy
+    // overwriting a stricter one (review 2026-11-07).
+    let written = if is_create {
+        sqlx::query(
+            r#"
+            INSERT INTO agent_auto_reply_policies
+                (agent_id, schema_version, revision, policy, updated_by_user_id, created_at, updated_at)
+            VALUES ($1, 1, $2, $3, $4, NOW(), NOW())
+            ON CONFLICT (agent_id) DO NOTHING
+            "#,
+        )
+        .bind(agent_id)
+        .bind(new_rev)
+        .bind(&payload.policy)
+        .bind(user_uuid)
+        .execute(&pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE agent_auto_reply_policies
+            SET revision = $2,
+                policy = $3,
+                updated_by_user_id = $4,
                 updated_at = NOW()
-        "#,
-    )
-    .bind(agent_id)
-    .bind(new_rev)
-    .bind(&payload.policy)
-    .bind(user_uuid)
-    .execute(&pool)
-    .await
+            WHERE agent_id = $1 AND revision = $5
+            "#,
+        )
+        .bind(agent_id)
+        .bind(new_rev)
+        .bind(&payload.policy)
+        .bind(user_uuid)
+        .bind(prev_rev)
+        .execute(&pool)
+        .await
+    }
     .map_err(|e| internal_error("policy upsert failed", e))?;
+    if written.rows_affected() == 0 {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "revision_conflict".into(),
+                message: "policy changed concurrently. Refresh and reapply.".into(),
+            }),
+        ));
+    }
 
     let updated_at: Option<String> = sqlx::query_scalar(
         "SELECT updated_at::text FROM agent_auto_reply_policies WHERE agent_id = $1",
@@ -7221,6 +7302,15 @@ async fn purge_agent_credential(
         "actor_ip": actor_ip,
         "actor_user_agent": actor_user_agent,
     });
+    //
+    // The audit row and the DELETE share one transaction so a purge that
+    // loses the race below rolls its audit row back too, instead of
+    // leaving a `credential_purged` event for a credential that still
+    // exists.
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start purge transaction", e))?;
     sqlx::query(
         r#"
         INSERT INTO agent_audit_log (user_id, credential_id, aid, event, detail)
@@ -7231,7 +7321,7 @@ async fn purge_agent_credential(
     .bind(credential_id)
     .bind(&aid_snapshot)
     .bind(&audit_detail)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to record purge audit", e))?;
 
@@ -7249,13 +7339,14 @@ async fn purge_agent_credential(
     .bind(credential_id)
     .bind(user_uuid)
     .bind(CREDENTIAL_PURGE_GRACE_DAYS as i32)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to purge credential", e))?;
 
     if delete_result.rows_affected() == 0 {
         // Raced with another purge or a state change between our SELECT
         // and DELETE. Surface a retryable error instead of a cryptic 204.
+        // Dropping `tx` rolls the audit row back.
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -7264,6 +7355,10 @@ async fn purge_agent_credential(
             }),
         ));
     }
+
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit purge", e))?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -7565,8 +7660,60 @@ async fn activate_agent_credential(
     let aid = aid_for_audit.clone();
     let user_id = user_id_for_audit;
 
+    // Activate the credential: store signing key, clear enrollment
+    // hash, and record the caller's key_holder hint. Zero the
+    // failed-attempt counter on success so an operator-issued
+    // re-pair of a partially-attempted credential doesn't carry
+    // stale pressure toward the auto-revoke threshold.
+    // `normalise_key_holder` clamps unknown strings to `'unknown'`
+    // so a malformed client can't bypass the DB CHECK and surface a
+    // 500.
+    //
+    // The claim and the identity-key insert share one transaction, and
+    // the claim only matches the state this request verified against:
+    // still `pending` and still carrying the enrollment hash we checked.
+    // A revoke, auto-revoke, rotation or second activation that lands
+    // first makes it match nothing (409); one that lands later waits on
+    // the row lock and then sees an active credential. Before this, a
+    // revoke racing the activation was overwritten back to `active`, and
+    // one secret could activate twice (review 2026-11-07).
+    let key_holder = normalise_key_holder(payload.key_holder.as_deref());
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start activation transaction", e))?;
+    let claimed = sqlx::query(
+        r#"
+        UPDATE agent_credentials
+        SET status = 'active',
+            signing_public_key = $1,
+            enrollment_hash = NULL,
+            enrollment_expires = NULL,
+            activated_at = NOW(),
+            failed_activation_attempts = 0,
+            key_holder = $3
+        WHERE id = $2 AND status = 'pending' AND enrollment_hash = $4
+        "#,
+    )
+    .bind(&payload.signing_public_key)
+    .bind(credential_id)
+    .bind(key_holder)
+    .bind(&stored_hash)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to activate credential", e))?;
+    if claimed.rows_affected() == 0 {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "credential_state_changed".into(),
+                message: "credential is no longer pending activation".into(),
+            }),
+        ));
+    }
+
     // Insert into agent_identity_keys (if this DID doesn't already exist)
-    let _ = sqlx::query(
+    sqlx::query(
         r#"
         INSERT INTO agent_identity_keys (aid, did, signing_public_key, encryption_public_key, status)
         VALUES ($1, $2, $3, $4, 'active')
@@ -7577,38 +7724,13 @@ async fn activate_agent_credential(
     .bind(&did)
     .bind(&payload.signing_public_key)
     .bind(&payload.encryption_public_key)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to insert identity key", e))?;
 
-    // Activate the credential: store signing key, clear enrollment
-    // hash, and record the caller's key_holder hint. Zero the
-    // failed-attempt counter on success so an operator-issued
-    // re-pair of a partially-attempted credential doesn't carry
-    // stale pressure toward the auto-revoke threshold.
-    // `normalise_key_holder` clamps unknown strings to `'unknown'`
-    // so a malformed client can't bypass the DB CHECK and surface a
-    // 500.
-    let key_holder = normalise_key_holder(payload.key_holder.as_deref());
-    sqlx::query(
-        r#"
-        UPDATE agent_credentials
-        SET status = 'active',
-            signing_public_key = $1,
-            enrollment_hash = NULL,
-            enrollment_expires = NULL,
-            activated_at = NOW(),
-            failed_activation_attempts = 0,
-            key_holder = $3
-        WHERE id = $2
-        "#,
-    )
-    .bind(&payload.signing_public_key)
-    .bind(credential_id)
-    .bind(key_holder)
-    .execute(&pool)
-    .await
-    .map_err(|e| internal_error("failed to activate credential", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit activation", e))?;
 
     // Audit: credential_activated
     record_audit_event(
@@ -9126,6 +9248,19 @@ async fn agent_auth_refresh(
         .unwrap_or("")
         .to_string();
 
+    // Check credential status first. A credential that is already revoked,
+    // compromised or mid-rotation has no live token family left to protect,
+    // so a stale refresh token against it is answered plainly. Running the
+    // reuse escalation here turned every owner revoke into `compromised` on
+    // the gateway's next refresh — and purge only accepts `revoked`, so the
+    // credential could never be cleaned up (review 2026-11-07).
+    if cred_status != "active" {
+        return Err(unauthorized_error(&format!(
+            "agent credential is not active (status: {})",
+            cred_status
+        )));
+    }
+
     // ---- Reuse detection ----
     // If this RT was already revoked, it means someone already used it.
     // Minimum response per spec: revoke every live token in the same
@@ -9145,14 +9280,6 @@ async fn agent_auth_refresh(
             &actor_user_agent,
         )
         .await);
-    }
-
-    // Check credential status
-    if cred_status != "active" {
-        return Err(unauthorized_error(&format!(
-            "agent credential is not active (status: {})",
-            cred_status
-        )));
     }
 
     // Check RT expiry
@@ -9664,7 +9791,15 @@ async fn send_message(
                 )));
             }
             let client = Client::new();
-            prevalidate_attachments_for_message(pool, &client, user_uuid, attachment_refs).await?
+            prevalidate_attachments_for_message(
+                pool,
+                &client,
+                &ctx,
+                user_uuid,
+                &sender_did,
+                attachment_refs,
+            )
+            .await?
         } else {
             Vec::new()
         };
@@ -9708,15 +9843,7 @@ async fn send_message(
                     "error",
                     Some("persist_failed"),
                 );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "storage_error".to_string(),
-                        message: format!(
-                            "failed to persist encrypted payload to local storage: {error}"
-                        ),
-                    }),
-                )
+                storage_persist_error("local storage", error)
             })?;
             storage_ref_for_locator(state.storage_backend, &id.to_string())
         }
@@ -9733,15 +9860,7 @@ async fn send_message(
                         "error",
                         Some("persist_failed"),
                     );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: "storage_error".to_string(),
-                            message: format!(
-                                "failed to persist encrypted payload to Google Drive: {error}"
-                            ),
-                        }),
-                    )
+                    storage_persist_error("Google Drive", error)
                 })?;
             storage_ref_for_locator(state.storage_backend, &file_id)
         }
@@ -9758,13 +9877,7 @@ async fn send_message(
                         "error",
                         Some("persist_failed"),
                     );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: "storage_error".to_string(),
-                            message: format!("failed to persist encrypted payload to S3: {error}"),
-                        }),
-                    )
+                    storage_persist_error("S3", error)
                 })?;
             storage_ref_for_locator(state.storage_backend, &key)
         }
@@ -9781,15 +9894,7 @@ async fn send_message(
                         "error",
                         Some("persist_failed"),
                     );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: "storage_error".to_string(),
-                            message: format!(
-                                "failed to persist encrypted payload to IPFS: {error}"
-                            ),
-                        }),
-                    )
+                    storage_persist_error("IPFS", error)
                 })?;
             storage_ref_for_locator(state.storage_backend, &cid)
         }
@@ -10330,6 +10435,14 @@ async fn create_attachment_intent(
         .to_string();
     if !sender_did.is_empty() {
         validate_did(&sender_did, "sender_did")?;
+    } else if matches!(&ctx, AuthContext::Agent { .. }) {
+        // An agent token acts for exactly one agent, and every later step
+        // (complete, send, delete) checks the intent against that agent.
+        // An unbound intent would let a sibling agent under the same
+        // account pick the upload up, so refuse to create one.
+        return Err(validation_error(
+            "sender_did is required when using an agent token",
+        ));
     }
 
     let draft_id = payload
@@ -10485,6 +10598,34 @@ async fn create_attachment_intent(
     ))
 }
 
+/// Agent tokens may only touch attachment intents created for their own
+/// agent. `intent_sender_did` is the `attachment_uploads.sender_did` of the
+/// row in question; an agent-created intent always carries one (see
+/// `create_attachment_intent`), so a missing value means the intent was not
+/// made for this agent. Human sessions are not restricted — the account
+/// owner may act on any of their agents' uploads.
+async fn enforce_agent_bound_attachment(
+    pool: &PgPool,
+    ctx: &AuthContext,
+    user_uuid: Uuid,
+    intent_sender_did: Option<&str>,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if !matches!(ctx, AuthContext::Agent { .. }) {
+        return Ok(());
+    }
+    let did = intent_sender_did
+        .ok_or_else(|| forbidden_error("attachment is not bound to a sender agent"))?;
+    match agent_owned_by_user_in_db(pool, user_uuid, did)
+        .await
+        .map_err(|message| internal_server_error(&message))?
+    {
+        Some(agent) => enforce_agent_bound_aid(ctx, &agent.aid),
+        None => Err(forbidden_error(
+            "attachment sender_did is not owned by the authenticated user",
+        )),
+    }
+}
+
 async fn complete_attachment(
     State(state): State<AppState>,
     Path(attachment_id): Path<Uuid>,
@@ -10554,7 +10695,7 @@ async fn complete_attachment(
     // cannot materialize TIMESTAMPTZ into Rust types cleanly.
     let row = sqlx::query(
         r#"
-        SELECT object_key, ciphertext_size_limit, status,
+        SELECT object_key, ciphertext_size_limit, status, sender_did,
                (upload_expires_at < NOW()) AS is_expired
         FROM attachment_uploads
         WHERE id = $1 AND owner_user_id = $2
@@ -10572,6 +10713,8 @@ async fn complete_attachment(
     let size_limit: i64 = row.get("ciphertext_size_limit");
     let status: String = row.get("status");
     let is_expired: bool = row.get("is_expired");
+    let intent_sender_did: Option<String> = row.get("sender_did");
+    enforce_agent_bound_attachment(&pool, &ctx, user_uuid, intent_sender_did.as_deref()).await?;
 
     if status != "issued" {
         return Err((
@@ -10609,11 +10752,14 @@ async fn complete_attachment(
     let (actual_size, metadata) = s3_head_object(&client, &object_key)
         .await
         .map_err(|error| {
+            // The error text can carry the storage endpoint, bucket and key;
+            // keep it in the server log only.
+            warn!(%attachment_id, error = %error, "attachment complete: object HEAD failed");
             (
                 StatusCode::CONFLICT,
                 Json(ErrorResponse {
                     error: "object_not_found".to_string(),
-                    message: format!("R2 object not found or inaccessible: {error}"),
+                    message: "R2 object not found or inaccessible".to_string(),
                 }),
             )
         })?;
@@ -10651,8 +10797,9 @@ async fn complete_attachment(
         ));
     }
 
-    // Flip status to uploaded
-    sqlx::query(
+    // Flip status to uploaded. The status guard can lose to a concurrent
+    // delete or cleanup expiry; report that instead of claiming success.
+    let flipped = sqlx::query(
         r#"
         UPDATE attachment_uploads
         SET status = 'uploaded',
@@ -10668,6 +10815,15 @@ async fn complete_attachment(
     .execute(&pool)
     .await
     .map_err(|error| internal_error("failed to mark uploaded", error))?;
+    if flipped.rows_affected() == 0 {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "invalid_state".to_string(),
+                message: "attachment changed state during completion".to_string(),
+            }),
+        ));
+    }
 
     // Emit under the spec's name (`attachment_upload_completed`); retires the
     // legacy `attachment_uploaded_verified` event.
@@ -10710,6 +10866,75 @@ async fn complete_attachment(
 // (user, message, both DIDs, refs, and request-provenance fields for audit);
 // bundling into a struct would obscure the flow without reducing complexity.
 #[allow(clippy::too_many_arguments)]
+/// True when a HEAD of an attachment object still shows what `complete`
+/// verified: the recorded ciphertext size and the metadata bound into the
+/// presigned PUT. Anything else means the object was overwritten through
+/// the still-valid upload URL after verification (review 2026-11-07).
+fn attachment_object_matches(
+    actual_size: i64,
+    metadata: &std::collections::HashMap<String, String>,
+    expected_size: i64,
+    attachment_id: Uuid,
+    upload_owner_user_id: Uuid,
+) -> bool {
+    actual_size == expected_size
+        && metadata.get("attachment-id").map(String::as_str)
+            == Some(attachment_id.to_string().as_str())
+        && metadata.get("owner-user-id").map(String::as_str)
+            == Some(upload_owner_user_id.to_string().as_str())
+}
+
+fn attachment_object_changed_error(attachment_id: Uuid) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::CONFLICT,
+        Json(ErrorResponse {
+            error: "object_changed".to_string(),
+            message: format!("attachment {attachment_id} no longer matches the verified upload"),
+        }),
+    )
+}
+
+/// Take an upload out of service after its object stopped matching the
+/// verified upload. `deleted_at` makes it a purge candidate for the
+/// cleanup job; downloads refuse anything that is not `attached`.
+async fn quarantine_attachment_upload(
+    pool: &PgPool,
+    attachment_id: Uuid,
+    owner_user_id: Uuid,
+    object_key: &str,
+    trigger: &str,
+) {
+    let quarantined = sqlx::query(
+        r#"
+        UPDATE attachment_uploads
+        SET status = 'quarantined', deleted_at = COALESCE(deleted_at, NOW())
+        WHERE id = $1 AND status IN ('uploaded', 'attached')
+        "#,
+    )
+    .bind(attachment_id)
+    .execute(pool)
+    .await;
+    match quarantined {
+        Ok(result) if result.rows_affected() > 0 => record_audit_event(
+            pool.clone(),
+            owner_user_id,
+            None,
+            None,
+            "attachment_quarantined",
+            serde_json::json!({
+                "attachment_id": attachment_id.to_string(),
+                "object_key": object_key,
+                "reason": "object_changed_after_verification",
+                "trigger": trigger,
+            }),
+        ),
+        Ok(_) => {}
+        Err(error) => {
+            warn!(%attachment_id, error = %error, "failed to quarantine attachment upload")
+        }
+    }
+}
+
 /// A single attachment that passed `prevalidate_attachments_for_message` and
 /// is ready to be linked to a message inside the send transaction.
 #[derive(Debug, Clone)]
@@ -10729,9 +10954,15 @@ struct ValidatedAttachment {
 ///
 /// Validates, for each incoming AttachmentRef:
 ///   - the attachment row exists and is owned by the caller
+///   - it was uploaded for the message's sender agent (an intent bound to
+///     another agent under the same account is refused, and an agent token
+///     may not use an unbound intent at all — review 2026-09-07)
 ///   - its status is 'uploaded' (complete phase done, not yet attached)
 ///   - cumulative ciphertext size fits under the per-message cap
-///   - the R2 object still exists (HEAD)
+///   - the R2 object still exists (HEAD) and still matches what `complete`
+///     verified: same size and same bound metadata. The presigned PUT stays
+///     usable until it expires, so the object can be overwritten after
+///     `complete`; this catches a swap made before the send.
 ///   - the client-supplied encrypted-metadata fields are non-empty
 ///
 /// On success returns a Vec<ValidatedAttachment> that
@@ -10739,7 +10970,9 @@ struct ValidatedAttachment {
 async fn prevalidate_attachments_for_message(
     pool: &PgPool,
     client: &Client,
+    ctx: &AuthContext,
     user_uuid: Uuid,
+    sender_did: &str,
     refs: &[AttachmentRef],
 ) -> Result<Vec<ValidatedAttachment>, (StatusCode, Json<ErrorResponse>)> {
     let mut validated: Vec<ValidatedAttachment> = Vec::with_capacity(refs.len());
@@ -10755,7 +10988,7 @@ async fn prevalidate_attachments_for_message(
 
         let row = sqlx::query(
             r#"
-            SELECT object_key, ciphertext_size_bytes, status, upload_expires_at
+            SELECT object_key, ciphertext_size_bytes, status, sender_did, upload_expires_at
             FROM attachment_uploads
             WHERE id = $1 AND owner_user_id = $2
             "#,
@@ -10776,6 +11009,28 @@ async fn prevalidate_attachments_for_message(
         let object_key: String = row.get("object_key");
         let size_bytes: Option<i64> = row.get("ciphertext_size_bytes");
         let status: String = row.get("status");
+        let bound_sender_did: Option<String> = row.get("sender_did");
+
+        // The upload must belong to the agent this message is sent from.
+        // `sender_did` is already bound to the caller's agent for agent
+        // tokens, so comparing DIDs is enough: a sibling agent under the
+        // same account that learns an upload id cannot pull it into its own
+        // message.
+        match bound_sender_did.as_deref() {
+            Some(bound) if bound != sender_did => {
+                return Err(forbidden_error(&format!(
+                    "attachment {} was uploaded for a different sender agent",
+                    att_ref.attachment_id
+                )));
+            }
+            None if matches!(ctx, AuthContext::Agent { .. }) => {
+                return Err(forbidden_error(&format!(
+                    "attachment {} is not bound to a sender agent",
+                    att_ref.attachment_id
+                )));
+            }
+            _ => {}
+        }
 
         if status != "uploaded" {
             return Err(validation_error(&format!(
@@ -10802,18 +11057,28 @@ async fn prevalidate_attachments_for_message(
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
         if !skip_s3_head {
-            s3_head_object(client, &object_key).await.map_err(|_| {
-                (
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "object_missing".to_string(),
-                        message: format!(
-                            "R2 object for attachment {} is missing",
-                            att_ref.attachment_id
-                        ),
-                    }),
-                )
-            })?;
+            let (actual_size, metadata) =
+                s3_head_object(client, &object_key).await.map_err(|_| {
+                    (
+                        StatusCode::CONFLICT,
+                        Json(ErrorResponse {
+                            error: "object_missing".to_string(),
+                            message: format!(
+                                "R2 object for attachment {} is missing",
+                                att_ref.attachment_id
+                            ),
+                        }),
+                    )
+                })?;
+            if !attachment_object_matches(
+                actual_size,
+                &metadata,
+                size,
+                att_ref.attachment_id,
+                user_uuid,
+            ) {
+                return Err(attachment_object_changed_error(att_ref.attachment_id));
+            }
         }
 
         validated.push(ValidatedAttachment {
@@ -11057,7 +11322,8 @@ async fn generate_attachment_download_url(
     // underlying intent row is status='attached'.
     let row = sqlx::query(
         r#"
-        SELECT au.object_key, au.status
+        SELECT au.object_key, au.status, au.ciphertext_size_bytes,
+               au.owner_user_id AS upload_owner_user_id
         FROM message_attachments ma
         JOIN attachment_uploads au ON au.id = ma.attachment_upload_id
         WHERE ma.message_id = $1
@@ -11076,9 +11342,44 @@ async fn generate_attachment_download_url(
     use sqlx::Row as SqlxRow;
     let object_key: String = row.get("object_key");
     let status: String = row.get("status");
+    let verified_size: Option<i64> = row.get("ciphertext_size_bytes");
+    let upload_owner_user_id: Uuid = row.get("upload_owner_user_id");
 
     if status != "attached" {
         return Err(not_found_error("attachment is not in a downloadable state"));
+    }
+
+    // Re-check the object before handing out a URL: until the upload URL
+    // expires the sender can overwrite it, so the size verified at
+    // `complete` / send is not final. A mismatch takes the upload out of
+    // service instead of letting the recipient pull an oversized blob.
+    let skip_s3_head = std::env::var("AGENT_INBOX_ALLOW_SKIP_S3_HEAD_IN_TESTS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !skip_s3_head {
+        let (actual_size, metadata) = s3_head_object(&Client::new(), &object_key).await.map_err(
+            |error| {
+                warn!(%attachment_id, error = %error, "attachment download: object HEAD failed");
+                not_found_error("attachment object is unavailable")
+            },
+        )?;
+        if !attachment_object_matches(
+            actual_size,
+            &metadata,
+            verified_size.unwrap_or(-1),
+            attachment_id,
+            upload_owner_user_id,
+        ) {
+            quarantine_attachment_upload(
+                &pool,
+                attachment_id,
+                upload_owner_user_id,
+                &object_key,
+                "download_url",
+            )
+            .await;
+            return Err(attachment_object_changed_error(attachment_id));
+        }
     }
 
     // Step 3: generate a short-lived presigned GET URL. The
@@ -11152,7 +11453,7 @@ async fn delete_attachment(
     // 'attached' rows are tied to a message and removed via message deletion.
     let row = sqlx::query(
         r#"
-        SELECT object_key, status, sender_did
+        SELECT status, sender_did
         FROM attachment_uploads
         WHERE id = $1 AND owner_user_id = $2
         "#,
@@ -11165,59 +11466,82 @@ async fn delete_attachment(
 
     let row = row.ok_or_else(|| not_found_error("attachment not found"))?;
     use sqlx::Row as SqlxRow;
-    let object_key: String = row.get("object_key");
     let status: String = row.get("status");
     let intent_sender_did: Option<String> = row.get("sender_did");
 
-    // An agent token may only delete intents its own agent created —
-    // mirrors create_attachment_intent's enforce_agent_bound_aid. Without
+    // An agent token may only delete intents its own agent created. Without
     // this, a sibling agent under the same account could purge another
     // agent's in-flight upload (audit 2026-09-04).
-    if let Some(did) = intent_sender_did.as_deref() {
-        if let Some(agent) = agent_owned_by_user_in_db(&pool, user_uuid, did)
-            .await
-            .map_err(|message| internal_server_error(&message))?
-        {
-            enforce_agent_bound_aid(&ctx, &agent.aid)?;
-        }
-    }
+    enforce_agent_bound_attachment(&pool, &ctx, user_uuid, intent_sender_did.as_deref()).await?;
 
-    if status == "attached" {
-        return Err((
+    let already_attached = || {
+        (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
                 error: "already_attached".to_string(),
                 message: "attachment is linked to a message; delete the message instead"
                     .to_string(),
             }),
-        ));
+        )
+    };
+    if status == "attached" {
+        return Err(already_attached());
     }
     if status == "deleted" {
         return Ok(StatusCode::NO_CONTENT);
     }
 
-    // User intent = delete → always set deleted_at.
-    // R2 purge is best-effort; if it fails we leave purged_at NULL so the
-    // background orphan cleanup retries. This is the whole point of splitting
+    // Claim the row BEFORE touching R2. A concurrent send can flip
+    // 'uploaded' -> 'attached' between the SELECT above and this point; the
+    // conditional UPDATE then loses that race instead of overwriting it, so
+    // we never purge an object a delivered message now references (review
+    // 2026-09-07). The send side's own CAS (`status = 'uploaded'`) fails once
+    // this claim has landed, so exactly one of the two wins.
+    //
+    // User intent = delete → deleted_at is set here. The R2 purge below is
+    // best-effort; if it fails we leave purged_at NULL so the background
+    // orphan cleanup retries. This is the whole point of splitting
     // deleted_at and purged_at into two columns.
-    let client = Client::new();
-    let r2_purged = s3_delete_object(&client, &object_key).await.is_ok();
-
-    sqlx::query(
+    let claimed_object_key: Option<String> = sqlx::query_scalar(
         r#"
         UPDATE attachment_uploads
-        SET status = 'deleted',
-            deleted_at = NOW(),
-            purged_at = CASE WHEN $3 THEN NOW() ELSE purged_at END
-        WHERE id = $1 AND owner_user_id = $2
+        SET status = 'deleted', deleted_at = NOW()
+        WHERE id = $1 AND owner_user_id = $2 AND status NOT IN ('attached', 'deleted')
+        RETURNING object_key
         "#,
     )
     .bind(attachment_id)
     .bind(user_uuid)
-    .bind(r2_purged)
-    .execute(&pool)
+    .fetch_optional(&pool)
     .await
     .map_err(|error| internal_error("failed to mark deleted", error))?;
+
+    let Some(object_key) = claimed_object_key else {
+        // Lost the race: a send attached it (409) or another delete beat us
+        // (204). Re-read to tell the two apart.
+        let now_status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM attachment_uploads WHERE id = $1")
+                .bind(attachment_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|error| internal_error("failed to reload intent", error))?;
+        return match now_status.as_deref() {
+            Some("attached") => Err(already_attached()),
+            _ => Ok(StatusCode::NO_CONTENT),
+        };
+    };
+
+    let client = Client::new();
+    let r2_purged = s3_delete_object(&client, &object_key).await.is_ok();
+    if r2_purged {
+        sqlx::query(
+            "UPDATE attachment_uploads SET purged_at = NOW() WHERE id = $1 AND purged_at IS NULL",
+        )
+        .bind(attachment_id)
+        .execute(&pool)
+        .await
+        .map_err(|error| internal_error("failed to mark purged", error))?;
+    }
 
     record_audit_event(
         pool.clone(),
@@ -11338,6 +11662,74 @@ pub async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
                 "reason": "all_message_links_removed",
             }),
         );
+    }
+
+    // Step 0b: settle uploads whose presigned PUT has expired. Until then
+    // the uploader can overwrite the object through the PUT URL, so the
+    // size checked at `complete` (and again at send) is not final; once the
+    // URL is dead one HEAD decides it for good (review 2026-11-07). Rows
+    // verified after expiry already (e.g. a send after the URL died) are
+    // skipped. A HEAD error is treated as transient and retried next pass.
+    let unsettled = sqlx::query(
+        r#"
+        SELECT id, owner_user_id, object_key, ciphertext_size_bytes
+        FROM attachment_uploads
+        WHERE status IN ('uploaded', 'attached')
+          AND deleted_at IS NULL
+          AND upload_expires_at < NOW()
+          AND (last_verified_at IS NULL OR last_verified_at <= upload_expires_at)
+        ORDER BY upload_expires_at
+        LIMIT 200
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|err| {
+        warn!(error = %err, "attachment cleanup: failed to list unsettled uploads");
+        Vec::new()
+    });
+    let mut quarantined: u64 = 0;
+    if !unsettled.is_empty() {
+        let head_client = Client::new();
+        for row in &unsettled {
+            use sqlx::Row as SqlxRow;
+            let row_id: Uuid = row.get("id");
+            let owner_user_id: Uuid = row.get("owner_user_id");
+            let object_key: String = row.get("object_key");
+            let verified_size: Option<i64> = row.get("ciphertext_size_bytes");
+            match s3_head_object(&head_client, &object_key).await {
+                Ok((actual_size, metadata))
+                    if attachment_object_matches(
+                        actual_size,
+                        &metadata,
+                        verified_size.unwrap_or(-1),
+                        row_id,
+                        owner_user_id,
+                    ) =>
+                {
+                    let _ = sqlx::query(
+                        "UPDATE attachment_uploads SET last_verified_at = NOW() WHERE id = $1",
+                    )
+                    .bind(row_id)
+                    .execute(pool)
+                    .await;
+                }
+                Ok(_) => {
+                    quarantine_attachment_upload(
+                        pool,
+                        row_id,
+                        owner_user_id,
+                        &object_key,
+                        "cleanup_job",
+                    )
+                    .await;
+                    quarantined += 1;
+                }
+                Err(error) => {
+                    warn!(attachment_id = %row_id, error = %error, "attachment cleanup: settle HEAD failed");
+                }
+            }
+        }
     }
 
     // Step 1: intents that expired without ever being PUT. Flip them to
@@ -11467,7 +11859,10 @@ pub async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
     }
 
     (
-        unlinked.len() as u64 + abandoned_issued.len() as u64 + abandoned_uploaded.len() as u64,
+        unlinked.len() as u64
+            + quarantined
+            + abandoned_issued.len() as u64
+            + abandoned_uploaded.len() as u64,
         purged,
     )
 }
@@ -11641,6 +12036,35 @@ async fn list_messages(
                 (current_did, all_dids)
             }
             None => {
+                // The reference did not resolve to an *active* key: a
+                // rotated or deleted agent's old DID, or an aid with no
+                // active key. Rows addressed to it still live under this
+                // user, so an agent token may only list it when it is one
+                // of its own DIDs (any key status) or its own aid —
+                // otherwise a sibling agent's history would be readable by
+                // passing that sibling's old DID (review 2026-11-07).
+                if let AuthContext::Agent { aid, .. } = &ctx {
+                    let owns = if requested_agent == *aid {
+                        true
+                    } else if let Some(pool) = maybe_pool.clone() {
+                        sqlx::query_scalar::<_, i64>(
+                            "SELECT COUNT(*) FROM agent_identity_keys WHERE did = $1 AND aid = $2",
+                        )
+                        .bind(&requested_agent)
+                        .bind(aid)
+                        .fetch_one(&pool)
+                        .await
+                        .map_err(|error| internal_error("failed to check did ownership", error))?
+                            > 0
+                    } else {
+                        false
+                    };
+                    if !owns {
+                        return Err(forbidden_error(
+                            "agent tokens may only access the inbox bound to their credential",
+                        ));
+                    }
+                }
                 let fallback = requested_agent.clone();
                 let dids = vec![fallback.clone()];
                 (fallback, dids)
@@ -13090,7 +13514,11 @@ async fn run_auto_purge_once(state: &AppState, rules: &PurgeRules) -> PurgeSumma
               status,
               priority,
               ai_category,
-              created_at::text AS created_at,
+              -- RFC 3339, which evaluate_purge_decision parses. The plain
+              -- `created_at::text` form ("2026-04-21 10:00:00+00") does not
+              -- parse, and an unparseable timestamp means Keep — so the DB
+              -- path never purged anything.
+              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
               trust_score
             FROM message_index
             WHERE status <> 'auto_purged'
@@ -13139,41 +13567,43 @@ async fn run_auto_purge_once(state: &AppState, rules: &PurgeRules) -> PurgeSumma
             if decision == PurgeDecision::Keep {
                 continue;
             }
-            if let Err(error) =
-                delete_storage_object_by_ref(state, &owner_user_id, &message.storage_ref).await
-            {
-                eprintln!(
-                    "[audit] auto_purge_delete_failed user_id={} message_id={} error={}",
-                    owner_user_id, message.id, error
-                );
-                summary.errors += 1;
-                continue;
-            }
             let Ok(owner_uuid) = Uuid::parse_str(&owner_user_id) else {
                 summary.errors += 1;
                 continue;
             };
+            // Update the index row first, and only if it is still in the
+            // state the decision was made from — the scan above is a
+            // snapshot, and a row re-filed or un-archived since then must be
+            // left alone.
             let sql_result = match decision {
                 PurgeDecision::Delete => {
-                    sqlx::query("DELETE FROM message_index WHERE id = $1 AND owner_user_id = $2")
-                        .bind(message.id)
-                        .bind(owner_uuid)
-                        .execute(&pool)
-                        .await
+                    sqlx::query(
+                        "DELETE FROM message_index \
+                         WHERE id = $1 AND owner_user_id = $2 AND storage_ref = $3 AND status = $4",
+                    )
+                    .bind(message.id)
+                    .bind(owner_uuid)
+                    .bind(&message.storage_ref)
+                    .bind(&message.status)
+                    .execute(&pool)
+                    .await
                 }
                 PurgeDecision::Tombstone => {
                     sqlx::query(
                         "UPDATE message_index SET status = 'auto_purged', storage_ref = '' \
-                         WHERE id = $1 AND owner_user_id = $2",
+                         WHERE id = $1 AND owner_user_id = $2 AND storage_ref = $3 \
+                           AND status = 'archived'",
                     )
                     .bind(message.id)
                     .bind(owner_uuid)
+                    .bind(&message.storage_ref)
                     .execute(&pool)
                     .await
                 }
                 PurgeDecision::Keep => unreachable!(),
             };
             match sql_result {
+                Ok(result) if result.rows_affected() == 0 => continue,
                 Ok(_) => match decision {
                     PurgeDecision::Delete => summary.deleted += 1,
                     PurgeDecision::Tombstone => summary.tombstoned += 1,
@@ -13186,6 +13616,45 @@ async fn run_auto_purge_once(state: &AppState, rules: &PurgeRules) -> PurgeSumma
                     );
                     summary.errors += 1;
                     continue;
+                }
+            }
+            // Then reclaim the blob, but only when no other row still points
+            // at it. A cross-user send stores ONE blob referenced by both the
+            // sender's and the recipient's rows; purging one side (say, the
+            // sender archived their copy) must not destroy the other side's
+            // message. Same ref-count rule as delete_message (review
+            // 2026-11-07).
+            if !message.storage_ref.is_empty() {
+                match sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM message_index WHERE storage_ref = $1",
+                )
+                .bind(&message.storage_ref)
+                .fetch_one(&pool)
+                .await
+                {
+                    Ok(0) => {
+                        if let Err(error) = delete_storage_object_by_ref(
+                            state,
+                            &owner_user_id,
+                            &message.storage_ref,
+                        )
+                        .await
+                        {
+                            eprintln!(
+                                "[audit] auto_purge_delete_failed user_id={} message_id={} error={}",
+                                owner_user_id, message.id, error
+                            );
+                            summary.errors += 1;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        eprintln!(
+                            "[audit] auto_purge_ref_count_failed message_id={} error={}",
+                            message.id, error
+                        );
+                        summary.errors += 1;
+                    }
                 }
             }
             audit_storage_event(
@@ -13219,35 +13688,44 @@ async fn run_auto_purge_once(state: &AppState, rules: &PurgeRules) -> PurgeSumma
             if decision == PurgeDecision::Keep {
                 continue;
             }
-            if let Err(error) =
-                delete_storage_object_by_ref(state, &user_id, &message.storage_ref).await
-            {
-                eprintln!(
-                    "[audit] auto_purge_delete_failed user_id={} message_id={} error={}",
-                    user_id, message.id, error
-                );
-                summary.errors += 1;
-                continue;
-            }
-            // Apply the index update.
-            let mut lock = state
-                .messages_by_user
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            if let Some(bucket) = lock.get_mut(&user_id) {
-                match decision {
-                    PurgeDecision::Delete => {
-                        bucket.retain(|m| m.id != message.id);
-                        summary.deleted += 1;
-                    }
-                    PurgeDecision::Tombstone => {
-                        if let Some(found) = bucket.iter_mut().find(|m| m.id == message.id) {
-                            found.status = "auto_purged".to_string();
-                            found.storage_ref = String::new();
+            // Same order as the DB path: index first, then the blob only if
+            // no other owner's row still references it.
+            let blob_still_referenced = {
+                let mut lock = state
+                    .messages_by_user
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if let Some(bucket) = lock.get_mut(&user_id) {
+                    match decision {
+                        PurgeDecision::Delete => {
+                            bucket.retain(|m| m.id != message.id);
+                            summary.deleted += 1;
                         }
-                        summary.tombstoned += 1;
+                        PurgeDecision::Tombstone => {
+                            if let Some(found) = bucket.iter_mut().find(|m| m.id == message.id) {
+                                found.status = "auto_purged".to_string();
+                                found.storage_ref = String::new();
+                            }
+                            summary.tombstoned += 1;
+                        }
+                        PurgeDecision::Keep => unreachable!(),
                     }
-                    PurgeDecision::Keep => unreachable!(),
+                }
+                lock.values().any(|messages| {
+                    messages
+                        .iter()
+                        .any(|m| m.storage_ref == message.storage_ref)
+                })
+            };
+            if !blob_still_referenced && !message.storage_ref.is_empty() {
+                if let Err(error) =
+                    delete_storage_object_by_ref(state, &user_id, &message.storage_ref).await
+                {
+                    eprintln!(
+                        "[audit] auto_purge_delete_failed user_id={} message_id={} error={}",
+                        user_id, message.id, error
+                    );
+                    summary.errors += 1;
                 }
             }
             audit_storage_event(
@@ -13348,8 +13826,19 @@ async fn ws_handler(
         conns.insert(user_id.clone(), current + 1);
     }
 
+    // The slot reserved above is released when handle_socket ends. If the
+    // upgrade itself fails, handle_socket never runs, so release it here;
+    // otherwise a handful of failed upgrades locks the user out of
+    // WebSockets for the life of the process.
     let state_for_socket = state.clone();
-    Ok(ws.on_upgrade(move |socket| handle_socket(state_for_socket, socket, user_id)))
+    let state_for_failure = state.clone();
+    let user_for_failure = user_id.clone();
+    Ok(ws
+        .on_failed_upgrade(move |error| {
+            warn!(error = %error, "websocket upgrade failed");
+            release_ws_connection(&state_for_failure, &user_for_failure);
+        })
+        .on_upgrade(move |socket| handle_socket(state_for_socket, socket, user_id)))
 }
 
 /// Decrement the per-user WS connection counter on disconnect.
@@ -13654,6 +14143,111 @@ mod internal_tests {
         assert_eq!(masked, "aaaaa€...a€bb");
         // Exactly the "≤10 chars but >10 bytes" case must not slice at all.
         assert_eq!(mask_identifier("€€€€€€€€€€"), "***");
+    }
+
+    fn headers_with(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn production_client_ip_comes_only_from_the_trusted_header() {
+        // Fly-direct production: CF-Connecting-IP / XFF are whatever the
+        // caller typed, so they must not mint per-IP buckets.
+        let spoofed = headers_with(&[
+            ("cf-connecting-ip", "198.51.100.7"),
+            ("x-forwarded-for", "198.51.100.8"),
+        ]);
+        assert_eq!(
+            client_ip_from_headers(&spoofed, Some("fly-client-ip"), true),
+            "unknown"
+        );
+
+        let via_fly = headers_with(&[
+            ("fly-client-ip", "203.0.113.9"),
+            ("cf-connecting-ip", "198.51.100.7"),
+        ]);
+        assert_eq!(
+            client_ip_from_headers(&via_fly, Some("fly-client-ip"), true),
+            "203.0.113.9"
+        );
+
+        // A non-IP value in the trusted header does not become a bucket key.
+        let junk = headers_with(&[("fly-client-ip", "not-an-ip")]);
+        assert_eq!(
+            client_ip_from_headers(&junk, Some("fly-client-ip"), true),
+            "unknown"
+        );
+
+        // Behind Cloudflare the operator points the setting at its header.
+        assert_eq!(
+            client_ip_from_headers(&spoofed, Some("cf-connecting-ip"), true),
+            "198.51.100.7"
+        );
+    }
+
+    #[test]
+    fn non_production_client_ip_accepts_proxy_headers() {
+        let xff = headers_with(&[("x-forwarded-for", "192.0.2.1, 10.0.0.1")]);
+        assert_eq!(client_ip_from_headers(&xff, None, false), "192.0.2.1");
+        let cf_first = headers_with(&[
+            ("cf-connecting-ip", "192.0.2.5"),
+            ("x-forwarded-for", "192.0.2.1"),
+        ]);
+        assert_eq!(client_ip_from_headers(&cf_first, None, false), "192.0.2.5");
+        assert_eq!(
+            client_ip_from_headers(&HeaderMap::new(), None, false),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn attachment_object_match_requires_size_and_bound_metadata() {
+        let id = Uuid::new_v4();
+        let owner = Uuid::new_v4();
+        let metadata: std::collections::HashMap<String, String> = [
+            ("attachment-id".to_string(), id.to_string()),
+            ("owner-user-id".to_string(), owner.to_string()),
+        ]
+        .into_iter()
+        .collect();
+        assert!(attachment_object_matches(2048, &metadata, 2048, id, owner));
+        // Overwritten through the still-valid PUT URL with a bigger body.
+        assert!(!attachment_object_matches(
+            5 * 1024 * 1024 * 1024,
+            &metadata,
+            2048,
+            id,
+            owner
+        ));
+        // Metadata from a different intent.
+        assert!(!attachment_object_matches(
+            2048,
+            &metadata,
+            2048,
+            Uuid::new_v4(),
+            owner
+        ));
+        assert!(!attachment_object_matches(
+            2048,
+            &metadata,
+            2048,
+            id,
+            Uuid::new_v4()
+        ));
+        assert!(!attachment_object_matches(
+            2048,
+            &std::collections::HashMap::new(),
+            2048,
+            id,
+            owner
+        ));
     }
     use serial_test::serial;
 

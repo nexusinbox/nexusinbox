@@ -39,4 +39,27 @@ describe("sanitiseNextPath", () => {
     expect(sanitiseNextPath("inbox")).toBe("/");
     expect(sanitiseNextPath("settings/agents")).toBe("/");
   });
+
+  it("rejects tab / newline / control-character sneaks that the URL parser strips into //", () => {
+    // `/login?next=/%09/evil.example/` decodes to "/\t/evil.example/";
+    // location.assign() would drop the TAB and land on //evil.example.
+    for (const sneak of [
+      "/\t/evil.example/",
+      "/\n/evil.example/",
+      "/\r/evil.example/",
+      "/\u0000/evil.example/",
+      "/ /evil.example/",
+    ]) {
+      expect(sanitiseNextPath(sneak), JSON.stringify(sneak)).toBe("/");
+    }
+    // The decoded form of the query parameter, exactly as the login page reads it.
+    const fromQuery = new URLSearchParams("next=/%09/evil.example/").get("next");
+    expect(sanitiseNextPath(fromQuery)).toBe("/");
+  });
+
+  it("keeps the query and fragment of a same-origin path", () => {
+    expect(sanitiseNextPath("/agent/did:key:z6Mk?folder=inbox#top")).toBe(
+      "/agent/did:key:z6Mk?folder=inbox#top",
+    );
+  });
 });

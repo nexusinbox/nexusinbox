@@ -17,13 +17,25 @@
  */
 export function sanitiseNextPath(raw: string | null | undefined): string {
   if (!raw) return "/";
-  // Reject anything that isn't a single leading slash followed by
-  // something other than `/` or `\`. This rejects:
-  //   - ""                    (no leading slash)
-  //   - "https://evil.test"   (scheme)
-  //   - "//evil.test"         (protocol-relative)
-  //   - "/\evil.test"         (backslash-sneak past naive regex)
-  //   - "javascript:alert(1)" (scheme, no slash)
-  if (!/^\/[^/\\]/.test(raw)) return "/";
-  return raw;
+  // Control characters and whitespace first. The URL parser strips
+  // ASCII TAB / LF / CR before it interprets a URL, so "/\t/evil.test"
+  // passes a leading-characters check yet navigates to the
+  // protocol-relative "//evil.test" (review 2026-11-07). Backslashes
+  // are dropped for the same reason: parsers normalise `\` to `/`.
+  if (/[\u0000-\u001f\u007f\s\\]/.test(raw)) return "/";
+  // A single leading slash followed by something other than `/`. This
+  // rejects "" / "https://evil.test" / "//evil.test" /
+  // "javascript:alert(1)".
+  if (!/^\/[^/]/.test(raw)) return "/";
+  // Finally let the same parser that will perform the navigation decide
+  // where it goes, and keep only the same-origin path it resolved to.
+  const base = "https://nexusinbox.invalid";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw, base);
+  } catch {
+    return "/";
+  }
+  if (parsed.origin !== base) return "/";
+  return parsed.pathname + parsed.search + parsed.hash;
 }
