@@ -229,7 +229,11 @@ function ContactsPageInner() {
               ) : null}
             </div>
           ) : null}
-          {contacts.length === 0 ? (
+          {contactsQuery.isPending ? (
+            <div className="empty-state">{t("contacts.loading")}</div>
+          ) : contactsQuery.isError ? (
+            <div className="empty-state">{t("contacts.loadFailed")}</div>
+          ) : contacts.length === 0 ? (
             <div className="empty-state">{t("contacts.empty")}</div>
           ) : (
             contacts.map((contact) => {

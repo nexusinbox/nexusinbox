@@ -202,46 +202,58 @@ async fn contacts_keep_only_the_did_and_a_sealed_blob() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let (person_name, note, sealed): (Option<String>, Option<String>, Option<String>) =
-        sqlx::query_as("SELECT person_name, note, sealed FROM contacts WHERE did = $1")
-            .bind(&did)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(person_name, None);
-    assert_eq!(note, None);
-    assert_eq!(sealed.as_deref(), Some(SEALED_A));
+    let sealed: String = sqlx::query_scalar("SELECT sealed FROM contacts WHERE did = $1")
+        .bind(&did)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sealed, SEALED_A);
+    // The table has no column a name or note could be written to.
+    let columns: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name::text FROM information_schema.columns \
+         WHERE table_name = 'contacts' ORDER BY column_name",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        columns,
+        [
+            "created_at",
+            "did",
+            "id",
+            "owner_user_id",
+            "sealed",
+            "updated_at"
+        ]
+    );
 
     let (status, body) = call(&app, "GET", "/contacts", &alice.auth, None).await;
     assert_eq!(status, StatusCode::OK);
-    let contact = &body["contacts"][0];
+    let contact = body["contacts"][0].as_object().unwrap();
     assert_eq!(contact["did"], did);
     assert_eq!(contact["sealed"], SEALED_A);
-    assert!(contact["person_name"].is_null());
+    let mut keys: Vec<&str> = contact.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["created_at", "did", "id", "sealed", "updated_at"]);
 }
 
 #[tokio::test]
 #[serial]
-async fn resealing_a_legacy_contact_drops_its_plaintext() {
+async fn updating_a_contact_replaces_its_sealed_fields() {
     let (app, pool) = db_test_prelude!();
-    let alice = seed_person(&pool, "0xalice-legacy").await;
-    let id = Uuid::new_v4();
+    let alice = seed_person(&pool, "0xalice-update").await;
     let did = random_did();
-    sqlx::query(
-        "INSERT INTO contacts (id, owner_user_id, did, person_name, agent_label, note) \
-         VALUES ($1, $2, $3, 'Bob', 'work', 'met at a party')",
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/contacts",
+        &alice.auth,
+        Some(json!({ "did": did, "sealed": SEALED_A })),
     )
-    .bind(id)
-    .bind(alice.user_id)
-    .bind(&did)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // The web reads the legacy plaintext once to re-seal it.
-    let (_, body) = call(&app, "GET", "/contacts", &alice.auth, None).await;
-    assert_eq!(body["contacts"][0]["person_name"], "Bob");
-    assert!(body["contacts"][0]["sealed"].is_null());
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = body["id"].as_str().unwrap().to_string();
 
     let (status, body) = call(
         &app,
@@ -253,22 +265,15 @@ async fn resealing_a_legacy_contact_drops_its_plaintext() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["sealed"], SEALED_B);
-    assert!(body["person_name"].is_null());
-
-    let row: (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) = sqlx::query_as("SELECT person_name, agent_label, note, sealed FROM contacts WHERE id = $1")
-        .bind(id)
+    let sealed: String = sqlx::query_scalar("SELECT sealed FROM contacts WHERE did = $1")
+        .bind(&did)
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(row, (None, None, None, Some(SEALED_B.to_string())));
+    assert_eq!(sealed, SEALED_B);
 
-    // Another person cannot re-seal it.
-    let mallory = seed_person(&pool, "0xmallory-legacy").await;
+    // Another person cannot replace it.
+    let mallory = seed_person(&pool, "0xmallory-update").await;
     let (status, _) = call(
         &app,
         "PATCH",

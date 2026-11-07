@@ -377,14 +377,11 @@ export type BlockFromMessageResponse = {
 };
 
 // A contact as the API returns it (docs/28 P3-8): the DID and the fields
-// sealed on the person's device. Plaintext only on rows not yet re-sealed.
+// sealed on the person's device.
 export type ContactRecord = {
   id: string;
   did: string;
-  sealed: string | null;
-  person_name: string | null;
-  agent_label: string | null;
-  note: string | null;
+  sealed: string;
   created_at: string;
   updated_at: string;
 };

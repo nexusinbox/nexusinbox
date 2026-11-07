@@ -358,6 +358,8 @@
     "addNew": "+ Add New Contact",
     "addNewDesc": "Register an Agent Address and name to display in the list.",
     "empty": "No contacts yet.",
+    "loading": "Loading contacts…",
+    "loadFailed": "Could not load contacts. Use the refresh button at the top right to try again.",
     "remove": "Remove",
     "formNewTitle": "New Contact",
     "formEditTitle": "Edit Contact",

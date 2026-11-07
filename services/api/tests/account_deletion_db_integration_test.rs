@@ -431,7 +431,7 @@ async fn recent_sign_in_deletes_the_account_and_keeps_the_other_persons_copy() {
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO contacts (owner_user_id, did, person_name) VALUES ($1, $2, 'Bob')")
+    sqlx::query("INSERT INTO contacts (owner_user_id, did, sealed) VALUES ($1, $2, 'cs1:aXY:Y3Q')")
         .bind(alice.user_id)
         .bind(&bob.did)
         .execute(&pool)

@@ -2,8 +2,8 @@
 //
 // The server keeps each contact's DID plus a sealed blob, and the contacts
 // key only as wraps for the person's own agents. A device that holds one of
-// those agents' X25519 keys opens a wrap, decrypts the contacts, re-seals
-// any legacy plaintext rows, and adds wraps for agents that lack one.
+// those agents' X25519 keys opens a wrap, decrypts the contacts, and adds
+// wraps for agents that lack one.
 //
 // Trust: the agents' public keys come from the server, as recipients' keys
 // do when sending. This protects against a leaked database or a curious
@@ -38,7 +38,6 @@ export type AddressBookApi = {
   addContactKeys(payload: AddContactKeysRequest): Promise<void>;
   resetContactKeys(): Promise<void>;
   listAgents(): Promise<{ agents: Agent[] }>;
-  updateContact(id: string, payload: { sealed: string }): Promise<unknown>;
 };
 
 export class ContactsLockedError extends Error {
@@ -121,14 +120,6 @@ async function resolveContactsKey(api: AddressBookApi, attempt = 0): Promise<Key
   }
 }
 
-function legacyFields(record: ContactRecord): ContactFields {
-  return {
-    person_name: record.person_name ?? "",
-    agent_label: record.agent_label ?? null,
-    note: record.note ?? null,
-  };
-}
-
 function entry(record: ContactRecord, fields: ContactFields, readable: boolean): ContactEntry {
   return {
     id: record.id,
@@ -149,34 +140,19 @@ export async function loadAddressBook(api: AddressBookApi): Promise<ContactsResp
 
   const contacts: ContactEntry[] = [];
   for (const record of records) {
-    if (record.sealed) {
-      let opened: ContactFields | null = null;
-      if (key) {
-        try {
-          opened = await openContactFields(key, record.did, record.sealed);
-        } catch {
-          // sealed under a key this device no longer has
-        }
-      }
-      contacts.push(
-        opened
-          ? entry(record, opened, true)
-          : entry(record, { person_name: "", agent_label: null, note: null }, false),
-      );
-      continue;
-    }
-    // A row from before sealing: show it, and re-seal it when we can.
-    const fields = legacyFields(record);
-    contacts.push(entry(record, fields, true));
+    let opened: ContactFields | null = null;
     if (key) {
       try {
-        await api.updateContact(record.id, {
-          sealed: await sealContactFields(key, record.did, fields),
-        });
+        opened = await openContactFields(key, record.did, record.sealed);
       } catch {
-        // the next load tries again
+        // sealed under a key this device no longer has
       }
     }
+    contacts.push(
+      opened
+        ? entry(record, opened, true)
+        : entry(record, { person_name: "", agent_label: null, note: null }, false),
+    );
   }
 
   contacts.sort((a, b) => {

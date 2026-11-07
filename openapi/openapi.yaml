@@ -623,8 +623,7 @@ paths:
       description: |-
         Browser sessions only. Each contact carries its DID and the
         fields sealed on the person's device (`sealed`); the server
-        cannot read them. Plaintext fields appear only on rows created
-        before sealing, until the web re-seals them. See docs/28 P3-8.
+        cannot read them. See docs/28 P3-8.
       responses:
         '200':
           description: Contacts
@@ -667,8 +666,6 @@ paths:
   /contacts/{id}:
     patch:
       summary: Replace a contact's sealed fields
-      description: |-
-        Sets `sealed` and clears any legacy plaintext fields.
       parameters:
         - name: id
           in: path
@@ -1533,19 +1530,12 @@ components:
         did:
           type: string
         sealed:
-          type: [string, 'null']
-        person_name:
-          type: [string, 'null']
-          description: Legacy plaintext; null once the row is sealed
-        agent_label:
-          type: [string, 'null']
-        note:
-          type: [string, 'null']
+          $ref: '#/components/schemas/SealedContact'
         created_at:
           type: string
         updated_at:
           type: string
-      required: [id, did, created_at, updated_at]
+      required: [id, did, sealed, created_at, updated_at]
     ErrorResponse:
       type: object
       properties:

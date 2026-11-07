@@ -304,7 +304,7 @@ async fn pending_list_carries_sender_is_contact_and_hides_claimed_rows() {
     let agent = seed_agent(&pool, &owner, "a", true).await;
     let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
     let friend = "did:key:zfriend";
-    sqlx::query("INSERT INTO contacts (owner_user_id, did, person_name) VALUES ($1, $2, 'Friend')")
+    sqlx::query("INSERT INTO contacts (owner_user_id, did, sealed) VALUES ($1, $2, 'cs1:aXY:Y3Q')")
         .bind(owner.user_id)
         .bind(friend)
         .execute(&pool)

@@ -71,25 +71,19 @@ class FakeServer {
   async resetContactKeys() {
     this.wraps = [];
   }
-  async updateContact(id: string, payload: { sealed: string }) {
-    const row = this.contacts.find((c) => c.id === id)!;
-    Object.assign(row, { sealed: payload.sealed, person_name: null, agent_label: null, note: null });
-    return row;
-  }
 }
 
-function legacy(id: string, did: string, name: string): ContactRecord {
+function record(id: string, did: string, sealed: string): ContactRecord {
   return {
     id,
     did,
-    sealed: null,
-    person_name: name,
-    agent_label: null,
-    note: "plaintext note",
+    sealed,
     created_at: "2026-11-01T00:00:00Z",
     updated_at: "2026-11-01T00:00:00Z",
   };
 }
+
+const name = (person_name: string) => ({ person_name, agent_label: null, note: "met at work" });
 
 beforeEach(() => {
   deviceKeys.clear();
@@ -97,32 +91,37 @@ beforeEach(() => {
 });
 
 describe("address book", () => {
-  it("starts a key on a device with an agent key, wraps it for every agent, and re-seals plaintext", async () => {
+  it("starts a key on a device with an agent key and wraps it for every agent", async () => {
     const server = new FakeServer();
     const [a, b] = [await makeAgent("A"), await makeAgent("B")];
     server.agents = [a, b];
-    server.contacts = [legacy("c1", "did:key:z6MkBob", "Bob")];
     deviceKeys.set(a.did, a.privateKey);
 
     const book = await loadAddressBook(server);
 
-    expect(book.keyState).toBe("ready");
+    expect(book).toMatchObject({ keyState: "ready", contacts: [] });
     expect(server.addCalls[0].initial).toBe(true);
     expect(server.wraps.map((w) => w.agent_id).sort()).toEqual([a.id, b.id]);
-    expect(book.contacts[0]).toMatchObject({ person_name: "Bob", note: "plaintext note", readable: true });
-    // The server now holds only the DID and a sealed blob.
-    expect(server.contacts[0]).toMatchObject({ person_name: null, note: null });
-    expect(server.contacts[0].sealed).toMatch(/^cs1:/);
-    expect(server.contacts[0].sealed).not.toContain("Bob");
+
+    // What it saves holds no plaintext, and opens again on the next load.
+    const sealed = await sealForSave(server, "did:key:z6MkBob", name("Bob"));
+    expect(sealed).toMatch(/^cs1:/);
+    expect(sealed).not.toContain("Bob");
+    server.contacts = [record("c1", "did:key:z6MkBob", sealed)];
+    forgetContactsKey();
+    const reopened = await loadAddressBook(server);
+    expect(reopened.contacts[0]).toMatchObject({ person_name: "Bob", note: "met at work", readable: true });
   });
 
   it("opens the same contacts on another device that holds a different agent's key", async () => {
     const server = new FakeServer();
     const [a, b] = [await makeAgent("A2"), await makeAgent("B2")];
     server.agents = [a, b];
-    server.contacts = [legacy("c1", "did:key:z6MkCarol", "Carol")];
     deviceKeys.set(a.did, a.privateKey);
     await loadAddressBook(server);
+    server.contacts = [
+      record("c1", "did:key:z6MkCarol", await sealForSave(server, "did:key:z6MkCarol", name("Carol"))),
+    ];
 
     // Device 2 holds only B's key.
     deviceKeys.clear();
@@ -143,7 +142,7 @@ describe("address book", () => {
       agent_label: null,
       note: null,
     });
-    server.contacts = [{ ...legacy("c1", "did:key:z6MkDave", ""), sealed, person_name: null, note: null }];
+    server.contacts = [record("c1", "did:key:z6MkDave", sealed)];
 
     deviceKeys.clear();
     forgetContactsKey();
@@ -205,9 +204,7 @@ describe("address book", () => {
     });
     forgetContactsKey();
     server.raceWith = other.wraps;
-    server.contacts = [
-      { ...legacy("c1", "did:key:z6MkFrank", ""), sealed: sealedByOther, person_name: null, note: null },
-    ];
+    server.contacts = [record("c1", "did:key:z6MkFrank", sealedByOther)];
 
     const book = await loadAddressBook(server);
     expect(book.keyState).toBe("ready");

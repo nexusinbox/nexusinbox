@@ -544,11 +544,7 @@ struct ContactEntry {
     /// `{person_name, agent_label, note}` sealed on the person's device
     /// under their contacts key and bound to `did` (docs/28 P3-8). The
     /// server cannot read it.
-    sealed: Option<String>,
-    /// Legacy plaintext, present only until the web re-seals the row.
-    person_name: Option<String>,
-    agent_label: Option<String>,
-    note: Option<String>,
+    sealed: String,
     created_at: String,
     updated_at: String,
 }
@@ -5736,9 +5732,6 @@ async fn list_contacts(
               id,
               did,
               sealed,
-              person_name,
-              agent_label,
-              note,
               created_at::text AS created_at,
               updated_at::text AS updated_at
             FROM contacts
@@ -5756,9 +5749,6 @@ async fn list_contacts(
                 id: row.get("id"),
                 did: row.get("did"),
                 sealed: row.get("sealed"),
-                person_name: row.get("person_name"),
-                agent_label: row.get("agent_label"),
-                note: row.get("note"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
             })
@@ -5832,10 +5822,7 @@ async fn create_contact(
         entries.push(ContactEntry {
             id,
             did,
-            sealed: Some(sealed),
-            person_name: None,
-            agent_label: None,
-            note: None,
+            sealed,
             created_at: now.clone(),
             updated_at: now,
         });
@@ -5866,13 +5853,10 @@ async fn update_contact(
         let row_opt = sqlx::query(
             r#"
             UPDATE contacts
-            SET sealed      = $3,
-                person_name = NULL,
-                agent_label = NULL,
-                note        = NULL,
-                updated_at  = NOW()
+            SET sealed     = $3,
+                updated_at = NOW()
             WHERE id = $1 AND owner_user_id = $2
-            RETURNING id, did, sealed, person_name, agent_label, note,
+            RETURNING id, did, sealed,
                       created_at::text AS created_at,
                       updated_at::text AS updated_at
             "#,
@@ -5897,9 +5881,6 @@ async fn update_contact(
             id: row.get("id"),
             did: row.get("did"),
             sealed: row.get("sealed"),
-            person_name: row.get("person_name"),
-            agent_label: row.get("agent_label"),
-            note: row.get("note"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         }));
@@ -5927,10 +5908,7 @@ async fn update_contact(
             }),
         ));
     };
-    entry.sealed = Some(sealed);
-    entry.person_name = None;
-    entry.agent_label = None;
-    entry.note = None;
+    entry.sealed = sealed;
     entry.updated_at = Utc::now().to_rfc3339();
     Ok(Json(entry.clone()))
 }
