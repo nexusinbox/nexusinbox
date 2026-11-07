@@ -998,8 +998,10 @@ components:
           type: boolean
         database_connected:
           type: boolean
-        auto_purge_enabled:
-          type: boolean
+        retention_mode:
+          description: The daily data-retention job (docs/28).
+          type: string
+          enum: ['off', 'dry_run', 'enforce']
         websocket_enabled:
           type: boolean
         world_id_verify_enabled:
@@ -1008,7 +1010,7 @@ components:
         - storage_backend
         - database_configured
         - database_connected
-        - auto_purge_enabled
+        - retention_mode
         - websocket_enabled
         - world_id_verify_enabled
 

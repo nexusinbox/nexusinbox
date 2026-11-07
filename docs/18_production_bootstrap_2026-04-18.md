@@ -207,7 +207,7 @@
 | `AGENT_INBOX_GDRIVE_*` | Google Drive adapter 着手時に設定 |
 | `AGENT_INBOX_IPFS_*` | IPFS backend 利用時のみ |
 | `AGENT_INBOX_FILTER_SERVICE_URL` | 外部 spam filter 導入時 |
-| `AGENT_INBOX_ADMIN_TOKEN` | 管理系 endpoint を外部運用するなら設定 |
+| `AGENT_INBOX_RETENTION_MODE`, `AGENT_INBOX_RETENTION_DAYS` | 日次の保持ジョブ (docs/28)。本番は fly.toml で `enforce` / `90` |
 | `JWT_ISSUER`, `JWT_AUDIENCE` | 将来の厳格運用で整理 |
 
 ---

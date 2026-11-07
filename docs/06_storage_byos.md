@@ -134,6 +134,8 @@ Windows: %APPDATA%/NexusInbox/storage/
 
 ## 6. Auto-Purge Policy
 
+> **2026-11-07 注記**: この節の容量管理型の Auto-Purge (`POST /admin/purge/run`) は、本番では一度も有効にならないまま削除した。今は、保持期限の日次ジョブがプライバシーのための上限としてデータを消す。期限は送信から 90 日で、詳細は [docs/28](./28_data_inventory_and_retention.md)。以下は当初の設計の記録として残す。
+
 ### 6.1 設定
 ```json
 {

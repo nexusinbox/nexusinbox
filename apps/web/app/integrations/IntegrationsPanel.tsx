@@ -219,18 +219,6 @@ export function IntegrationsPanel() {
               : t("integrations.wsDisabled")
           }
         />
-        {/*
-          Auto-purge engine row was removed 2026-04-22 because the
-          engine is not production-wired yet: `AGENT_INBOX_AUTO_PURGE_ENABLED`
-          and `AGENT_INBOX_ADMIN_TOKEN` are unset in fly.toml, and
-          there is no external cron driving `POST /admin/purge/run`
-          (the design deliberately delegates cadence to the operator).
-          Showing it as "無効" misled users into thinking it was a
-          flip-on toggle. The engine, tests, and HTTP endpoint stay
-          in `services/api` as-is — reinstate this row when the cron
-          + env are configured. Backing i18n keys
-          (`integrations.purge*`) are preserved for that day.
-        */}
       </section>
 
       {/* Google Calendar — Phase 4.4d / docs/25d */}

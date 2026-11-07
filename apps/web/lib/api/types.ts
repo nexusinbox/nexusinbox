@@ -58,7 +58,8 @@ export type StatusResponse = {
   storage_backend: string;
   database_configured: boolean;
   database_connected: boolean;
-  auto_purge_enabled: boolean;
+  /** The daily data-retention job (docs/28). */
+  retention_mode: "off" | "dry_run" | "enforce";
   websocket_enabled: boolean;
   world_id_verify_enabled: boolean;
 };

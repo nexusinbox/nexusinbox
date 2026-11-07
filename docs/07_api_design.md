@@ -113,7 +113,7 @@ Response 200:
   "storage_backend": "local_fs" | "google_drive" | "s3" | "ipfs",
   "database_configured": true,
   "database_connected": true,
-  "auto_purge_enabled": false,
+  "retention_mode": "enforce",
   "websocket_enabled": true,
   "world_id_verify_enabled": true
 }
