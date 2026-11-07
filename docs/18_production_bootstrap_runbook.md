@@ -202,6 +202,9 @@ Fly が DNS 設定を提示する。Cloudflare 側で `api` レコードを作�
 | `WORLD_ID_ACTION` | `login` |
 | `WORLD_ID_RP_ID` | `rp_<your-rp-id>` (Worldcoin 発行の rp id; ドメインではない) |
 | `WORLD_ID_SIGNER_PRIVATE_KEY` | (Secret) |
+| `ATTACHMENT_STORAGE_ORIGIN` | 添付を送受信する R2 の接続先。API の `AGENT_INBOX_S3_PATH_STYLE=false` (本番) なら `https://<bucket>.<account-id>.r2.cloudflarestorage.com`、`true` なら `https://<account-id>.r2.cloudflarestorage.com/<bucket>/` |
+
+`ATTACHMENT_STORAGE_ORIGIN` は CSP の `connect-src` を自分の R2 の接続先だけに絞る。未設定だと `https://*.r2.cloudflarestorage.com` をまとめて許すので、XSS があれば他人の R2 バケットにも送れてしまう。値は API の署名付き URL と同じ形にする (`AGENT_INBOX_S3_ENDPOINT` と `AGENT_INBOX_S3_BUCKET` から組み立てる)。設定後は、添付の送信と表示が通ることを確かめる。
 
 ### 6.3 Domain 割当
 

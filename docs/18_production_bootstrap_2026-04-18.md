@@ -627,6 +627,8 @@ fly launch --no-deploy
 | `AGENT_INBOX_S3_PATH_STYLE` | `true` |
 | `AGENT_INBOX_S3_PREFIX` | `prod` |
 
+注 (2026-11-07): 本番の実際の値は `AGENT_INBOX_S3_PATH_STYLE=false` (仮想ホスト形式)。バケット名も上の例とは異なる。最新の値は [runbook](./18_production_bootstrap_runbook.md) を見る。
+
 CLI でまとめて入れる例:
 
 ```bash
