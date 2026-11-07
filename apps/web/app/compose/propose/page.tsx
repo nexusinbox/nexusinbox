@@ -69,7 +69,7 @@ export default function ProposePage() {
       }
     }
     for (const c of contacts) {
-      if (!seen.has(c.did)) {
+      if (c.readable && !seen.has(c.did)) {
         seen.add(c.did);
         const label = c.agent_label ? `${c.person_name}(${c.agent_label})` : c.person_name;
         opts.push({ did: c.did, label });

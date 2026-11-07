@@ -8,6 +8,7 @@ import {
   useContactsQuery,
   useCreateContactMutation,
   useDeleteContactMutation,
+  useResetContactsKeyMutation,
   useUpdateContactMutation,
 } from "../../lib/api/hooks";
 import { useTwoColumnResize } from "../../lib/ui/useTwoColumnResize";
@@ -46,6 +47,7 @@ function ContactsPageInner() {
   const createContact = useCreateContactMutation();
   const updateContact = useUpdateContactMutation();
   const deleteContact = useDeleteContactMutation();
+  const resetContactsKey = useResetContactsKeyMutation();
 
   const { layoutStyle, startResize } = useTwoColumnResize({
     storageKey: "nexusinbox.contacts.thread_width.v1",
@@ -56,6 +58,9 @@ function ContactsPageInner() {
     () => contactsQuery.data?.contacts ?? [],
     [contactsQuery.data],
   );
+  // Names and notes are sealed with a key this device may not hold.
+  const locked = contactsQuery.data?.keyState === "locked";
+  const canReset = contactsQuery.data?.canReset ?? false;
 
   const [activeId, setActiveId] = useState<string | "new">("new");
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
@@ -100,6 +105,9 @@ function ContactsPageInner() {
   }, [activeId, contacts]);
 
   const isEditing = activeId !== "new";
+  const selectedContact = isEditing ? contacts.find((contact) => contact.id === activeId) : undefined;
+  const selectedUnreadable = selectedContact ? !selectedContact.readable : false;
+  const formDisabled = locked || selectedUnreadable;
 
   const handleSelect = (id: string | "new") => {
     setStatus(null);
@@ -135,6 +143,7 @@ function ContactsPageInner() {
       if (isEditing) {
         await updateContact.mutateAsync({
           id: activeId,
+          did: draft.did,
           body: {
             person_name: personName,
             agent_label: agentLabel.length > 0 ? agentLabel : null,
@@ -155,6 +164,16 @@ function ContactsPageInner() {
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("contacts.saveFailed");
       setStatus({ kind: "error", message: msg });
+    }
+  };
+
+  const handleResetKey = async () => {
+    if (!window.confirm(t("contacts.confirmResetKey"))) return;
+    try {
+      await resetContactsKey.mutateAsync();
+      setStatus({ kind: "success", message: t("contacts.resetKeyDone") });
+    } catch {
+      setStatus({ kind: "error", message: t("contacts.resetKeyFailed") });
     }
   };
 
@@ -191,6 +210,25 @@ function ContactsPageInner() {
             <p className="card-title">{t("contacts.addNew")}</p>
             <p className="card-sub">{t("contacts.addNewDesc")}</p>
           </article>
+          {locked ? (
+            <div className="form-status info" role="status" style={{ margin: "8px 0" }}>
+              <p>{t("contacts.lockedNotice")}</p>
+              {canReset ? (
+                <>
+                  <p style={{ marginTop: 6 }}>{t("contacts.lockedResetHint")}</p>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginTop: 6 }}
+                    onClick={handleResetKey}
+                    disabled={resetContactsKey.isPending}
+                  >
+                    {t("contacts.resetKeyBtn")}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {contacts.length === 0 ? (
             <div className="empty-state">{t("contacts.empty")}</div>
           ) : (
@@ -202,7 +240,9 @@ function ContactsPageInner() {
                   key={contact.id}
                   onClick={() => handleSelect(contact.id)}
                 >
-                  <p className="card-title">{contact.person_name}</p>
+                  <p className="card-title">
+                    {contact.readable ? contact.person_name : t("contacts.unreadableTitle")}
+                  </p>
                   <p className="card-sub">
                     {contact.agent_label ? contact.agent_label + " · " : ""}
                     {contact.did}
@@ -224,6 +264,9 @@ function ContactsPageInner() {
                 <span className="badge">{t("contacts.formBadge")}</span>
               </header>
               <div className="compose-body">
+                <p className="field-help" style={{ marginBottom: 8 }}>
+                  {selectedUnreadable ? t("contacts.unreadableHelp") : t("contacts.sealedHelp")}
+                </p>
                 <form className="form-grid" onSubmit={handleSubmit}>
                   <div className="field">
                     <label className="field-label" htmlFor="contact-did">
@@ -237,7 +280,7 @@ function ContactsPageInner() {
                         setDraft((prev) => ({ ...prev, did: event.target.value }))
                       }
                       placeholder={t("contacts.didPlaceholder")}
-                      disabled={isEditing}
+                      disabled={isEditing || formDisabled}
                       autoComplete="off"
                     />
                     <p className="field-help">
@@ -258,6 +301,7 @@ function ContactsPageInner() {
                       }
                       placeholder={t("contacts.namePlaceholder")}
                       maxLength={64}
+                      disabled={formDisabled}
                     />
                     <p className="field-help">
                       {t("contacts.nameHelp")}
@@ -277,6 +321,7 @@ function ContactsPageInner() {
                       }
                       placeholder={t("contacts.agentNamePlaceholder")}
                       maxLength={64}
+                      disabled={formDisabled}
                     />
                     <p className="field-help">
                       {t("contacts.agentNameHelp")}
@@ -296,6 +341,7 @@ function ContactsPageInner() {
                       }
                       placeholder={t("contacts.memoPlaceholder")}
                       maxLength={500}
+                      disabled={formDisabled}
                     />
                   </div>
 
@@ -319,7 +365,7 @@ function ContactsPageInner() {
                     <button
                       type="submit"
                       className="btn primary"
-                      disabled={createContact.isPending || updateContact.isPending}
+                      disabled={createContact.isPending || updateContact.isPending || formDisabled}
                     >
                       {createContact.isPending || updateContact.isPending
                         ? t("contacts.savingBtn")

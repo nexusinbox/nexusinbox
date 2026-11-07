@@ -376,25 +376,50 @@ export type BlockFromMessageResponse = {
   target_world_id: string | null;
 };
 
-export type ContactEntry = {
+// A contact as the API returns it (docs/28 P3-8): the DID and the fields
+// sealed on the person's device. Plaintext only on rows not yet re-sealed.
+export type ContactRecord = {
   id: string;
   did: string;
-  person_name: string;
+  sealed: string | null;
+  person_name: string | null;
   agent_label: string | null;
   note: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type ContactsResponse = {
-  contacts: ContactEntry[];
+export type ContactRecordsResponse = {
+  contacts: ContactRecord[];
 };
 
+// A contact as the app uses it, opened on this device.
+export type ContactEntry = {
+  id: string;
+  did: string;
+  person_name: string;
+  agent_label: string | null;
+  note: string | null;
+  /** false when this device cannot open the sealed fields */
+  readable: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContactsResponse = {
+  contacts: ContactEntry[];
+  /** "locked": this device holds no agent key that opens the contacts key */
+  keyState: "ready" | "locked";
+  /** a locked device that could start a new contacts key after a reset */
+  canReset: boolean;
+};
+
+// What the app hands to the create/update mutations; they seal it.
 export type CreateContactRequest = {
   did: string;
   person_name: string;
-  agent_label?: string | null;
-  note?: string | null;
+  agent_label: string | null;
+  note: string | null;
 };
 
 export type CreateContactResponse = {
@@ -402,9 +427,24 @@ export type CreateContactResponse = {
 };
 
 export type UpdateContactRequest = {
-  person_name?: string;
-  agent_label?: string | null;
-  note?: string | null;
+  person_name: string;
+  agent_label: string | null;
+  note: string | null;
+};
+
+export type ContactKeyWrap = {
+  agent_id: string;
+  agent_did: string;
+  wrapped_key: string;
+};
+
+export type ContactKeysResponse = {
+  wraps: ContactKeyWrap[];
+};
+
+export type AddContactKeysRequest = {
+  wraps: Array<{ agent_id: string; wrapped_key: string }>;
+  initial?: boolean;
 };
 
 // Audit log

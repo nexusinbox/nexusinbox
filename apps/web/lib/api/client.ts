@@ -6,8 +6,10 @@ import {
   UpdateProfileRequest,
   AgentsResponse,
   BlocksResponse,
-  ContactEntry,
-  ContactsResponse,
+  AddContactKeysRequest,
+  ContactKeysResponse,
+  ContactRecord,
+  ContactRecordsResponse,
   CreateAgentRequest,
   CreateAgentResponse,
   AgentCredential,
@@ -22,9 +24,7 @@ import {
   BlockFromMessageResponse,
   CreateBlockRequest,
   CreateBlockResponse,
-  CreateContactRequest,
   CreateContactResponse,
-  UpdateContactRequest,
   MessageContentResponse,
   MessageListQuery,
   MessageListResponse,
@@ -121,6 +121,30 @@ export class NexusInboxApiClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  /** `request` for endpoints that answer 204 with no body. */
+  private async requestNoContent(path: string, init?: RequestInit): Promise<void> {
+    const headers = new Headers(init?.headers);
+    headers.set("Content-Type", "application/json");
+    const token = this.resolveBearerToken().trim();
+    if (token) headers.set("Authorization", "Bearer " + token);
+    const response = await fetch(this.baseUrl + path, {
+      ...init,
+      headers,
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      let message = response.statusText;
+      try {
+        const payload = (await response.json()) as { message?: string };
+        message = payload.message ?? message;
+      } catch {
+        // no-op
+      }
+      throw new ApiError(message || "request failed", response.status);
+    }
   }
 
   async listMessages(query: MessageListQuery): Promise<MessageListResponse> {
@@ -557,8 +581,8 @@ export class NexusInboxApiClient {
     }
   }
 
-  async listContacts(): Promise<ContactsResponse> {
-    return this.request<ContactsResponse>("/contacts");
+  async listContacts(): Promise<ContactRecordsResponse> {
+    return this.request<ContactRecordsResponse>("/contacts");
   }
 
   async resolveRecipient(identifier: string): Promise<RecipientResolutionResponse> {
@@ -566,18 +590,33 @@ export class NexusInboxApiClient {
     return this.request<RecipientResolutionResponse>("/recipients/resolve?" + params.toString());
   }
 
-  async createContact(payload: CreateContactRequest): Promise<CreateContactResponse> {
+  async createContact(payload: { did: string; sealed: string }): Promise<CreateContactResponse> {
     return this.request<CreateContactResponse>("/contacts", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   }
 
-  async updateContact(id: string, payload: UpdateContactRequest): Promise<ContactEntry> {
-    return this.request<ContactEntry>("/contacts/" + encodeURIComponent(id), {
+  async updateContact(id: string, payload: { sealed: string }): Promise<ContactRecord> {
+    return this.request<ContactRecord>("/contacts/" + encodeURIComponent(id), {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
+  }
+
+  async listContactKeys(): Promise<ContactKeysResponse> {
+    return this.request<ContactKeysResponse>("/contact-keys");
+  }
+
+  async addContactKeys(payload: AddContactKeysRequest): Promise<void> {
+    await this.requestNoContent("/contact-keys", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async resetContactKeys(): Promise<void> {
+    await this.requestNoContent("/contact-keys", { method: "DELETE" });
   }
 
   async deleteContact(id: string): Promise<void> {

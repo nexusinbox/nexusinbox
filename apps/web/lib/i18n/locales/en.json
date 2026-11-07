@@ -385,7 +385,16 @@
     "deleting": "Deleting…",
     "addBtn": "Add",
     "saveBtn": "Save Changes",
-    "savingBtn": "Saving…"
+    "savingBtn": "Saving…",
+    "sealedHelp": "Names, agent names and notes are encrypted on this device before saving. The operator cannot read them.",
+    "lockedNotice": "This device has no agent key that opens your contacts key. View and add names and notes on a device where you created an agent.",
+    "lockedResetHint": "If no device can open it any more, you can start a new key. The names and notes of your current contacts become unreadable.",
+    "resetKeyBtn": "Start a new contacts key",
+    "confirmResetKey": "Start a new contacts key? The names and notes of your current contacts will become unreadable on every device.",
+    "resetKeyDone": "Started a new contacts key.",
+    "resetKeyFailed": "Could not start a new contacts key.",
+    "unreadableTitle": "Cannot open on this device",
+    "unreadableHelp": "The name and note are encrypted, and this device's keys cannot open them. You can still delete it."
   },
 
   "agents": {

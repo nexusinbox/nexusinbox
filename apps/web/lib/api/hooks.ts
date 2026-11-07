@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearAllBridgeTokens } from "../bridge/token-store";
+import { loadAddressBook, resetContactsKey, sealForSave } from "../contacts/address-book";
 import { disconnectLLM } from "../llm/llmAuth";
 import { defaultApiClient } from "./client";
 import {
@@ -115,10 +116,11 @@ export function useDeleteBlockMutation() {
   });
 }
 
+// Contacts are opened and sealed on this device (docs/28 P3-8).
 export function useContactsQuery() {
   return useQuery({
     queryKey: queryKeys.contacts(),
-    queryFn: () => defaultApiClient.listContacts(),
+    queryFn: () => loadAddressBook(defaultApiClient),
     staleTime: 30_000,
     retry: 1,
   });
@@ -127,7 +129,11 @@ export function useContactsQuery() {
 export function useCreateContactMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateContactRequest) => defaultApiClient.createContact(payload),
+    mutationFn: async (payload: CreateContactRequest) => {
+      const { did, ...fields } = payload;
+      const sealed = await sealForSave(defaultApiClient, did, fields);
+      return defaultApiClient.createContact({ did, sealed });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.contacts() });
     },
@@ -137,8 +143,20 @@ export function useCreateContactMutation() {
 export function useUpdateContactMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { id: string; body: UpdateContactRequest }) =>
-      defaultApiClient.updateContact(payload.id, payload.body),
+    mutationFn: async (payload: { id: string; did: string; body: UpdateContactRequest }) => {
+      const sealed = await sealForSave(defaultApiClient, payload.did, payload.body);
+      return defaultApiClient.updateContact(payload.id, { sealed });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts() });
+    },
+  });
+}
+
+export function useResetContactsKeyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => resetContactsKey(defaultApiClient),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.contacts() });
     },

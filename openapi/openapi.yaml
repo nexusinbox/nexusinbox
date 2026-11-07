@@ -617,6 +617,187 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /contacts:
+    get:
+      summary: List the person's contacts
+      description: |-
+        Browser sessions only. Each contact carries its DID and the
+        fields sealed on the person's device (`sealed`); the server
+        cannot read them. Plaintext fields appear only on rows created
+        before sealing, until the web re-seals them. See docs/28 P3-8.
+      responses:
+        '200':
+          description: Contacts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contacts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContactRecord'
+                required: [contacts]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      summary: Add a contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                did:
+                  type: string
+                sealed:
+                  $ref: '#/components/schemas/SealedContact'
+              required: [did, sealed]
+      responses:
+        '201':
+          description: Created
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          description: A contact for this DID already exists
+        '422':
+          description: Malformed DID or sealed fields
+
+  /contacts/{id}:
+    patch:
+      summary: Replace a contact's sealed fields
+      description: |-
+        Sets `sealed` and clears any legacy plaintext fields.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sealed:
+                  $ref: '#/components/schemas/SealedContact'
+              required: [sealed]
+      responses:
+        '200':
+          description: Updated contact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactRecord'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    delete:
+      summary: Delete a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /contact-keys:
+    get:
+      summary: List the person's wrapped contacts keys
+      description: |-
+        Browser sessions only. The contacts key, wrapped on the
+        person's device to each of their agents' X25519 keys
+        (`ckx25519v1:`). A device opens the wrap for an agent whose key
+        it holds. See docs/28 P3-8.
+      responses:
+        '200':
+          description: Wraps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wraps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        agent_id:
+                          type: string
+                          format: uuid
+                        agent_did:
+                          type: string
+                        wrapped_key:
+                          type: string
+                      required: [agent_id, agent_did, wrapped_key]
+                required: [wraps]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      summary: Add wraps for the person's own agents
+      description: |-
+        An agent that already has a wrap keeps it. With `initial`, the
+        request is refused (409 `contacts_key_exists`) when the person
+        has any wrap, so two devices cannot start two keys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                initial:
+                  type: boolean
+                wraps:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items:
+                    type: object
+                    properties:
+                      agent_id:
+                        type: string
+                        format: uuid
+                      wrapped_key:
+                        type: string
+                        maxLength: 512
+                    required: [agent_id, wrapped_key]
+              required: [wraps]
+      responses:
+        '204':
+          description: Stored
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: An agent is not the person's
+        '409':
+          description: A contacts key already exists (initial only)
+        '422':
+          description: Malformed or duplicate wraps
+    delete:
+      summary: Drop every wrap to start a new contacts key
+      description: |-
+        For a person whose devices can no longer open the key. Sealed
+        contacts stay but cannot be opened with the next key.
+      responses:
+        '204':
+          description: Reset
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /messages:
     get:
       summary: List message index entries for an agent
@@ -1336,6 +1517,35 @@ components:
           type: string
       required: [encrypted_content, encrypted_key, nonce]
 
+    SealedContact:
+      type: string
+      description: |-
+        `cs1:<iv>:<ciphertext>` (base64url): AES-GCM over
+        `{person_name, agent_label, note}` under the person's contacts
+        key, with the contact's DID as additional data.
+      maxLength: 4096
+    ContactRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        did:
+          type: string
+        sealed:
+          type: [string, 'null']
+        person_name:
+          type: [string, 'null']
+          description: Legacy plaintext; null once the row is sealed
+        agent_label:
+          type: [string, 'null']
+        note:
+          type: [string, 'null']
+        created_at:
+          type: string
+        updated_at:
+          type: string
+      required: [id, did, created_at, updated_at]
     ErrorResponse:
       type: object
       properties:

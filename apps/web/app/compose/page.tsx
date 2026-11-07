@@ -143,7 +143,7 @@ function ComposePageInner() {
       options.push({ did: agent.did, label: agent.label });
     }
     for (const contact of contacts) {
-      if (seen.has(contact.did)) continue;
+      if (!contact.readable || seen.has(contact.did)) continue;
       seen.add(contact.did);
       const label = contact.agent_label
         ? `${contact.person_name}(${contact.agent_label})`

@@ -532,7 +532,12 @@ struct ErrorResponse {
 struct ContactEntry {
     id: Uuid,
     did: String,
-    person_name: String,
+    /// `{person_name, agent_label, note}` sealed on the person's device
+    /// under their contacts key and bound to `did` (docs/28 P3-8). The
+    /// server cannot read it.
+    sealed: Option<String>,
+    /// Legacy plaintext, present only until the web re-seals the row.
+    person_name: Option<String>,
     agent_label: Option<String>,
     note: Option<String>,
     created_at: String,
@@ -579,9 +584,7 @@ struct ResolveRecipientQuery {
 #[derive(Deserialize)]
 struct CreateContactRequest {
     did: String,
-    person_name: String,
-    agent_label: Option<String>,
-    note: Option<String>,
+    sealed: String,
 }
 
 #[derive(Serialize)]
@@ -591,9 +594,34 @@ struct CreateContactResponse {
 
 #[derive(Deserialize)]
 struct UpdateContactRequest {
-    person_name: Option<String>,
-    agent_label: Option<String>,
-    note: Option<String>,
+    sealed: String,
+}
+
+#[derive(Serialize)]
+struct ContactKeyWrapEntry {
+    agent_id: Uuid,
+    agent_did: String,
+    wrapped_key: String,
+}
+
+#[derive(Serialize)]
+struct ContactKeysResponse {
+    wraps: Vec<ContactKeyWrapEntry>,
+}
+
+#[derive(Deserialize)]
+struct ContactKeyWrapInput {
+    agent_id: Uuid,
+    wrapped_key: String,
+}
+
+#[derive(Deserialize)]
+struct AddContactKeysRequest {
+    wraps: Vec<ContactKeyWrapInput>,
+    /// First key for this person: refused with 409 when any wrap already
+    /// exists, so two devices cannot each start a different key.
+    #[serde(default)]
+    initial: bool,
 }
 
 fn compose_party_label(
@@ -5616,39 +5644,45 @@ async fn delete_block(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn sanitize_contact_field(
-    value: Option<String>,
-    field: &str,
-    max_len: usize,
-) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
-    let trimmed = value
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    if let Some(ref v) = trimmed {
-        if v.chars().count() > max_len {
-            return Err(validation_error(&format!(
-                "{field} must be at most {max_len} characters"
-            )));
-        }
-    }
-    Ok(trimmed)
+/// Sealed contact fields: `cs1:<iv>:<ciphertext>`, base64url parts. The
+/// server only checks the shape and size; it cannot open them.
+const SEALED_CONTACT_PREFIX: &str = "cs1:";
+const SEALED_CONTACT_MAX_LEN: usize = 4096;
+/// Contacts key wrapped to one agent: `ckx25519v1:<eph>:<salt>:<iv>:<ct>`.
+const CONTACT_KEY_WRAP_PREFIX: &str = "ckx25519v1:";
+const CONTACT_KEY_WRAP_MAX_LEN: usize = 512;
+const CONTACT_KEY_WRAPS_MAX_PER_REQUEST: usize = 64;
+
+fn is_base64url_parts(value: &str) -> bool {
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':')
 }
 
-fn require_contact_field(
-    value: String,
-    field: &str,
-    max_len: usize,
-) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
-    let trimmed = value.trim().to_string();
-    if trimmed.is_empty() {
-        return Err(validation_error(&format!("{field} is required")));
+fn validate_sealed_contact(value: &str) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+    let value = value.trim();
+    if !value.starts_with(SEALED_CONTACT_PREFIX)
+        || value.len() > SEALED_CONTACT_MAX_LEN
+        || !is_base64url_parts(value)
+    {
+        return Err(validation_error(
+            "sealed must be a cs1: sealed contact of at most 4096 characters",
+        ));
     }
-    if trimmed.chars().count() > max_len {
-        return Err(validation_error(&format!(
-            "{field} must be at most {max_len} characters"
-        )));
+    Ok(value.to_string())
+}
+
+fn validate_contact_key_wrap(value: &str) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+    let value = value.trim();
+    if !value.starts_with(CONTACT_KEY_WRAP_PREFIX)
+        || value.len() > CONTACT_KEY_WRAP_MAX_LEN
+        || !is_base64url_parts(value)
+    {
+        return Err(validation_error(
+            "wrapped_key must be a ckx25519v1: wrapped key of at most 512 characters",
+        ));
     }
-    Ok(trimmed)
+    Ok(value.to_string())
 }
 
 async fn list_contacts(
@@ -5671,6 +5705,7 @@ async fn list_contacts(
             SELECT
               id,
               did,
+              sealed,
               person_name,
               agent_label,
               note,
@@ -5678,7 +5713,7 @@ async fn list_contacts(
               updated_at::text AS updated_at
             FROM contacts
             WHERE owner_user_id = $1
-            ORDER BY person_name ASC, created_at ASC
+            ORDER BY created_at ASC
             "#,
         )
         .bind(user_uuid)
@@ -5690,6 +5725,7 @@ async fn list_contacts(
             .map(|row| ContactEntry {
                 id: row.get("id"),
                 did: row.get("did"),
+                sealed: row.get("sealed"),
                 person_name: row.get("person_name"),
                 agent_label: row.get("agent_label"),
                 note: row.get("note"),
@@ -5726,9 +5762,7 @@ async fn create_contact(
 
     validate_did(&payload.did, "did")?;
     let did = payload.did.trim().to_string();
-    let person_name = require_contact_field(payload.person_name, "person_name", 64)?;
-    let agent_label = sanitize_contact_field(payload.agent_label, "agent_label", 64)?;
-    let note = sanitize_contact_field(payload.note, "note", 500)?;
+    let sealed = validate_sealed_contact(&payload.sealed)?;
 
     let id = Uuid::new_v4();
     let now = Utc::now().to_rfc3339();
@@ -5737,17 +5771,15 @@ async fn create_contact(
         let user_uuid = parse_user_uuid(&user_id)?;
         let result = sqlx::query(
             r#"
-            INSERT INTO contacts (id, owner_user_id, did, person_name, agent_label, note)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO contacts (id, owner_user_id, did, sealed)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (owner_user_id, did) DO NOTHING
             "#,
         )
         .bind(id)
         .bind(user_uuid)
         .bind(&did)
-        .bind(&person_name)
-        .bind(&agent_label)
-        .bind(&note)
+        .bind(&sealed)
         .execute(&pool)
         .await
         .map_err(|error| internal_error("failed to create contact", error))?;
@@ -5770,9 +5802,10 @@ async fn create_contact(
         entries.push(ContactEntry {
             id,
             did,
-            person_name,
-            agent_label,
-            note,
+            sealed: Some(sealed),
+            person_name: None,
+            agent_label: None,
+            note: None,
             created_at: now.clone(),
             updated_at: now,
         });
@@ -5796,33 +5829,27 @@ async fn update_contact(
         return Err(database_required_but_unavailable_error());
     }
 
-    let person_name = match payload.person_name {
-        Some(v) => Some(require_contact_field(v, "person_name", 64)?),
-        None => None,
-    };
-    let agent_label = sanitize_contact_field(payload.agent_label, "agent_label", 64)?;
-    let note = sanitize_contact_field(payload.note, "note", 500)?;
+    let sealed = validate_sealed_contact(&payload.sealed)?;
 
     if let Some(pool) = maybe_pool {
         let user_uuid = parse_user_uuid(&user_id)?;
         let row_opt = sqlx::query(
             r#"
             UPDATE contacts
-            SET person_name = COALESCE($3, person_name),
-                agent_label = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE agent_label END,
-                note        = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE note        END,
+            SET sealed      = $3,
+                person_name = NULL,
+                agent_label = NULL,
+                note        = NULL,
                 updated_at  = NOW()
             WHERE id = $1 AND owner_user_id = $2
-            RETURNING id, did, person_name, agent_label, note,
+            RETURNING id, did, sealed, person_name, agent_label, note,
                       created_at::text AS created_at,
                       updated_at::text AS updated_at
             "#,
         )
         .bind(id)
         .bind(user_uuid)
-        .bind(&person_name)
-        .bind(&agent_label)
-        .bind(&note)
+        .bind(&sealed)
         .fetch_optional(&pool)
         .await
         .map_err(|error| internal_error("failed to update contact", error))?;
@@ -5839,6 +5866,7 @@ async fn update_contact(
         return Ok(Json(ContactEntry {
             id: row.get("id"),
             did: row.get("did"),
+            sealed: row.get("sealed"),
             person_name: row.get("person_name"),
             agent_label: row.get("agent_label"),
             note: row.get("note"),
@@ -5869,15 +5897,10 @@ async fn update_contact(
             }),
         ));
     };
-    if let Some(v) = person_name {
-        entry.person_name = v;
-    }
-    if let Some(v) = agent_label {
-        entry.agent_label = Some(v);
-    }
-    if let Some(v) = note {
-        entry.note = Some(v);
-    }
+    entry.sealed = Some(sealed);
+    entry.person_name = None;
+    entry.agent_label = None;
+    entry.note = None;
     entry.updated_at = Utc::now().to_rfc3339();
     Ok(Json(entry.clone()))
 }
@@ -5936,6 +5959,157 @@ async fn delete_contact(
             }),
         ));
     }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Contact keys (docs/28 P3-8): the person's contacts key, wrapped to each
+/// of their agents' encryption keys on their device. The server stores the
+/// wraps and cannot open them. Human sessions only, database only.
+async fn contact_keys_pool(state: &AppState) -> Result<PgPool, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .database_pool()
+        .await
+        .map_err(|message| internal_server_error(&message))?
+        .ok_or_else(database_required_but_unavailable_error)
+}
+
+/// GET /contact-keys — the person's wraps, with each agent's DID so a
+/// device can pick the wrap it holds a key for.
+async fn list_contact_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ContactKeysResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = contact_keys_pool(&state).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT w.agent_id, a.did AS agent_did, w.wrapped_key
+        FROM contact_key_wraps w
+        JOIN agents a ON a.id = w.agent_id AND a.user_id = w.user_id
+        WHERE w.user_id = $1
+        ORDER BY w.created_at ASC
+        "#,
+    )
+    .bind(user_uuid)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| internal_error("failed to list contact keys", error))?;
+    Ok(Json(ContactKeysResponse {
+        wraps: rows
+            .into_iter()
+            .map(|row| ContactKeyWrapEntry {
+                agent_id: row.get("agent_id"),
+                agent_did: row.get("agent_did"),
+                wrapped_key: row.get("wrapped_key"),
+            })
+            .collect(),
+    }))
+}
+
+/// POST /contact-keys — add wraps for the person's own agents. Wraps are
+/// never replaced: an agent that already has one keeps it. With `initial`,
+/// the request is refused (409) when the person has any wrap, so two
+/// devices starting at once cannot end up with two different keys.
+async fn add_contact_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<AddContactKeysRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    if payload.wraps.is_empty() || payload.wraps.len() > CONTACT_KEY_WRAPS_MAX_PER_REQUEST {
+        return Err(validation_error("wraps must hold 1 to 64 entries"));
+    }
+    let mut wraps: Vec<(Uuid, String)> = Vec::with_capacity(payload.wraps.len());
+    for wrap in &payload.wraps {
+        wraps.push((wrap.agent_id, validate_contact_key_wrap(&wrap.wrapped_key)?));
+    }
+    let agent_ids: Vec<Uuid> = wraps.iter().map(|(id, _)| *id).collect();
+    let distinct = agent_ids
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if distinct != agent_ids.len() {
+        return Err(validation_error("each agent may appear only once"));
+    }
+
+    let pool = contact_keys_pool(&state).await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start contact key transaction", e))?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("contact_key_wraps:{user_uuid}"))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to lock contact keys", e))?;
+
+    let owned: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE user_id = $1 AND id = ANY($2)")
+            .bind(user_uuid)
+            .bind(&agent_ids)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to check agent ownership", e))?;
+    if owned as usize != agent_ids.len() {
+        return Err(not_found_error("agent not found"));
+    }
+
+    if payload.initial {
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM contact_key_wraps WHERE user_id = $1)")
+                .bind(user_uuid)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| internal_error("failed to check contact keys", e))?;
+        if exists {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorResponse {
+                    error: "contacts_key_exists".to_string(),
+                    message: "a contacts key already exists; open it instead".to_string(),
+                }),
+            ));
+        }
+    }
+
+    for (agent_id, wrapped_key) in &wraps {
+        sqlx::query(
+            r#"
+            INSERT INTO contact_key_wraps (agent_id, user_id, wrapped_key)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (agent_id) DO NOTHING
+            "#,
+        )
+        .bind(agent_id)
+        .bind(user_uuid)
+        .bind(wrapped_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to store contact key", e))?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit contact keys", e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE /contact-keys — drop every wrap, for a person who can no longer
+/// open their contacts key on any device. Sealed contacts stay but cannot
+/// be opened with the next key; the person can delete them.
+async fn reset_contact_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = contact_keys_pool(&state).await?;
+    sqlx::query("DELETE FROM contact_key_wraps WHERE user_id = $1")
+        .bind(user_uuid)
+        .execute(&pool)
+        .await
+        .map_err(|e| internal_error("failed to reset contact keys", e))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -14528,6 +14702,12 @@ fn app_with_state(state: AppState) -> Router {
         .route(
             "/contacts/{id}",
             axum::routing::patch(update_contact).delete(delete_contact),
+        )
+        .route(
+            "/contact-keys",
+            get(list_contact_keys)
+                .post(add_contact_keys)
+                .delete(reset_contact_keys),
         )
         .route("/recipients/resolve", get(resolve_recipient))
         .route("/messages", get(list_messages).post(send_message))

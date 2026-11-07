@@ -16,7 +16,8 @@ export function resolveParticipantLabel(
   if (!did) return "(不明な相手)";
 
   const contact = contactsByDid?.get(did);
-  if (contact) {
+  // A contact this device cannot open has no name to show.
+  if (contact && contact.readable) {
     const label = contact.agent_label?.trim();
     if (label && label.length > 0) {
       return `${contact.person_name}(${label})`;
