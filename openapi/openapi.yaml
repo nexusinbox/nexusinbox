@@ -1218,6 +1218,13 @@ components:
             across multi-tab / refresh races. See docs/25c §3.2.
           type: string
           format: date-time
+        auto_reply_claimed_at:
+          description: |-
+            Set when an executor claimed this row to send an auto-reply.
+            Without `auto_reply_sent_at`, the send was attempted but not
+            confirmed; the inbox shows it as incomplete. See docs/29 §2.5.
+          type: string
+          format: date-time
         sender_is_contact:
           description: |-
             Whether the sender is in the owner's contacts. Present only

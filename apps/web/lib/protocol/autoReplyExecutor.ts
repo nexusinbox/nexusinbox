@@ -128,6 +128,8 @@ const DEFAULT_DECLINE_REASON = "ポリシーに基づき自動で辞退しまし
 function eligibleMessages(messages: MessageIndexEntry[]): MessageIndexEntry[] {
   return messages.filter((m) => {
     if (m.auto_reply_decision == null || m.auto_reply_sent_at) return false;
+    // Another executor already took it (docs/29 §2.5).
+    if (m.auto_reply_claimed_at) return false;
     if (m.auto_reply_decision === "auto_accept") return true;
     if (m.auto_reply_decision === "auto_decline") return true;
     if (

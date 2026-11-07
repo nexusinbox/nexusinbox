@@ -783,6 +783,12 @@ struct MessageIndexEntryResponse {
     /// PATCH /messages/:id/auto-reply-sent. See docs/25c §3.2.
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_reply_sent_at: Option<String>,
+    /// Set when an executor claimed the row to send an auto-reply
+    /// (docs/29 §2.5). With no `auto_reply_sent_at`, the send was
+    /// attempted but not confirmed, and the inbox shows it as
+    /// incomplete for the human.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_reply_claimed_at: Option<String>,
     /// Whether the sender is in the owner's contacts. Only set on
     /// `auto_reply_pending=1` lists, so the Agent Gateway gets one bit per
     /// pending message instead of the owner's contact list (docs/29 §2.2).
@@ -1128,6 +1134,21 @@ fn verify_dev_jwt(token: &str) -> Result<TokenClaims, &'static str> {
 #[allow(dead_code)]
 fn is_valid_verification_level(level: &str) -> bool {
     level == "orb"
+}
+
+/// Longest user agent kept in an audit row (docs/28 §3.6).
+const AUDIT_USER_AGENT_MAX_CHARS: usize = 256;
+
+/// The request's user agent for an audit row, cut to
+/// AUDIT_USER_AGENT_MAX_CHARS characters.
+fn audit_user_agent(headers: &HeaderMap) -> String {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .chars()
+        .take(AUDIT_USER_AGENT_MAX_CHARS)
+        .collect()
 }
 
 fn mask_identifier(raw: &str) -> String {
@@ -2199,6 +2220,12 @@ fn audit_storage_event(
     result: &str,
     reason: Option<&str>,
 ) {
+    // Only failures are worth a log line. A success line per send or
+    // delete would keep a per-user activity trail in the platform logs
+    // (docs/28 §3.6).
+    if result == "ok" {
+        return;
+    }
     let payload = serde_json::json!({
         "event": event,
         "backend": match backend {
@@ -7109,11 +7136,7 @@ async fn revoke_agent_credential(
     let user_uuid = parse_user_uuid(&user_id)?;
 
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
 
     // Revoke credential
     let result = sqlx::query(
@@ -7217,11 +7240,7 @@ async fn purge_agent_credential(
     let user_uuid = parse_user_uuid(&user_id)?;
 
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
 
     // Ownership + eligibility check in one query. We read status,
     // revoked_at, aid, label together so the audit snapshot below is
@@ -7942,11 +7961,7 @@ async fn agent_auth_revoke(
     let hash = sha256_hex(token.as_bytes());
 
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
 
     // Try revoking by access_hash first, then by refresh_hash
     let result = sqlx::query(
@@ -8026,11 +8041,7 @@ async fn agent_emergency_shutdown(
     let user_uuid = parse_user_uuid(&user_id)?;
 
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
 
     // Verify the agent belongs to this user and get its aid
     let agent_row = sqlx::query(
@@ -8804,11 +8815,7 @@ async fn agent_auth_token(
     JsonBody(payload): JsonBody<AgentAuthTokenRequest>,
 ) -> Result<Json<AgentAuthTokenResponse>, (StatusCode, Json<ErrorResponse>)> {
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
     let pool = state
         .database_pool()
         .await
@@ -9247,11 +9254,7 @@ async fn agent_auth_refresh(
     // for both the happy path and reuse detection so forensics has the same
     // fields regardless of outcome.
     let actor_ip = extract_client_ip(&headers);
-    let actor_user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let actor_user_agent = audit_user_agent(&headers);
 
     // Check credential status first. A credential that is already revoked,
     // compromised or mid-rotation has no live token family left to protect,
@@ -9439,12 +9442,6 @@ async fn send_message(
     let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
     ctx.require_scope("messages.send")?;
     let user_id = ctx.user_id().to_string();
-    let client_ip = extract_client_ip(&headers);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
 
     let maybe_pool = state
         .database_pool()
@@ -10185,8 +10182,6 @@ async fn send_message(
                     "recipient_message_id": recipient_row_id.to_string(),
                     "recipient_did": &message.recipient_did,
                     "ciphertext_size_bytes": v.size_bytes,
-                    "client_ip": client_ip,
-                    "user_agent": user_agent,
                 }),
             );
         }
@@ -10378,11 +10373,7 @@ async fn create_attachment_intent(
     let user_id = ctx.user_id().to_string();
     let user_uuid = parse_user_uuid(&user_id)?;
     let client_ip = extract_client_ip(&headers);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let user_agent = audit_user_agent(&headers);
 
     // Per-IP rate limit — enforced before DB work so cheap intent spam from a
     // single IP fails fast without touching Postgres.
@@ -10578,8 +10569,6 @@ async fn create_attachment_intent(
             "object_key": object_key,
             "ciphertext_size_bytes": ciphertext_size,
             "draft_id": draft_id,
-            "client_ip": client_ip,
-            "user_agent": user_agent,
         }),
     );
 
@@ -10645,11 +10634,7 @@ async fn complete_attachment(
     }
     let user_uuid = parse_user_uuid(ctx.user_id())?;
     let client_ip = extract_client_ip(&headers);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let user_agent = audit_user_agent(&headers);
 
     // Per-IP burst limit. Shares the attachment-operations budget with
     // /attachments/intents so the overall ceiling per IP (60/min) covers
@@ -10842,8 +10827,6 @@ async fn complete_attachment(
             "attachment_id": attachment_id.to_string(),
             "object_key": object_key,
             "ciphertext_size_bytes": actual_size,
-            "client_ip": client_ip,
-            "user_agent": user_agent,
         }),
     );
 
@@ -11275,11 +11258,6 @@ async fn generate_attachment_download_url(
     }
     let user_uuid = parse_user_uuid(ctx.user_id())?;
     let client_ip = extract_client_ip(&headers);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
 
     // Per-IP scraping guard. An attacker with a stolen cookie could
     // otherwise try to iterate attachment_ids for bulk presigned-URL
@@ -11415,8 +11393,6 @@ async fn generate_attachment_download_url(
         serde_json::json!({
             "attachment_id": attachment_id.to_string(),
             "message_id": message_id.to_string(),
-            "client_ip": client_ip,
-            "user_agent": user_agent,
         }),
     );
 
@@ -11438,12 +11414,6 @@ async fn delete_attachment(
         ctx.require_scope("messages.send")?;
     }
     let user_uuid = parse_user_uuid(ctx.user_id())?;
-    let client_ip = extract_client_ip(&headers);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
 
     let pool = match state
         .database_pool()
@@ -11558,8 +11528,6 @@ async fn delete_attachment(
             "attachment_id": attachment_id.to_string(),
             "object_key": object_key,
             "r2_purged": r2_purged,
-            "client_ip": client_ip,
-            "user_agent": user_agent,
         }),
     );
 
@@ -12530,6 +12498,7 @@ async fn list_messages(
               m.auto_reply_decision,
               m.auto_reply_reason,
               m.auto_reply_sent_at::text AS auto_reply_sent_at,
+              m.auto_reply_claimed_at::text AS auto_reply_claimed_at,
               -- One bit per pending row for the Agent Gateway instead of
               -- the owner's contact list (docs/29 §2.2). NULL otherwise.
               CASE WHEN $11::bool THEN EXISTS (
@@ -12650,6 +12619,7 @@ async fn list_messages(
                 auto_reply_decision: row.try_get("auto_reply_decision").ok(),
                 auto_reply_reason: row.try_get("auto_reply_reason").ok(),
                 auto_reply_sent_at: row.try_get("auto_reply_sent_at").ok(),
+                auto_reply_claimed_at: row.try_get("auto_reply_claimed_at").ok(),
                 sender_is_contact: row
                     .try_get::<Option<bool>, _>("sender_is_contact")
                     .ok()
@@ -12727,6 +12697,7 @@ async fn list_messages(
                 auto_reply_decision: None,
                 auto_reply_reason: None,
                 auto_reply_sent_at: None,
+                auto_reply_claimed_at: None,
                 sender_is_contact: None,
             })
             .collect();
@@ -15137,6 +15108,28 @@ mod internal_tests {
         };
         let err = enforce_agent_bound_aid(&ctx, "aid:ai:other456").expect_err("must reject");
         assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn audit_user_agent_is_cut_to_a_bounded_length() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(audit_user_agent(&headers), "", "missing header");
+        let long = "ア".repeat(AUDIT_USER_AGENT_MAX_CHARS + 50);
+        headers.insert(
+            axum::http::header::USER_AGENT,
+            HeaderValue::from_bytes(long.as_bytes()).unwrap(),
+        );
+        // Non-ASCII header values are not valid `to_str`, so they are dropped
+        // rather than stored.
+        assert_eq!(audit_user_agent(&headers), "");
+        headers.insert(
+            axum::http::header::USER_AGENT,
+            HeaderValue::from_str(&"a".repeat(AUDIT_USER_AGENT_MAX_CHARS + 50)).unwrap(),
+        );
+        assert_eq!(
+            audit_user_agent(&headers).chars().count(),
+            AUDIT_USER_AGENT_MAX_CHARS
+        );
     }
 
     /// Shared vector (tests/vectors/envelope_signing.json): the API verifies

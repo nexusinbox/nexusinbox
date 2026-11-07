@@ -350,6 +350,18 @@ async fn pending_list_carries_sender_is_contact_and_hides_claimed_rows() {
         vec![from_stranger.to_string().as_str()],
         "claimed rows leave the list"
     );
+
+    // The inbox list shows the claim, so an unconfirmed attempt is visible
+    // to the human (docs/29 §2.5).
+    let (_, body) = call(&app, "GET", "/messages", &token).await;
+    for row in body["messages"].as_array().unwrap() {
+        let claimed = row["id"] == json!(from_friend.to_string());
+        assert_eq!(
+            row.get("auto_reply_claimed_at").is_some(),
+            claimed,
+            "auto_reply_claimed_at only on the claimed row: {row}"
+        );
+    }
 }
 
 #[tokio::test]

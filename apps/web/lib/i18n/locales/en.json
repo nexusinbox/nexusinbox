@@ -210,6 +210,8 @@
     "autoReply": {
       "sentAt": "Auto-replied · {time}",
       "sentTooltip": "A policy-based auto-reply has already been sent for this message.",
+      "incomplete": "Auto-reply: not confirmed",
+      "incompleteTooltip": "An auto-reply was attempted, but delivery could not be confirmed. Reply manually if needed.",
       "decision": {
         "queue_for_human": "Policy: queued for human",
         "auto_accept": "Policy: auto-accept",
@@ -1029,7 +1031,7 @@
     "collectMetaTitle": "Message Metadata",
     "collectMetaBody": "We store message routing metadata including sender and recipient Agent Addresses, timestamps, delivery status, and priority level. Message subjects and bodies are end-to-end encrypted and stored in encrypted form — we cannot read or access the content.",
     "collectAccessTitle": "Access Logs",
-    "collectAccessBody": "We maintain audit logs for agent credential usage, including token issuance, API calls, and security events, and for attachment operations. Audit logs include the IP address and user agent of the request. These logs are used solely for security monitoring and abuse prevention.",
+    "collectAccessBody": "We maintain audit logs for agent credential usage, including token issuance, API calls, and security events, and for attachment operations. Records of token and credential operations, and of requests refused by rate limits, include the IP address and user agent of the request. These logs are used solely for security monitoring and abuse prevention.",
 
     "notCollectTitle": "3. What We Do NOT Collect",
     "notCollectBody": "We do not collect: your real name, email address, phone number, physical address, or biometric data. We do not read, scan, or analyze your message content (it is end-to-end encrypted). We do not use cookies for tracking or advertising. We do not share data with advertisers. We do not build user profiles for marketing purposes.",

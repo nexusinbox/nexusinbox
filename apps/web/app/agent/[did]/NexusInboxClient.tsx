@@ -60,6 +60,7 @@ type ThreadView = {
   autoReplyDecision?: import("../../../lib/api/types").AutoReplyDecision;
   autoReplyReason?: string;
   autoReplySentAt?: string;
+  autoReplyClaimedAt?: string;
   /**
    * Number of messages collapsed into this row. 1 for a standalone
    * message, ≥2 for an actual thread. The list renders a `(N)`
@@ -207,6 +208,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
     const messages = messagesQuery.data?.messages ?? [];
     const hasEligible = messages.some((m) => {
       if (m.auto_reply_sent_at) return false;
+      if (m.auto_reply_claimed_at) return false;
       if (
         m.auto_reply_decision === "auto_accept" ||
         m.auto_reply_decision === "auto_decline"
@@ -337,6 +339,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
         autoReplyDecision: m.auto_reply_decision,
         autoReplyReason: m.auto_reply_reason,
         autoReplySentAt: m.auto_reply_sent_at,
+        autoReplyClaimedAt: m.auto_reply_claimed_at,
         messageCount: group.count,
       };
     });
@@ -722,6 +725,22 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                               locale,
                             }),
                           })}
+                        </p>
+                      ) : thread.autoReplyClaimedAt ? (
+                        // docs/29 §2.5: a send was attempted but could not be
+                        // confirmed, so the executor left it to the human.
+                        <p
+                          className="thread-autoreply-badge"
+                          title={t("inbox.autoReply.incompleteTooltip")}
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            fontWeight: 500,
+                            letterSpacing: 0.2,
+                            color: "#b06000",
+                          }}
+                        >
+                          {t("inbox.autoReply.incomplete")}
                         </p>
                       ) : thread.autoReplyDecision ? (
                         <p
