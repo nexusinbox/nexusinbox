@@ -285,17 +285,18 @@ Cloudflare R2
 ### 7.1 キー形式
 
 ```text
-attachments/{user_id}/{draft_or_message_id}/{attachment_id}/blob.bin
+attachments/{attachment_id}/blob.bin
 ```
 
 例:
 
 ```text
-attachments/3f2d.../draft_01J.../att_01J.../blob.bin
+attachments/2209479a-d306-4d1d-bd35-4e79ffabd6ed/blob.bin
 ```
 
 ルール:
 - key は opaque にする
+- user_id と下書き ID を key に含めない。持ち主は `attachment_uploads.owner_user_id` にだけ置く (2026-11-07 に変更。それ以前は `attachments/{user_id}/{draft_or_message_id}/{attachment_id}/blob.bin` だった。古いオブジェクトは R2 の 97 日のルールで消える)
 - filename を key に含めない
 - object key から利用者の業務情報が推測できないようにする
 
@@ -378,7 +379,6 @@ Response 201:
   "required_headers": {
     "Content-Type": "application/octet-stream",
     "x-amz-meta-attachment-id": "uuid",
-    "x-amz-meta-owner-user-id": "00000000-0000-0000-0000-000000000001",
     "x-amz-meta-issued-at": "2026-04-17T11:55:00Z"
   },
   "max_ciphertext_size_bytes": 5242880
@@ -514,15 +514,16 @@ Response 200:
 - allowed headers:
   - `Content-Type`
   - `x-amz-meta-attachment-id`
-  - `x-amz-meta-owner-user-id`
   - `x-amz-meta-issued-at`
+  - 2026-11-07 より前の設定に `x-amz-meta-owner-user-id` が残っていても害はない (もう送らない)
 
 ### 10.3 Object metadata
 
 平文 metadata は最小限に限定する:
 - `x-amz-meta-attachment-id`
-- `x-amz-meta-owner-user-id`
 - `x-amz-meta-issued-at`
+
+`x-amz-meta-owner-user-id` は 2026-11-07 にやめた。complete と送信・ダウンロード時の HEAD での照合は、サイズと `attachment-id` で行う。
 
 禁止:
 - original filename

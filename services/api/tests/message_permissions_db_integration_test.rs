@@ -68,7 +68,6 @@ fn sha256_hex(input: &str) -> String {
 
 struct Owner {
     user_id: Uuid,
-    session: String,
 }
 
 async fn seed_owner(pool: &PgPool, wid: &str) -> Owner {
@@ -82,25 +81,10 @@ async fn seed_owner(pool: &PgPool, wid: &str) -> Owner {
     .execute(pool)
     .await
     .expect("seed user");
-    let (token, jwt_id, exp) =
-        nexusinbox_api::issue_dev_session(&user_id.to_string(), wid, "orb", 60 * 60);
-    sqlx::query(
-        "INSERT INTO sessions (user_id, jwt_id, expires_at) VALUES ($1, $2, to_timestamp($3))",
-    )
-    .bind(user_id)
-    .bind(&jwt_id)
-    .bind(exp)
-    .execute(pool)
-    .await
-    .expect("seed session");
-    Owner {
-        user_id,
-        session: format!("Bearer {token}"),
-    }
+    Owner { user_id }
 }
 
 struct Agent {
-    id: Uuid,
     did: String,
     aid: String,
 }
@@ -139,7 +123,7 @@ async fn seed_agent(pool: &PgPool, owner: &Owner, label: &str, auto_reply: bool)
     .execute(pool)
     .await
     .expect("seed identity key");
-    Agent { id, did, aid }
+    Agent { did, aid }
 }
 
 /// Plain-bearer agent token (`dpop_jkt = 'none'`) for `agent`.

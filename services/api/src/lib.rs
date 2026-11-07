@@ -2697,27 +2697,14 @@ fn s3_object_key_for(config: &S3Config, message_id: Uuid) -> String {
 }
 
 /// Build the attachment object key per the spec:
-/// `attachments/{user_id}/{draft_or_message_id}/{attachment_id}/blob.bin`
+/// `attachments/{attachment_id}/blob.bin`
 ///
-/// The key is intentionally opaque — it contains no filename or MIME info so
-/// that no business context leaks to anyone who can see the R2 key listing.
-fn s3_attachment_key_for(
-    config: &S3Config,
-    user_id: Uuid,
-    draft_or_message_id: &str,
-    attachment_id: Uuid,
-) -> String {
-    let safe_draft = draft_or_message_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .take(64)
-        .collect::<String>();
-    let draft_segment = if safe_draft.is_empty() {
-        "none".to_string()
-    } else {
-        safe_draft
-    };
-    let base = format!("attachments/{user_id}/{draft_segment}/{attachment_id}/blob.bin");
+/// The key is intentionally opaque: no filename or MIME info, and no user
+/// or draft id, so the R2 key listing says nothing about who sent what or
+/// which attachments belong together (docs/28 P3-9). Ownership lives only
+/// in `attachment_uploads`.
+fn s3_attachment_key_for(config: &S3Config, attachment_id: Uuid) -> String {
+    let base = format!("attachments/{attachment_id}/blob.bin");
     if config.prefix.is_empty() {
         base
     } else {
@@ -10840,12 +10827,6 @@ async fn create_attachment_intent(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let draft_ref = if draft_id.is_empty() {
-        "none".to_string()
-    } else {
-        draft_id.clone()
-    };
-
     // DB required for attachments
     let pool = match state
         .database_pool()
@@ -10880,7 +10861,7 @@ async fn create_attachment_intent(
 
     // Generate identifiers
     let attachment_id = Uuid::new_v4();
-    let object_key = s3_attachment_key_for(&config, user_uuid, &draft_ref, attachment_id);
+    let object_key = s3_attachment_key_for(&config, attachment_id);
     let now = Utc::now();
     let expires_at = now + chrono::Duration::seconds(ATTACHMENT_PUT_URL_TTL_SECS as i64);
     let issued_at_str = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -10892,10 +10873,6 @@ async fn create_attachment_intent(
         (
             "x-amz-meta-attachment-id".to_string(),
             attachment_id.to_string(),
-        ),
-        (
-            "x-amz-meta-owner-user-id".to_string(),
-            user_uuid.to_string(),
         ),
         ("x-amz-meta-issued-at".to_string(), issued_at_str.clone()),
         (
@@ -10968,7 +10945,6 @@ async fn create_attachment_intent(
     let required_headers = serde_json::json!({
         "Content-Type": "application/octet-stream",
         "x-amz-meta-attachment-id": attachment_id.to_string(),
-        "x-amz-meta-owner-user-id": user_uuid.to_string(),
         "x-amz-meta-issued-at": issued_at_str,
     });
 
@@ -11170,15 +11146,6 @@ async fn complete_attachment(
             }),
         ));
     }
-    if metadata.get("owner-user-id").map(String::as_str) != Some(&user_uuid.to_string()) {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "metadata_mismatch".to_string(),
-                message: "object owner-user-id metadata mismatch".to_string(),
-            }),
-        ));
-    }
 
     // Flip status to uploaded. The status guard can lose to a concurrent
     // delete or cleanup expiry; report that instead of claiming success.
@@ -11256,13 +11223,10 @@ fn attachment_object_matches(
     metadata: &std::collections::HashMap<String, String>,
     expected_size: i64,
     attachment_id: Uuid,
-    upload_owner_user_id: Uuid,
 ) -> bool {
     actual_size == expected_size
         && metadata.get("attachment-id").map(String::as_str)
             == Some(attachment_id.to_string().as_str())
-        && metadata.get("owner-user-id").map(String::as_str)
-            == Some(upload_owner_user_id.to_string().as_str())
 }
 
 fn attachment_object_changed_error(attachment_id: Uuid) -> (StatusCode, Json<ErrorResponse>) {
@@ -11451,13 +11415,7 @@ async fn prevalidate_attachments_for_message(
                         }),
                     )
                 })?;
-            if !attachment_object_matches(
-                actual_size,
-                &metadata,
-                size,
-                att_ref.attachment_id,
-                user_uuid,
-            ) {
+            if !attachment_object_matches(actual_size, &metadata, size, att_ref.attachment_id) {
                 return Err(attachment_object_changed_error(att_ref.attachment_id));
             }
         }
@@ -11744,7 +11702,6 @@ async fn generate_attachment_download_url(
             &metadata,
             verified_size.unwrap_or(-1),
             attachment_id,
-            upload_owner_user_id,
         ) {
             quarantine_attachment_upload(
                 &pool,
@@ -12070,7 +12027,6 @@ pub async fn run_attachment_cleanup_pass(pool: &PgPool) -> (u64, u64) {
                         &metadata,
                         verified_size.unwrap_or(-1),
                         row_id,
-                        owner_user_id,
                     ) =>
                 {
                     let _ = sqlx::query(
@@ -14702,44 +14658,62 @@ mod internal_tests {
     #[test]
     fn attachment_object_match_requires_size_and_bound_metadata() {
         let id = Uuid::new_v4();
-        let owner = Uuid::new_v4();
-        let metadata: std::collections::HashMap<String, String> = [
-            ("attachment-id".to_string(), id.to_string()),
-            ("owner-user-id".to_string(), owner.to_string()),
-        ]
-        .into_iter()
-        .collect();
-        assert!(attachment_object_matches(2048, &metadata, 2048, id, owner));
+        let metadata: std::collections::HashMap<String, String> =
+            [("attachment-id".to_string(), id.to_string())]
+                .into_iter()
+                .collect();
+        assert!(attachment_object_matches(2048, &metadata, 2048, id));
         // Overwritten through the still-valid PUT URL with a bigger body.
         assert!(!attachment_object_matches(
             5 * 1024 * 1024 * 1024,
             &metadata,
             2048,
-            id,
-            owner
+            id
         ));
         // Metadata from a different intent.
         assert!(!attachment_object_matches(
             2048,
             &metadata,
             2048,
-            Uuid::new_v4(),
-            owner
-        ));
-        assert!(!attachment_object_matches(
-            2048,
-            &metadata,
-            2048,
-            id,
             Uuid::new_v4()
         ));
         assert!(!attachment_object_matches(
             2048,
             &std::collections::HashMap::new(),
             2048,
-            id,
-            owner
+            id
         ));
+        // Objects uploaded before docs/28 P3-9 also carry owner-user-id;
+        // it is no longer compared, so they keep matching.
+        let mut legacy = metadata.clone();
+        legacy.insert("owner-user-id".to_string(), Uuid::new_v4().to_string());
+        assert!(attachment_object_matches(2048, &legacy, 2048, id));
+    }
+
+    #[test]
+    fn attachment_key_carries_no_user_or_draft_id() {
+        let config = S3Config {
+            endpoint: "https://example.r2.cloudflarestorage.com".to_string(),
+            bucket: "b".to_string(),
+            region: "auto".to_string(),
+            access_key_id: "k".to_string(),
+            secret_access_key: "s".to_string(),
+            prefix: String::new(),
+            path_style: true,
+        };
+        let id = Uuid::new_v4();
+        assert_eq!(
+            s3_attachment_key_for(&config, id),
+            format!("attachments/{id}/blob.bin")
+        );
+        let prefixed = S3Config {
+            prefix: "/prod/".to_string(),
+            ..config
+        };
+        assert_eq!(
+            s3_attachment_key_for(&prefixed, id),
+            format!("prod/attachments/{id}/blob.bin")
+        );
     }
     use serial_test::serial;
 

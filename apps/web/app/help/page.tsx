@@ -60,7 +60,7 @@ const blockGlossary: GlossaryItem[] = [
 const conceptGlossary: GlossaryItem[] = [
   { termKey: "help.aidTerm", descriptionKey: "help.aidDesc" },
   { termKey: "help.didTerm", descriptionKey: "help.didDesc" },
-  { termKey: "help.byosTerm", descriptionKey: "help.byosDesc" },
+  { termKey: "help.storageTerm", descriptionKey: "help.storageDesc" },
   { termKey: "help.trustTerm", descriptionKey: "help.trustDesc" },
   { termKey: "help.zkTerm", descriptionKey: "help.zkDesc" },
   { termKey: "help.purgeTerm", descriptionKey: "help.purgeDesc" },

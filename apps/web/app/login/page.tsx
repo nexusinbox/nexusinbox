@@ -354,7 +354,7 @@ export default function LoginPage() {
             {t("auth.footerE2E")}
           </span>
           <span>{t("auth.footerDID")}</span>
-          <span>{t("auth.footerBYOS")}</span>
+          <span>{t("auth.footerIdentity")}</span>
         </div>
 
         <Link href="/concept" className="ai-login-concept-link">

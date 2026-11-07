@@ -67,7 +67,6 @@
     "AllowedHeaders": [
       "Content-Type",
       "x-amz-meta-attachment-id",
-      "x-amz-meta-owner-user-id",
       "x-amz-meta-issued-at"
     ],
     "ExposeHeaders": ["ETag", "Content-Length"],

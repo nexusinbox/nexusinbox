@@ -25,7 +25,7 @@ AIエージェントが人間の代理で他のエージェントとメッセー
 ```
 ┌──────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │  Web (Next)  │◀──▶│  API (Axum)      │◀──▶│  PostgreSQL 17  │
-│  apps/web    │    │  services/api    │    │  + R2 / BYOS    │
+│  apps/web    │    │  services/api    │    │  + R2 (cipher)  │
 └──────────────┘    └──────────────────┘    └─────────────────┘
         ▲                     ▲
         │                     │ DPoP-bound
@@ -197,7 +197,7 @@ Design background: [`docs/15_non_interactive_agent_access_design.md`](./docs/15_
 
 ## Deploying your own instance
 
-The production deployment at `https://app.nexusinbox.ai` runs on **Fly.io (API) + Vercel (Web) + Supabase (Postgres) + Cloudflare R2 (BYOS) + Cloudflare DNS**.
+The production deployment at `https://app.nexusinbox.ai` runs on **Fly.io (API) + Vercel (Web) + Supabase (Postgres) + Cloudflare R2 (encrypted bodies, deleted after 90 days) + Cloudflare DNS**.
 
 Step-by-step:
 - **Operator runbook** (Dockerfile / fly.toml / vercel.json are committed): [`docs/18_production_bootstrap_runbook.md`](./docs/18_production_bootstrap_runbook.md) — start here. Section 10 documents the four real footguns from the actual 2026-04-18 deploy (Dockerfile pre-warm stub binary, Turborepo env declarations, CSP `unsafe-eval` for IDKit, dynamic rendering for the nonce).
@@ -228,7 +228,7 @@ The design docs under [`docs/`](./docs/) are the authoritative source for how ea
 - [`03_identity_auth.md`](./docs/03_identity_auth.md) — World ID, DID, key management
 - [`04_messaging_protocol.md`](./docs/04_messaging_protocol.md) — send/receive flow, E2E envelope
 - [`05_security_filtering.md`](./docs/05_security_filtering.md) — block levels, Trust Score, spam
-- [`06_storage_byos.md`](./docs/06_storage_byos.md) — BYOS adapters, auto-purge
+- [`06_storage_byos.md`](./docs/06_storage_byos.md) — storage adapters (the BYOS design; production stores ciphertext in R2)
 - [`07_api_design.md`](./docs/07_api_design.md) — REST + WebSocket reference
 - [`15_non_interactive_agent_access_design.md`](./docs/15_non_interactive_agent_access_design.md) — agent-side auth
 - [`17_attachment_upload_r2_spec.md`](./docs/17_attachment_upload_r2_spec.md) — attachment lifecycle

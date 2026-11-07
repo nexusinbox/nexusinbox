@@ -114,13 +114,6 @@ fn count_json_files(dir: &Path) -> usize {
         .sum()
 }
 
-async fn count(pool: &PgPool, sql: &str) -> i64 {
-    sqlx::query_scalar(sql)
-        .fetch_one(pool)
-        .await
-        .unwrap_or_else(|e| panic!("count query failed ({sql}): {e}"))
-}
-
 fn derive_did_key(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
     let mut multicodec = Vec::with_capacity(34);
     multicodec.push(0xed);
@@ -268,20 +261,6 @@ async fn send(app: &axum::Router, from: &UserAgent, to: &UserAgent, nonce_marker
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     Uuid::parse_str(body["message_id"].as_str().unwrap()).unwrap()
-}
-
-/// Moves both copies of a cross-user message (they share one blob, so one
-/// storage_ref) into the past.
-async fn age_message(pool: &PgPool, sender_row: Uuid, days: i64) {
-    sqlx::query(
-        "UPDATE message_index SET created_at = NOW() - ($2::bigint * INTERVAL '1 day') \
-         WHERE storage_ref = (SELECT storage_ref FROM message_index WHERE id = $1)",
-    )
-    .bind(sender_row)
-    .bind(days)
-    .execute(pool)
-    .await
-    .expect("age message");
 }
 
 /// A second agent for an existing person (for a same-person send).

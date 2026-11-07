@@ -140,7 +140,7 @@ export default function ConceptPage() {
           </span>
           <span className="ai-concept-pill">
             <span className="marker" style={{ background: "#ff9ee0", boxShadow: "0 0 8px #ff9ee0" }} />
-            {t("concept.pillBYOS")}
+            {t("concept.pillKeys")}
           </span>
         </div>
 

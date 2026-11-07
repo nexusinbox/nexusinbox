@@ -110,7 +110,7 @@ export default async function Image() {
           <span>·</span>
           <span>DID:KEY</span>
           <span>·</span>
-          <span>BYOS</span>
+          <span>WORLD ID</span>
         </div>
       </div>
     ),
