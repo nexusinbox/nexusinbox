@@ -3977,6 +3977,119 @@ async fn public_status(State(state): State<AppState>) -> Json<StatusResponse> {
     })
 }
 
+/// A person an identity provider proved unique (docs/30 §3.1).
+struct VerifiedHuman<'a> {
+    provider: &'static str,
+    /// base64url(SHA-256(provider-scoped identifier)). Never the raw value.
+    subject_hash: &'a str,
+    /// `high` (biometric uniqueness) or `medium` (one per official document).
+    assurance: &'static str,
+}
+
+/// Finds the account of a verified person, or creates it, in one
+/// transaction (docs/30 §3.3). One (provider, subject_hash) is one account;
+/// new providers only add their own verification in front of this.
+async fn resolve_or_create_user(
+    pool: &PgPool,
+    human: &VerifiedHuman<'_>,
+    verification_level: &str,
+) -> Result<UserRecord, (StatusCode, Json<ErrorResponse>)> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start login transaction", e))?;
+    // Two first logins of the same person must not both create an account.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!(
+            "identity:{}:{}",
+            human.provider, human.subject_hash
+        ))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to lock identity", e))?;
+
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM user_identities WHERE provider = $1 AND subject_hash = $2",
+    )
+    .bind(human.provider)
+    .bind(human.subject_hash)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to look up identity", e))?;
+
+    let user_id = match existing {
+        Some(user_id) => {
+            sqlx::query(
+                "UPDATE user_identities SET last_verified_at = NOW(), assurance = $3 \
+                 WHERE provider = $1 AND subject_hash = $2",
+            )
+            .bind(human.provider)
+            .bind(human.subject_hash)
+            .bind(human.assurance)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to update identity", e))?;
+            sqlx::query("UPDATE users SET verification_level = $2 WHERE id = $1")
+                .bind(user_id)
+                .bind(verification_level)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| internal_error("failed to update user", e))?;
+            user_id
+        }
+        None => {
+            // World ID accounts keep users.world_id_hash, which human-level
+            // blocks match on (docs/30 §3.5). ON CONFLICT adopts a users row
+            // left without an identity instead of failing the login.
+            let world_id_hash = (human.provider == "world_id").then_some(human.subject_hash);
+            let user_id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO users (world_id_hash, verification_level)
+                VALUES ($1, $2)
+                ON CONFLICT (world_id_hash)
+                DO UPDATE SET verification_level = EXCLUDED.verification_level
+                RETURNING id
+                "#,
+            )
+            .bind(world_id_hash)
+            .bind(verification_level)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to create user", e))?;
+            sqlx::query(
+                "INSERT INTO user_identities (user_id, provider, subject_hash, assurance) \
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(user_id)
+            .bind(human.provider)
+            .bind(human.subject_hash)
+            .bind(human.assurance)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to create identity", e))?;
+            user_id
+        }
+    };
+
+    let row = sqlx::query(
+        "SELECT verification_level, created_at::text AS created_at, display_name \
+         FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to load user", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit login", e))?;
+    Ok(UserRecord {
+        id: user_id,
+        verification_level: row.get("verification_level"),
+        created_at: row.get("created_at"),
+        display_name: row.try_get("display_name").ok(),
+    })
+}
+
 async fn auth_verify(
     State(state): State<AppState>,
     JsonBody(payload): JsonBody<AuthVerifyRequest>,
@@ -4111,7 +4224,10 @@ async fn auth_verify(
         }
     }
 
-    let replay_key = format!("{}:{}", nullifier_hash, action);
+    // Everything kept from here on uses the hash, never the raw nullifier
+    // (docs/30 §3.2).
+    let subject_hash = world_id_hash_from_nullifier(&nullifier_hash);
+    let replay_key = format!("{}:{}", subject_hash, action);
     if !check_and_record_auth_replay(&state, &replay_key)
         .await
         .map_err(|message| internal_server_error(&message))?
@@ -4129,32 +4245,13 @@ async fn auth_verify(
     }
 
     let user = if let Some(pool) = maybe_pool.clone() {
-        let world_id_hash = world_id_hash_from_nullifier(&nullifier_hash);
-        let row = sqlx::query(
-            r#"
-            INSERT INTO users (world_id_hash, nullifier_hash, verification_level)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (nullifier_hash)
-            DO UPDATE SET verification_level = EXCLUDED.verification_level
-            RETURNING id::text AS id, verification_level, created_at::text AS created_at, display_name
-            "#,
-        )
-        .bind(world_id_hash)
-        .bind(&nullifier_hash)
-        .bind(&verification_level)
-        .fetch_one(&pool)
-        .await
-        .map_err(|error| internal_error("failed to upsert user", error))?;
-
-        let id_text: String = row.get("id");
-        let id = Uuid::parse_str(&id_text)
-            .map_err(|error| internal_error("invalid user id from database", error))?;
-        UserRecord {
-            id,
-            verification_level: row.get("verification_level"),
-            created_at: row.get("created_at"),
-            display_name: row.try_get("display_name").ok(),
-        }
+        let human = VerifiedHuman {
+            provider: "world_id",
+            subject_hash: &subject_hash,
+            // Only Orb proofs get this far (is_valid_verification_level).
+            assurance: "high",
+        };
+        resolve_or_create_user(&pool, &human, &verification_level).await?
     } else {
         let id = derive_user_id_from_nullifier(&nullifier_hash);
         let display_name = state
@@ -4172,7 +4269,7 @@ async fn auth_verify(
 
     let issued_session = issue_session_jwt(
         &user.id.to_string(),
-        &nullifier_hash,
+        &subject_hash,
         &verification_level,
         SESSION_TTL_SECS,
     )
@@ -5793,9 +5890,36 @@ async fn create_agent(
 
     if let Some(pool) = maybe_pool {
         let user_uuid = parse_user_uuid(&user_id)?;
+        // One transaction: the cap holds under concurrent creates, and a
+        // failure no longer leaves an agent without its identity rows.
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|error| internal_error("failed to start agent transaction", error))?;
+        sqlx::query("SELECT 1 FROM users WHERE id = $1 FOR UPDATE")
+            .bind(user_uuid)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| internal_error("failed to lock user", error))?;
+        let agent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE user_id = $1")
+            .bind(user_uuid)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| internal_error("failed to count agents", error))?;
+        // Per-person cap (docs/30 §3.4).
+        if agent_count
+            >= positive_env_limit(
+                "AGENT_INBOX_MAX_AGENTS_PER_HUMAN",
+                DEFAULT_MAX_AGENTS_PER_HUMAN,
+            )
+        {
+            return Err(conflict_error(
+                "this person already has the maximum number of agents",
+            ));
+        }
         let maybe_conflict = sqlx::query("SELECT 1 FROM agents WHERE did = $1 LIMIT 1")
             .bind(&did)
-            .fetch_optional(&pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|error| internal_error("failed to check agent conflict", error))?;
         if maybe_conflict.is_some() {
@@ -5817,7 +5941,7 @@ async fn create_agent(
         .bind(&payload.label)
         .bind(&payload.public_key)
         .bind(&payload.encryption_key)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| internal_error("failed to create agent", error))?;
 
@@ -5831,7 +5955,7 @@ async fn create_agent(
         .bind(&aid)
         .bind(id)
         .bind(user_uuid)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| internal_error("failed to create agent_identity", error))?;
 
@@ -5845,11 +5969,14 @@ async fn create_agent(
         .bind(&did)
         .bind(&payload.public_key)
         .bind(&payload.encryption_key)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| {
             internal_error("failed to create agent_identity_key", error)
         })?;
+        tx.commit()
+            .await
+            .map_err(|error| internal_error("failed to commit agent", error))?;
     } else {
         let agent = Agent {
             id,
@@ -8586,6 +8713,52 @@ fn record_audit_event(
 /// a dedicated counter column (migration + a shift from this rolling-24h
 /// window to a fixed window) or a per-credential advisory lock serialising
 /// sends; neither is worth the cost while L1/L2 already gate the volume.
+const DEFAULT_SEND_LIMIT_PER_HUMAN_PER_DAY: i64 = 500;
+const DEFAULT_MAX_AGENTS_PER_HUMAN: i64 = 20;
+
+fn positive_env_limit(name: &str, default: i64) -> i64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(default)
+}
+
+/// One person's daily send budget, shared by their browser sessions and
+/// every agent and credential they run (docs/30 §3.4). Counted atomically
+/// per UTC day; refused attempts count too, and deleting sent messages does
+/// not give budget back.
+async fn consume_human_send_budget(
+    pool: &PgPool,
+    user_uuid: Uuid,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let sent: i64 = sqlx::query_scalar(
+        "INSERT INTO user_send_counters (user_id, day, sent) \
+         VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date, 1) \
+         ON CONFLICT (user_id, day) DO UPDATE SET sent = user_send_counters.sent + 1 \
+         RETURNING sent::bigint",
+    )
+    .bind(user_uuid)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| internal_error("failed to count sends", e))?;
+    if sent
+        > positive_env_limit(
+            "AGENT_INBOX_SEND_LIMIT_PER_HUMAN_PER_DAY",
+            DEFAULT_SEND_LIMIT_PER_HUMAN_PER_DAY,
+        )
+    {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "rate_limited".to_string(),
+                message: "daily send limit for this person reached".to_string(),
+            }),
+        ));
+    }
+    Ok(())
+}
+
 async fn check_policy_l3_send_limit(
     pool: &PgPool,
     credential_id: Uuid,
@@ -9458,34 +9631,40 @@ async fn send_message(
         }
     }
 
-    // For agent tokens, look up world_id + verification_level from users table.
-    // Human sessions carry them in the JWT claims.
-    let (sender_world_id, verification_level) = match &ctx {
-        AuthContext::Human { .. } => {
-            // Re-extract from JWT claims for wid + verification_level
-            let claims = authenticated_claims(&state, &headers).await?;
-            (claims.wid.clone(), claims.verification_level.clone())
+    // One budget per person, whichever session, agent or credential sends
+    // (docs/30 §3.4).
+    if let Some(pool) = &maybe_pool {
+        consume_human_send_budget(pool, parse_user_uuid(ctx.user_id())?).await?;
+    }
+
+    // The sender's human-level key for block matching and trust. With a
+    // database it always comes from the account, for sessions and agent
+    // tokens alike: session claims used to carry the raw nullifier, which
+    // never matched a recorded block, so a blocked person could still send
+    // from the browser (docs/30 §2, §3.5).
+    let (sender_world_id, verification_level) = if let Some(pool) = &maybe_pool {
+        let row = sqlx::query("SELECT world_id_hash, verification_level FROM users WHERE id = $1")
+            .bind(parse_user_uuid(ctx.user_id())?)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| internal_error("failed to lookup user", e))?;
+        match row {
+            Some(r) => (
+                r.try_get::<Option<String>, _>("world_id_hash")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+                r.get::<String, _>("verification_level"),
+            ),
+            None => (String::new(), "device".to_string()),
         }
-        AuthContext::Agent { user_id, .. } => {
-            if let Some(pool) = &maybe_pool {
-                let user_uuid = parse_user_uuid(user_id)?;
-                let row = sqlx::query(
-                    "SELECT world_id_hash, verification_level FROM users WHERE id = $1",
-                )
-                .bind(user_uuid)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| internal_error("failed to lookup user", e))?;
-                match row {
-                    Some(r) => (
-                        r.get::<String, _>("world_id_hash"),
-                        r.get::<String, _>("verification_level"),
-                    ),
-                    None => (String::new(), "device".to_string()),
-                }
-            } else {
-                (String::new(), "device".to_string())
+    } else {
+        match &ctx {
+            AuthContext::Human { .. } => {
+                let claims = authenticated_claims(&state, &headers).await?;
+                (claims.wid.clone(), claims.verification_level.clone())
             }
+            AuthContext::Agent { .. } => (String::new(), "device".to_string()),
         }
     };
 
@@ -11922,6 +12101,8 @@ const RETENTION_TOKEN_GRACE_DAYS: i64 = 7;
 const RETENTION_REVOKED_CREDENTIAL_DAYS: i64 = 30;
 const RETENTION_PENDING_CREDENTIAL_GRACE_DAYS: i64 = 7;
 const RETENTION_PURGED_UPLOAD_GRACE_DAYS: i64 = 7;
+/// Per-person send counters only matter for today (docs/30 §3.4).
+const RETENTION_SEND_COUNTER_DAYS: i64 = 2;
 const RETENTION_MESSAGE_BATCH_SIZE: i64 = 500;
 /// Upper bound on message batches per pass. A larger backlog is finished by
 /// the following passes.
@@ -11967,6 +12148,7 @@ pub struct RetentionSummary {
     pub agent_credentials: u64,
     pub sessions: u64,
     pub audit_log: u64,
+    pub send_counters: u64,
     pub errors: u64,
 }
 
@@ -12005,7 +12187,7 @@ async fn run_retention_pass_with_state(
     // logged and counted, and the remaining steps still run. Message rows
     // go first: deleting them cascades to message_attachments, and the
     // attachment cleanup job then purges the unlinked blobs.
-    let steps: [(&str, &str, &[i64]); 5] = [
+    let steps: [(&str, &str, &[i64]); 6] = [
         (
             "attachment_uploads",
             "purged_at < NOW() - ($1::bigint * INTERVAL '1 day') \
@@ -12041,6 +12223,11 @@ async fn run_retention_pass_with_state(
             "created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
             &[config.retention_days],
         ),
+        (
+            "user_send_counters",
+            "day < (NOW() AT TIME ZONE 'UTC')::date - $1::int",
+            &[RETENTION_SEND_COUNTER_DAYS],
+        ),
     ];
     for (table, predicate, binds) in steps {
         match retention_step(&pool, config.mode, table, predicate, binds).await {
@@ -12049,6 +12236,7 @@ async fn run_retention_pass_with_state(
                 "agent_tokens" => summary.agent_tokens = rows,
                 "agent_credentials" => summary.agent_credentials = rows,
                 "sessions" => summary.sessions = rows,
+                "user_send_counters" => summary.send_counters = rows,
                 _ => summary.audit_log = rows,
             },
             Err(error) => {
@@ -12246,6 +12434,7 @@ pub async fn spawn_retention_job_if_configured() -> bool {
                 agent_credentials = summary.agent_credentials,
                 sessions = summary.sessions,
                 audit_log = summary.audit_log,
+                send_counters = summary.send_counters,
                 errors = summary.errors,
                 "data retention pass completed"
             );

@@ -444,6 +444,8 @@ fn expected_summary() -> RetentionSummary {
         agent_credentials: 2, // revoked 40 days ago, and the stale pending one
         sessions: 1,
         audit_log: 1,
+        // The fixture's sends only touch today's counter.
+        send_counters: 0,
         errors: 0,
     }
 }
