@@ -26,8 +26,12 @@ Usage:
   [AGENT_INBOX_MODE_A_EXECUTOR=on] \\
   $0 start
 
+Enroll the daemon once first (docs/19 §3):
+  cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll ...
+
 Commands:
-  start   Start signer-daemon and agent-gateway in background
+  start   Ask for the key passphrase (one stdin line when not a terminal),
+          then start signer-daemon and agent-gateway in background
   stop    Stop both processes
   status  Show process/socket/log status
 EOF
@@ -65,10 +69,29 @@ start() {
 
   rm -f "$SIGNER_SOCKET" "$GATEWAY_SOCKET"
 
+  # The daemon reads its key passphrase from stdin, which a background job
+  # does not have. Read it here (no echo on a terminal, else one line from
+  # stdin) and hand it over on a pipe; printf is a shell builtin, so the
+  # passphrase never shows in a process list.
+  if [ -t 0 ]; then
+    printf 'Passphrase for %s: ' "$KEY_FILE" >&2
+    trap 'stty echo; exit 130' INT TERM
+    stty -echo
+    IFS= read -r KEY_PASSPHRASE || KEY_PASSPHRASE=""
+    stty echo
+    trap - INT TERM
+    printf '\n' >&2
+  else
+    IFS= read -r KEY_PASSPHRASE || KEY_PASSPHRASE=""
+  fi
+
+  # `exec` here and cargo's own exec into the binary keep one PID from the
+  # subshell to the daemon, so the PID file names the process that `stop`
+  # must kill (it used to name a subshell, and the daemons outlived `stop`).
   echo "Starting signer-daemon..."
-  (
+  printf '%s\n' "$KEY_PASSPHRASE" | (
     cd "$ROOT_DIR"
-    cargo run --manifest-path services/signer-daemon/Cargo.toml -- \
+    exec cargo run --manifest-path services/signer-daemon/Cargo.toml -- \
       --socket "$SIGNER_SOCKET" \
       --key-file "$KEY_FILE" \
       ${ENCRYPTION_KEY_FILE:+--encryption-key-file "$ENCRYPTION_KEY_FILE"} \
@@ -83,10 +106,10 @@ start() {
   echo "Starting agent-gateway..."
   (
     cd "$ROOT_DIR"
-    cargo run --manifest-path services/agent-gateway/Cargo.toml -- \
+    exec cargo run --manifest-path services/agent-gateway/Cargo.toml -- \
       --llm-socket "$GATEWAY_SOCKET" \
       --signer-socket "$SIGNER_SOCKET" \
-      --api-url "$API_URL/api"
+      --api-url "$API_URL"
   ) >"$GATEWAY_LOG" 2>&1 &
   echo $! >"$GATEWAY_PID_FILE"
 

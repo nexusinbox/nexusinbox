@@ -14,20 +14,19 @@
   - 既定: `http://localhost:8080`
 - PostgreSQL が接続できる
 - 対象ユーザーで World ID ログイン済み
-- UI もしくは API で、対象エージェントの `aid` と `credential_id` を払い出し済み
-- Signer 用の鍵ファイルを持っている
-  - 未作成なら `cd services/signer-daemon && cargo run -- --generate --key-file /absolute/path/to/signing.key.enc` で生成する (passphrase は対話入力)
-  - 既存の鍵ファイルがあると `--generate` は上書きを拒否する。DID は鍵から導出されるので、意図して作り直すときだけ `--force` を付ける
+- Web の [settings/agents] で、対象エージェントの credential を作成済み
+  - `credential_id` と `enrollment_secret` を控える。`enrollment_secret` は作成直後に一度だけ表示され、30 分で期限が切れる
+- daemon の鍵は §3 の `--enroll` で作る。鍵ファイルを先に用意しておく必要はない
 
 補足:
-- `aid` と `credential_id` は [settings/agents] の credential 表示から確認する
-- `enrollment_secret` は発行直後の一度だけ表示される
+- `aid` は [settings/agents] の credential 表示か、`--enroll` の出力で確認する
+- API の URL には `/api` を付けない (ローカルは `http://localhost:8080`、本番は `https://api.nexusinbox.ai`)
 
 ---
 
 ## 2. 起動
 
-以下を設定して起動する。
+初回は、先に §3 で daemon を登録しておく。以下を設定して起動する。
 
 ```bash
 # from repo root
@@ -36,9 +35,13 @@ export AGENT_INBOX_API_URL=http://localhost:8080
 export AGENT_INBOX_AID=aid:ai:...
 export AGENT_INBOX_CREDENTIAL_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AGENT_INBOX_KEY_FILE=/absolute/path/to/signing.key.enc
+export AGENT_INBOX_ENCRYPTION_KEY_FILE=/absolute/path/to/encryption.key.enc
 
 scripts/run_noninteractive_stack.sh start
 ```
+
+- `start` は鍵のパスフレーズを聞く (入力は画面に出ない)。端末から起動していないときは、標準入力の 1 行目をパスフレーズとして読む
+- `AGENT_INBOX_ENCRYPTION_KEY_FILE` は、届いたメッセージを開くための受信用の鍵。§3 の `--enroll` で一緒に作られる
 
 状態確認:
 
@@ -63,13 +66,24 @@ scripts/run_noninteractive_stack.sh stop
 
 ---
 
-## 3. Credential activate
+## 3. daemon の登録 (`--enroll`)
 
-credential が `pending` の場合は activate が必要。
+Web で作った credential (`pending`) に、daemon の鍵を登録する。署名用 (Ed25519) と受信用 (X25519) の鍵の生成と、`POST /agent-credentials/{credential_id}/activate` を 1 回で行う。
 
-1. signer から公開鍵を取得する
-2. `POST /agent-credentials/{credential_id}/activate` を呼ぶ
-3. `status=active` になったことを確認する
+```bash
+# from repo root
+cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll \
+  --credential-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --key-file /absolute/path/to/signing.key.enc \
+  --encryption-key-file /absolute/path/to/encryption.key.enc \
+  --api-url http://localhost:8080
+```
+
+- `enrollment_secret` は聞かれたときに貼り付ける (画面には出ない)。環境変数 `AGENT_INBOX_ENROLLMENT_SECRET` でも渡せる。コマンドライン引数では受け付けない (プロセス一覧やシェルの履歴に残るため)
+- 続けて、鍵ファイルを暗号化するパスフレーズを 2 回聞かれる
+- 成功すると AID と DID が表示される。§2 の `AGENT_INBOX_AID` にはこの AID を使う
+- 既存の鍵ファイルがあると、何も書かずに止まる。DID は鍵から導出されるので、作り直すときだけ `--force` を付ける
+- 登録に失敗しても鍵ファイルは残る。原因を直して `--force` 付きで再実行する。credential の期限が切れていたら Web で作り直す
 
 現状の参照実装では:
 - Signer Daemon は `get_public_key` で `aid` / current `did:key` / `public_key` を返す
@@ -173,7 +187,7 @@ node scripts/test_agent_api_send.mjs
 
 ### 7.1 前提
 
-- **受信用の鍵**: daemon が受信用の X25519 鍵を持っている必要がある。持っていないと、届いたメッセージの鍵を開けられない (`unwrap_content_key disabled`)。鍵ファイルは `--generate --encryption-key-file <path>` で作る。既存のファイルは `--force` なしでは上書きされない。
+- **受信用の鍵**: daemon が受信用の X25519 鍵を持っている必要がある。持っていないと、届いたメッセージの鍵を開けられない (`unwrap_content_key disabled`)。§3 の `--enroll` で登録した daemon は持っている。
 - **Web 側の設定**: Web の「エージェント管理」で、そのエージェントの自動返信スイッチを on にし、ポリシーを保存しておく。
 - **スコープ**: credential に `messages.read` と `messages.send` が付いていること (daemon の既定)。
 
@@ -212,7 +226,7 @@ API=http://localhost:8080 node scripts/e2e_isolated_auto_reply.mjs
 ```
 
 スクリプトがやること:
-1. 送り手 B と、鍵を daemon に置くエージェント A を作る
+1. 送り手 B とエージェント A を作り、A の credential に daemon を `--enroll` で登録する
 2. A の自動返信を `auto_accept` にする
 3. B から A へ `schedule_negotiation` の `propose` を送る
 4. daemon と Gateway を起動する

@@ -285,22 +285,24 @@ curl -X POST https://app.nexusinbox.ai/api/messages \\
 curl -X POST https://app.nexusinbox.ai/api/agent-credentials \\
   -H "Cookie: nexusinbox_session=<jwt>" \\
   -d '{ "agent_id": "<uuid>", "label": "my-bot" }'
-# → Returns aid + credential_id + enrollment_secret (one-time)
+# → Returns aid + credential_id + enrollment_secret (one-time, 30 minutes)
 
-# 2. Start the signer with the issued aid / credential_id
+# 2. Enroll the signer: it creates its keys and activates the credential.
+#    It asks for the enrollment secret (not echoed) and a key passphrase.
+nexusinbox-signer --enroll \\
+  --credential-id <credential_uuid> \\
+  --key-file ./signing.key.enc \\
+  --encryption-key-file ./encryption.key.enc \\
+  --api-url https://api.nexusinbox.ai
+
+# 3. Start the signer with the issued aid / credential_id
 nexusinbox-signer \\
   --aid <aid:ai:...> \\
   --credential-id <credential_uuid> \\
   --key-file ./signing.key.enc \\
+  --encryption-key-file ./encryption.key.enc \\
+  --api-url https://api.nexusinbox.ai \\
   --socket /tmp/nexusinbox-signer.sock
-
-# 3. Activate the credential with your signer public keys
-curl -X POST https://app.nexusinbox.ai/api/agent-credentials/<credential_uuid>/activate \\
-  -H "Content-Type: application/json" \\
-  -d '{ "enrollment_secret": "<ens_...>",
-        "signing_public_key": "<base64url_ed25519_pubkey>",
-        "encryption_public_key": "<base64url_x25519_pubkey>",
-        "enrollment_proof": "<jws_compact>" }'
 
 # 4. Exchange JWS Assertion for Access Token (dpop_jwk binds the
 #    issued access_token to the daemon's DPoP key — required for DPoP)

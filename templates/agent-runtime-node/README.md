@@ -48,7 +48,7 @@ Fill in at minimum:
   the activated keypair; comment this line out on subsequent runs.
 - `AGENT_RECIPIENT` — target `aid:ai:...` or `did:key:...`
 
-The enrollment secret has a **10-minute TTL**. Activate quickly after
+The enrollment secret has a **30-minute TTL**. Activate quickly after
 creating the credential, or you'll hit `enrollment has expired` and need to
 issue a fresh one.
 
@@ -111,11 +111,22 @@ key. Start both with the helper script:
 # From repo root
 cd ../..
 
+# First time only: create the daemon's keys and enroll them for the
+# credential you created in the web UI. It asks for the enrollment secret
+# (not echoed) and a passphrase for the key files, then prints the AID.
+cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll \
+  --credential-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --key-file /absolute/path/to/signing.key.enc \
+  --encryption-key-file /absolute/path/to/encryption.key.enc \
+  --api-url http://localhost:8080
+
 export AGENT_INBOX_API_URL=http://localhost:8080
 export AGENT_INBOX_AID=aid:ai:...
 export AGENT_INBOX_CREDENTIAL_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export AGENT_INBOX_KEY_FILE=/absolute/path/to/signing.key.enc
+export AGENT_INBOX_ENCRYPTION_KEY_FILE=/absolute/path/to/encryption.key.enc
 
+# Asks for the key passphrase, then starts both in the background.
 scripts/run_noninteractive_stack.sh start
 ```
 
@@ -126,7 +137,8 @@ pnpm gateway
 ```
 
 See `docs/19_non_interactive_agent_runbook_2026-04-18.md` for the full
-setup (key file generation, passphrase handling, socket paths).
+setup (enrollment, passphrase handling, socket paths). The API URL takes no
+`/api` suffix (`https://api.nexusinbox.ai` in production).
 
 ---
 
@@ -158,7 +170,7 @@ Read the `.d.ts` after `pnpm build-sdk` for full type info.
 
 ## 7. Troubleshooting
 
-- **`enrollment has expired`** — the `ens_` secret is older than 10 minutes. Create a new credential in the UI. If a keystore file already exists for this `credential_id`, remove `AGENT_ENROLLMENT_SECRET` from the env; the cached keypair is used automatically.
+- **`enrollment has expired`** — the `ens_` secret is older than 30 minutes. Create a new credential in the UI. If a keystore file already exists for this `credential_id`, remove `AGENT_ENROLLMENT_SECRET` from the env; the cached keypair is used automatically.
 - **`keystore file … is passphrase-encrypted`** — set `AGENT_KEYSTORE_PASSPHRASE` to the passphrase used on the first run.
 - **`failed to decrypt keystore — wrong AGENT_KEYSTORE_PASSPHRASE?`** — literal. If you've lost the passphrase, delete the keystore file and re-activate with a fresh `ens_...`.
 - **`keystore for credential X holds aid=Y but current run was asked for aid=Z`** — the env vars got crossed with a different agent. Either fix `AGENT_AID` / `AGENT_CREDENTIAL_ID` or delete the file.

@@ -2,7 +2,8 @@
 // End-to-end check of the Isolated-mode auto-reply executor with the real
 // API, signer daemon and agent gateway (docs/29, runbook 19 §7.3).
 //
-//   agent A: keys live in the signer daemon (Isolated mode)
+//   agent A: created the way the web UI does it; the signer daemon enrolls
+//            for it with --enroll and holds the keys it answers on (Isolated)
 //   agent B: plain keypairs held by this script (the sender)
 //
 // B sends A a schedule_negotiation propose. With A's policy set to
@@ -188,35 +189,45 @@ async function main() {
   ]);
 
   step("register agents A (Isolated) and B (sender)");
-  const A = makeAgentKeys();
+  // A is created the way the web UI does it; the daemon's --enroll below
+  // gives it the keys it will actually use.
+  const placeholder = makeAgentKeys();
   const B = makeAgentKeys();
   const agentA = expectStatus(
-    await api("POST", "/agents", { auth: human, body: { label: "e2e-A-isolated", public_key: A.signPubB64, encryption_key: A.encPubB64 } }),
+    await api("POST", "/agents", { auth: human, body: { label: "e2e-A-isolated", public_key: placeholder.signPubB64, encryption_key: placeholder.encPubB64 } }),
     [200, 201], "create agent A");
   const agentB = expectStatus(
     await api("POST", "/agents", { auth: human, body: { label: "e2e-B-sender", public_key: B.signPubB64, encryption_key: B.encPubB64 } }),
     [200, 201], "create agent B");
-  console.log(`  A ${agentA.did}\n  B ${agentB.did}`);
-  if (agentA.did !== A.did) fail("API derived a different DID for A", { api: agentA.did, local: A.did });
+  console.log(`  B ${agentB.did}`);
 
-  step("create and activate A's credential (keys to be held by the daemon)");
+  step("create A's credential and enroll the signer daemon for it (--enroll)");
   const cred = expectStatus(
     await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"] } }),
     [200, 201], "create credential");
-  const now = Math.floor(Date.now() / 1000);
-  const proofSigned = `${b64urlJson({ alg: "EdDSA", typ: "JWT" })}.${b64urlJson({ credential_id: cred.credential_id, iat: now })}`;
-  const proof = `${proofSigned}.${b64url(crypto.sign(null, Buffer.from(proofSigned), A.sign.privateKey))}`;
-  expectStatus(
-    await api("POST", `/agent-credentials/${cred.credential_id}/activate`, {
-      body: {
-        enrollment_secret: cred.enrollment_secret,
-        signing_public_key: A.signPubB64,
-        encryption_public_key: A.encPubB64,
-        enrollment_proof: proof,
-        key_holder: "signer_daemon",
-      },
-    }),
-    [200], "activate credential");
+  const signKey = path.join(WORK, "a_signing.key");
+  const encKey = path.join(WORK, "a_encryption.key");
+  const signerBin = path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer");
+  try {
+    execFileSync(signerBin, [
+      "--enroll",
+      "--credential-id", cred.credential_id,
+      "--key-file", signKey,
+      "--encryption-key-file", encKey,
+      "--unsafe-plaintext-key",
+      "--force",
+      "--api-url", API,
+    ], { env: { ...process.env, AGENT_INBOX_ENROLLMENT_SECRET: cred.enrollment_secret }, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    fail("signer --enroll failed", `${e.stderr ?? e}`);
+  }
+  // The agent now answers on the daemon's keys.
+  const resolved = expectStatus(
+    await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
+    [200], "resolve A");
+  const A = { did: resolved.did, encPubB64: resolved.encryption_public_key };
+  console.log(`  A ${A.did} (enrolled by the daemon)`);
+  if (A.did === agentA.did) fail("A still answers on the placeholder keys after --enroll");
 
   step("turn A's auto-reply on with an auto_accept policy");
   expectStatus(await api("PATCH", `/agents/${agentA.id}`, { auth: human, body: { auto_reply: true } }), [200], "enable auto-reply");
@@ -282,17 +293,13 @@ async function main() {
   if (inboxRow.auto_reply_decision !== "auto_accept") fail("expected an auto_accept stamp", inboxRow);
 
   step("start the signer daemon (A's keys) and the gateway executor");
-  const signKey = path.join(WORK, "a_signing.key");
-  const encKey = path.join(WORK, "a_encryption.key");
-  fs.writeFileSync(signKey, A.signSeed, { mode: 0o600 });
-  fs.writeFileSync(encKey, A.encPriv, { mode: 0o600 });
   // Unix socket paths must stay under SUN_LEN (104 bytes on macOS), which
   // the scratch directory exceeds; use a short private temp dir for them.
   const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-"));
   const signerSock = path.join(sockDir, "signer.sock");
   const gatewaySock = path.join(sockDir, "gateway.sock");
   for (const s of [signerSock, gatewaySock]) fs.rmSync(s, { force: true });
-  startProcess("signer", path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer"), [
+  startProcess("signer", signerBin, [
     "--socket", signerSock,
     "--key-file", signKey,
     "--encryption-key-file", encKey,

@@ -47,6 +47,19 @@ type CreatedCredentialNotice = {
   aid: string;
 };
 
+// The signer daemon calls the API directly, not the web's /api proxy
+// (help page, runbook 19 §3). The secret is left out: the daemon asks for
+// it, so it stays out of shell history.
+function daemonEnrollCommand(credentialId: string): string {
+  return [
+    "nexusinbox-signer --enroll \\",
+    `  --credential-id ${credentialId} \\`,
+    "  --key-file ./signing.key.enc \\",
+    "  --encryption-key-file ./encryption.key.enc \\",
+    "  --api-url https://api.nexusinbox.ai",
+  ].join("\n");
+}
+
 // Renders the Standard / Daemon-isolated pill next to a credential's
 // label in the settings list. Reads `key_holder` straight from the
 // API (migration 0014); pre-migration rows arrive as `"unknown"` and
@@ -2071,6 +2084,34 @@ export default function AgentsSettingsPage() {
                           }
                         >
                           {t("agents.copyEnrollmentSecret")}
+                        </button>
+                        <p className="item-sub" style={{ fontSize: 11, marginTop: 10 }}>
+                          {t("agents.enrollmentCommandLabel")}
+                        </p>
+                        <code
+                          style={{
+                            display: "block",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                            fontSize: 12,
+                            marginTop: 4,
+                            userSelect: "all",
+                          }}
+                        >
+                          {daemonEnrollCommand(createdCredential.credentialId)}
+                        </code>
+                        <button
+                          className="btn"
+                          type="button"
+                          style={{ marginTop: 6, fontSize: 12 }}
+                          onClick={() =>
+                            copyValue(
+                              daemonEnrollCommand(createdCredential.credentialId),
+                              t("agents.bannerEnrollCommandCopied"),
+                            )
+                          }
+                        >
+                          {t("agents.copyEnrollCommand")}
                         </button>
                       </div>
                       <button

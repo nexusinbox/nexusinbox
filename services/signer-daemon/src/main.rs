@@ -120,6 +120,17 @@ struct Cli {
     #[arg(long)]
     credential_id: Option<String>,
 
+    /// Enroll this daemon for a credential created in the web UI, then exit:
+    /// generate the signing and encryption keys (passphrase-encrypted
+    /// unless --unsafe-plaintext-key) and register their public halves with
+    /// `POST {api-url}/agent-credentials/{credential-id}/activate`. The
+    /// one-shot enrollment secret is read from AGENT_INBOX_ENROLLMENT_SECRET
+    /// or asked for without echo — never taken from the command line, so it
+    /// does not show in the process list or shell history.
+    /// Needs --credential-id and --encryption-key-file.
+    #[arg(long)]
+    enroll: bool,
+
     /// API base URL for token endpoint
     #[arg(long, default_value = "http://localhost:3001/api")]
     api_url: String,
@@ -1048,9 +1059,120 @@ fn handle_status(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
 // Main
 // ---------------------------------------------------------------------------
 
+/// Compact JWS proving the new signing key belongs to the enrolling daemon:
+/// EdDSA over `{credential_id, iat}`, as the activate endpoint expects.
+fn build_enrollment_proof(key: &SigningKey, credential_id: &str, iat: i64) -> String {
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD
+        .encode(serde_json::json!({ "credential_id": credential_id, "iat": iat }).to_string());
+    let signing_input = format!("{header}.{payload}");
+    let signature = key.sign(signing_input.as_bytes());
+    format!(
+        "{signing_input}.{}",
+        URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    )
+}
+
+/// `--enroll`: generate both keys, activate the credential, exit. Returns
+/// the process exit code.
+async fn run_enroll(cli: &Cli) -> i32 {
+    let Some(credential_id) = cli.credential_id.as_deref() else {
+        eprintln!("[ERROR] --enroll needs --credential-id (shown in the web UI)");
+        return 2;
+    };
+    // It goes into the request path.
+    if uuid::Uuid::parse_str(credential_id).is_err() {
+        eprintln!("[ERROR] --credential-id must be a UUID");
+        return 2;
+    }
+    let Some(encryption_key_file) = cli.encryption_key_file.as_ref() else {
+        eprintln!(
+            "[ERROR] --enroll needs --encryption-key-file: the daemon holds the agent's receiving key"
+        );
+        return 2;
+    };
+    // Check both files before asking for anything, so a refusal never
+    // leaves one new key written and the other missing.
+    if !cli.force {
+        for path in [&cli.key_file, encryption_key_file] {
+            if path.exists() {
+                eprintln!(
+                    "[ERROR] Key file already exists: {}. Pass --force to replace it.",
+                    path.display()
+                );
+                return 2;
+            }
+        }
+    }
+    let enrollment_secret = match std::env::var("AGENT_INBOX_ENROLLMENT_SECRET") {
+        Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
+        _ => read_passphrase("Enter the enrollment secret shown in the web UI: "),
+    };
+    if enrollment_secret.is_empty() {
+        eprintln!("[ERROR] The enrollment secret is empty.");
+        return 2;
+    }
+
+    let passphrase = prompt_new_passphrase(cli.unsafe_plaintext_key);
+    let signing_key = generate_and_save_key(&cli.key_file, passphrase.as_deref(), cli.force);
+    let encryption_secret =
+        generate_and_save_encryption_secret(encryption_key_file, passphrase.as_deref(), cli.force);
+
+    let body = serde_json::json!({
+        "enrollment_secret": enrollment_secret,
+        "signing_public_key": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
+        "encryption_public_key":
+            URL_SAFE_NO_PAD.encode(X25519PublicKey::from(&encryption_secret).as_bytes()),
+        "enrollment_proof": build_enrollment_proof(&signing_key, credential_id, Utc::now().timestamp()),
+        "key_holder": "signer_daemon",
+    });
+    let url = format!(
+        "{}/agent-credentials/{}/activate",
+        cli.api_url.trim_end_matches('/'),
+        credential_id
+    );
+    let response = match reqwest::Client::new().post(&url).json(&body).send().await {
+        Ok(response) => response,
+        Err(e) => {
+            eprintln!("[ERROR] activation request failed: {e}");
+            eprintln!(
+                "[ERROR] The keys were written. Rerun with --force once the API is reachable."
+            );
+            return 1;
+        }
+    };
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        let message = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+            .unwrap_or_else(|| text.chars().take(200).collect());
+        eprintln!("[ERROR] activation was refused ({status}): {message}");
+        eprintln!(
+            "[ERROR] The keys were written but are not enrolled. Fix the cause above and rerun with --force; if the credential has expired, create a new one in the web UI."
+        );
+        return 1;
+    }
+    let activated: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let aid = activated["aid"].as_str().unwrap_or("?");
+    let did = activated["did"].as_str().unwrap_or("?");
+    eprintln!("[INFO] Enrolled.");
+    eprintln!("[INFO]   AID:           {aid}");
+    eprintln!("[INFO]   DID:           {did}");
+    eprintln!("[INFO]   Credential ID: {credential_id}");
+    eprintln!("[INFO] Start the daemon with the same --key-file, --encryption-key-file and --api-url, plus:");
+    eprintln!("[INFO]   --aid {aid} --credential-id {credential_id}");
+    0
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+
+    if cli.enroll {
+        std::process::exit(run_enroll(&cli).await);
+    }
 
     // Key management — single passphrase prompt for both Ed25519 and
     // optional X25519 key files, so the operator doesn't have to type
@@ -1725,6 +1847,33 @@ mod tests {
         assert_eq!(decoded.len(), 32);
         let did = result["did"].as_str().unwrap().to_string();
         assert!(did.starts_with("did:key:z"));
+    }
+
+    #[test]
+    fn enrollment_proof_is_a_jws_over_the_credential_id() {
+        use ed25519_dalek::Signature;
+        let key = SigningKey::from_bytes(&[7u8; 32]);
+        let proof = build_enrollment_proof(&key, "cred-123", 1_700_000_000);
+        let parts: Vec<&str> = proof.split('.').collect();
+        assert_eq!(parts.len(), 3);
+        let header: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0]).unwrap()).unwrap();
+        assert_eq!(header["alg"], "EdDSA");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
+        assert_eq!(payload["credential_id"], "cred-123");
+        assert_eq!(payload["iat"], 1_700_000_000);
+        let signature_bytes: [u8; 64] = URL_SAFE_NO_PAD
+            .decode(parts[2])
+            .unwrap()
+            .try_into()
+            .unwrap();
+        key.verifying_key()
+            .verify(
+                format!("{}.{}", parts[0], parts[1]).as_bytes(),
+                &Signature::from_bytes(&signature_bytes),
+            )
+            .expect("the proof verifies with the new key");
     }
 
     /// Shared vector (tests/vectors/envelope_signing.json): the daemon signs
