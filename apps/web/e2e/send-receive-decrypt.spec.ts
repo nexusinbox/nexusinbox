@@ -124,6 +124,34 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
     await route.fallback();
   });
 
+  // The compose page resolves every recipient on the server (an AID to
+  // the agent's newest key, a did:key to that key).
+  await page.route("**/api/recipients/resolve*", async (route) => {
+    const identifier = new URL(route.request().url()).searchParams.get("identifier") ?? "";
+    const agent = agents.find((a) => a.did === identifier || a.aid === identifier);
+    if (!agent) {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "not_found", message: "recipient not found" }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        input: identifier,
+        aid: agent.aid,
+        did: agent.did,
+        label: agent.label,
+        signing_public_key: agent.public_key,
+        encryption_public_key: agent.encryption_key,
+        key_holder: "web_keystore",
+      }),
+    });
+  });
+
   await page.route("**/api/messages**", async (route) => {
     const request = route.request();
     const method = request.method();

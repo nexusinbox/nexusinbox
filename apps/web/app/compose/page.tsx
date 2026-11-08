@@ -26,7 +26,7 @@ import {
   sha256OfBytes,
 } from "../../lib/crypto/attachment";
 import { getSigningPrivateKey, hasSigningPrivateKeyMaterial } from "../../lib/crypto/signing-keyring";
-import { defaultApiClient } from "../../lib/api/client";
+import { ApiError, defaultApiClient } from "../../lib/api/client";
 import type {
   AttachmentMetadataPlain,
   OutboundAttachmentRef,
@@ -133,14 +133,17 @@ function ComposePageInner() {
   );
   // Build the recipient picker options: every known agent + every
   // contact whose DID is not already covered by an agent entry, so
-  // the user can pick from either list without duplicates.
+  // the user can pick from either list without duplicates. Own agents
+  // are offered by AID: the server then picks the agent's newest key,
+  // which is the one a daemon-held (Isolated) agent can open — their
+  // original DID is the browser key they were created with.
   const recipientOptions = useMemo(() => {
     const seen = new Set<string>();
-    const options: Array<{ did: string; label: string }> = [];
+    const options: Array<{ address: string; label: string }> = [];
     for (const agent of apiAgents) {
       if (seen.has(agent.did)) continue;
       seen.add(agent.did);
-      options.push({ did: agent.did, label: agent.label });
+      options.push({ address: agent.aid || agent.did, label: agent.label });
     }
     for (const contact of contacts) {
       if (!contact.readable || seen.has(contact.did)) continue;
@@ -148,7 +151,7 @@ function ComposePageInner() {
       const label = contact.agent_label
         ? `${contact.person_name}(${contact.agent_label})`
         : contact.person_name;
-      options.push({ did: contact.did, label });
+      options.push({ address: contact.did, label });
     }
     return options;
   }, [apiAgents, contacts]);
@@ -386,10 +389,6 @@ function ComposePageInner() {
     () => apiAgents.find((agent) => agent.did === senderDid),
     [apiAgents, senderDid],
   );
-  const selectedRecipient = useMemo(
-    () => apiAgents.find((agent) => agent.did === recipientDid),
-    [apiAgents, recipientDid],
-  );
 
   const attachmentsTotalSize = useMemo(
     () => attachments.reduce((sum, attachment) => sum + attachment.size, 0),
@@ -417,18 +416,9 @@ function ComposePageInner() {
     if (!recipientDid.trim()) {
       return t("compose.validationEnterTo");
     }
-    if (!isAidIdentifier(recipientDid) && !selectedRecipient) {
-      return t("compose.validationToNotFound");
-    }
-    if (!isAidIdentifier(recipientDid) && !selectedRecipient?.encryption_key) {
-      return t("compose.validationNoEncKey");
-    }
-    if (
-      !isAidIdentifier(recipientDid) &&
-      selectedRecipient?.encryption_key &&
-      !isValidX25519PublicKeyB64Url(selectedRecipient.encryption_key)
-    ) {
-      return t("compose.validationBadEncKey");
+    // The address is resolved when sending; here only its shape.
+    if (!isAidIdentifier(recipientDid.trim()) && !recipientDid.trim().startsWith("did:key:")) {
+      return t("compose.validationToFormat");
     }
     if (!subject.trim()) {
       return t("compose.validationSubject");
@@ -448,7 +438,6 @@ function ComposePageInner() {
     senderDid,
     selectedSender,
     recipientDid,
-    selectedRecipient,
     subject,
     body,
     attachmentsTotalSize,
@@ -537,15 +526,22 @@ function ComposePageInner() {
     const createdIntentIds: string[] = [];
 
     try {
-      let resolvedRecipient: RecipientResolutionResponse | null = null;
+      // Both an AID and a did:key resolve on the server: an AID to the
+      // agent's newest active key, a did:key to that key.
       const recipientInput = recipientDid.trim();
-      if (isAidIdentifier(recipientInput)) {
-        setStatus({ kind: "info", message: t("compose.statusResolvingRecipient") });
+      setStatus({ kind: "info", message: t("compose.statusResolvingRecipient") });
+      let resolvedRecipient: RecipientResolutionResponse;
+      try {
         resolvedRecipient = await defaultApiClient.resolveRecipient(recipientInput);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setStatus({ kind: "error", message: t("compose.validationToNotFound") });
+          return;
+        }
+        throw err;
       }
-      const recipientAddress = resolvedRecipient?.did ?? recipientInput;
-      const recipientEncryptionKey =
-        resolvedRecipient?.encryption_public_key ?? selectedRecipient?.encryption_key;
+      const recipientAddress = resolvedRecipient.did;
+      const recipientEncryptionKey = resolvedRecipient.encryption_public_key;
       if (!recipientEncryptionKey) {
         setStatus({ kind: "error", message: t("compose.validationNoEncKey") });
         return;
@@ -812,7 +808,7 @@ function ComposePageInner() {
               />
               <datalist id="compose-recipient-options">
                 {recipientOptions.map((option) => (
-                  <option value={option.did} key={"rcpt-" + option.did}>
+                  <option value={option.address} key={"rcpt-" + option.address}>
                     {option.label}
                   </option>
                 ))}

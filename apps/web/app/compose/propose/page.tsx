@@ -22,7 +22,7 @@ import {
   type A2AProtocolBlock,
   type ScheduleProposePayload,
 } from "@nexusinbox/core/a2a";
-import { defaultApiClient } from "../../../lib/api/client";
+import { ApiError, defaultApiClient } from "../../../lib/api/client";
 import {
   useAgentsQuery,
   useContactsQuery,
@@ -59,20 +59,22 @@ export default function ProposePage() {
   const apiAgents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const contacts = useMemo(() => contactsQuery.data?.contacts ?? [], [contactsQuery.data]);
 
+  // Own agents are offered by AID so the server picks their newest key
+  // (the one a daemon-held agent can open); contacts by their DID.
   const recipientOptions = useMemo(() => {
     const seen = new Set<string>();
-    const opts: Array<{ did: string; label: string }> = [];
+    const opts: Array<{ address: string; label: string }> = [];
     for (const a of apiAgents) {
       if (!seen.has(a.did)) {
         seen.add(a.did);
-        opts.push({ did: a.did, label: a.label });
+        opts.push({ address: a.aid || a.did, label: a.label });
       }
     }
     for (const c of contacts) {
       if (c.readable && !seen.has(c.did)) {
         seen.add(c.did);
         const label = c.agent_label ? `${c.person_name}(${c.agent_label})` : c.person_name;
-        opts.push({ did: c.did, label });
+        opts.push({ address: c.did, label });
       }
     }
     return opts;
@@ -169,14 +171,24 @@ export default function ProposePage() {
     try {
       setStatus({ kind: "info", message: t("a2a.proposeStatusEncrypting") });
       const recipientInput = recipientDid.trim();
-      let resolved: RecipientResolutionResponse | null = null;
-      if (isAidIdentifier(recipientInput) || recipientInput.startsWith("did:key:")) {
-        resolved = await defaultApiClient.resolveRecipient(recipientInput);
+      if (!isAidIdentifier(recipientInput) && !recipientInput.startsWith("did:key:")) {
+        setStatus({ kind: "error", message: t("a2a.proposeValidationToFormat") });
+        setPending(false);
+        return;
       }
-      const recipientAddress = resolved?.did ?? recipientInput;
-      const recipientEncKey =
-        resolved?.encryption_public_key ??
-        apiAgents.find((a) => a.did === recipientInput)?.encryption_key;
+      let resolved: RecipientResolutionResponse;
+      try {
+        resolved = await defaultApiClient.resolveRecipient(recipientInput);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setStatus({ kind: "error", message: t("a2a.proposeValidationToNotFound") });
+          setPending(false);
+          return;
+        }
+        throw err;
+      }
+      const recipientAddress = resolved.did;
+      const recipientEncKey = resolved.encryption_public_key;
       if (!recipientEncKey) {
         setStatus({ kind: "error", message: t("a2a.proposeValidationNoEncKey") });
         setPending(false);
@@ -309,7 +321,7 @@ export default function ProposePage() {
                 />
                 <datalist id="propose-recipient-options">
                   {recipientOptions.map((o) => (
-                    <option key={o.did} value={o.did}>
+                    <option key={o.address} value={o.address}>
                       {o.label}
                     </option>
                   ))}
