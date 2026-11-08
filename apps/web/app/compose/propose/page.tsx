@@ -15,11 +15,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AppShell } from "../../_components/AppShell";
 import {
-  A2A_CONTENT_TYPE,
   assertValidScheduleNegotiationPayload,
-  uuidv7,
-  type A2AMessagePayload,
-  type A2AProtocolBlock,
   type ScheduleProposePayload,
 } from "@nexusinbox/core/a2a";
 import { ApiError, defaultApiClient } from "../../../lib/api/client";
@@ -28,12 +24,7 @@ import {
   useContactsQuery,
   useSendMessageMutation,
 } from "../../../lib/api/hooks";
-import {
-  encryptEnvelopeText,
-  generateContentKey,
-} from "../../../lib/crypto/envelope";
-import { wrapContentKeyForRecipient } from "../../../lib/crypto/keywrap";
-import { signEnvelopePayload } from "../../../lib/crypto/signature";
+import { sendScheduleProposal } from "../../../lib/protocol/send-propose";
 import { getSigningPrivateKey, hasSigningPrivateKeyMaterial } from "../../../lib/crypto/signing-keyring";
 import {
   CANDIDATE_MAX_COUNT,
@@ -202,47 +193,19 @@ export default function ProposePage() {
         return;
       }
 
-      const protocolBlock: A2AProtocolBlock = {
-        id: uuidv7(),
-        type: "schedule_negotiation",
-        action: "propose",
-        reply_to: null,
-        payload: proposePayload,
-      };
-      const a2aPayload: A2AMessagePayload = {
-        v: 1,
-        body: note.trim() || eventTitle.trim(),
-        protocol: protocolBlock,
-      };
-      const serialised = JSON.stringify(a2aPayload);
-
-      const contentKey = generateContentKey();
-      const encSubject = await encryptEnvelopeText(eventTitle.trim(), { contentKey });
-      const encBody = await encryptEnvelopeText(serialised, { contentKey });
-      const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncKey);
-      const signature = await signEnvelopePayload({
-        signingPrivateKey,
-        senderDid,
-        recipientDid: recipientAddress,
-        subjectEncrypted: encSubject.serialized,
-        encryptedContent: encBody.serialized,
-        encryptedKey: wrapped.wrappedKey,
-        nonce: encBody.nonce,
-      });
-
-      setStatus({ kind: "info", message: t("a2a.proposeStatusSending") });
-      await sendMessage.mutateAsync({
-        senderDid,
-        recipientDid: recipientAddress,
-        subjectEncrypted: encSubject.serialized,
-        encryptedContent: encBody.serialized,
-        encryptedKey: wrapped.wrappedKey,
-        nonce: encBody.nonce,
-        signature,
-        // New thread — server assigns the id.
-        threadId: null,
-        contentType: A2A_CONTENT_TYPE,
-      });
+      await sendScheduleProposal(
+        {
+          senderDid,
+          signingPrivateKey,
+          recipientDid: recipientAddress,
+          recipientEncryptionKey: recipientEncKey,
+          subject: eventTitle.trim(),
+          body: note.trim() || eventTitle.trim(),
+          payload: proposePayload,
+          onSending: () => setStatus({ kind: "info", message: t("a2a.proposeStatusSending") }),
+        },
+        sendMessage.mutateAsync,
+      );
 
       setStatus({ kind: "success", message: t("a2a.proposeStatusSent") });
       // Reset interactive fields but keep sender/recipient so users

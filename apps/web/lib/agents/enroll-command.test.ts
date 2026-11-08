@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { agentDirName, daemonEnrollCommand, daemonStartCommand } from "./enroll-command";
+import {
+  agentDirName,
+  daemonConnectCommand,
+  daemonEnrollCommand,
+  daemonStartCommand,
+} from "./enroll-command";
 
 describe("enroll command", () => {
   it("names the directory after the agent", () => {
@@ -20,6 +25,12 @@ describe("enroll command", () => {
     expect(enroll).not.toMatch(/ens_|secret/i);
     expect(daemonStartCommand("enroll-test")).toBe(
       "scripts/run_noninteractive_stack.sh start ~/.nexusinbox/enroll-test",
+    );
+  });
+
+  it("connects with just the pairing code against production", () => {
+    expect(daemonConnectCommand("7KQ4P-ZX9M2")).toBe(
+      "scripts/run_noninteractive_stack.sh connect 7KQ4P-ZX9M2",
     );
   });
 });

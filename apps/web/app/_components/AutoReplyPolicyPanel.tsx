@@ -54,6 +54,10 @@ type DraftProtocolAction = {
 
 type Draft = {
   default_action: AutoReplyAction;
+  // Not edited here, but kept on save: the first-run guide's "contacts
+  // only" preset lives here, and dropping it would widen auto-replies to
+  // every sender.
+  default_conditions?: AutoReplyConditions;
   schedule_propose: DraftProtocolAction;
   task_delegate: DraftProtocolAction;
 };
@@ -86,6 +90,9 @@ function draftFromPolicy(policy: AutoReplyPolicy | Record<string, never>): Draft
     : { v: 1, default_action: "queue_for_human" };
   return {
     default_action: normalised.default_action,
+    ...(normalised.default_conditions
+      ? { default_conditions: normalised.default_conditions }
+      : {}),
     schedule_propose: draftFromProtocolAction(
       normalised.protocols?.schedule_negotiation?.propose,
     ),
@@ -145,6 +152,7 @@ function policyFromDraft(draft: Draft): AutoReplyPolicy {
   const policy: AutoReplyPolicy = {
     v: 1,
     default_action: draft.default_action,
+    ...(draft.default_conditions ? { default_conditions: draft.default_conditions } : {}),
   };
   const schedule = protocolActionFromDraft(draft.schedule_propose);
   const task = protocolActionFromDraft(draft.task_delegate);
@@ -306,6 +314,11 @@ export function AutoReplyPolicyPanel({ agentId, masterEnabled }: Props) {
               ))}
             </select>
             <span className="item-sub">{t("agents.policyDefaultActionDesc")}</span>
+            {draft.default_conditions?.require_contact ? (
+              <span className="item-sub" data-testid="auto-reply-policy-contacts-only">
+                {t("agents.policyDefaultContactsOnly")}
+              </span>
+            ) : null}
           </label>
 
           <ProtocolActionFieldset

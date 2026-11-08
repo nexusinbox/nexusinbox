@@ -178,6 +178,8 @@ struct AppState {
     /// Dedicated per-IP budget for POST /attachments/intents. See
     /// ATTACHMENT_INTENT_RATE_LIMIT_PER_IP.
     attachment_intent_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
+    /// Per-IP budget for POST /agent-pairing/resolve (docs/31).
+    pairing_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     ws_connections_per_user: Arc<Mutex<HashMap<String, usize>>>,
     // SECURITY: hierarchical block lists keyed by recipient owner user_id.
     // L1 (l1_did) drops messages silently; L2 (l2_identity) and L3 (l3_stealth)
@@ -376,6 +378,7 @@ impl AppState {
             })),
             caller_budgets: Arc::new(Mutex::new(HashMap::new())),
             attachment_intent_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
+            pairing_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             ws_connections_per_user: Arc::new(Mutex::new(HashMap::new())),
             blocks_by_user: Arc::new(Mutex::new(HashMap::new())),
             spam_sender_dids: Arc::new(parse_did_policy_env("AGENT_INBOX_SPAM_SENDER_DIDS")),
@@ -3800,11 +3803,14 @@ async fn enforce_csrf_protection(request: Request, next: Next) -> Response {
         return next.run(request).await;
     }
 
-    // Skip for endpoints that don't use Cookie auth (no CSRF risk)
+    // Skip for endpoints that don't use Cookie auth (no CSRF risk). The
+    // signer daemon calls the pairing lookup and activation without a
+    // browser, so without an Origin (docs/31).
     let path = request.uri().path();
     if path == "/health"
         || path == "/status"
         || path.starts_with("/agent-auth/")
+        || path == "/agent-pairing/resolve"
         || (path.starts_with("/agent-credentials/") && path.ends_with("/activate"))
     {
         return next.run(request).await;
@@ -7418,6 +7424,10 @@ struct CreateAgentCredentialRequest {
     agent_id: Uuid,
     label: String,
     scopes: Option<Vec<String>>,
+    /// Issue a short pairing code (docs/31) instead of an `ens_` secret:
+    /// the person types or copies `connect <code>` on their machine.
+    #[serde(default)]
+    pairing: bool,
 }
 
 #[derive(Serialize)]
@@ -7428,6 +7438,10 @@ struct AgentCredentialResponse {
     status: String,
     allowed_scopes: Vec<String>,
     enrollment_secret: Option<String>,
+    /// `XXXXX-XXXXX`, returned only when the credential was created with
+    /// `pairing: true`, and only then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pairing_code: Option<String>,
     enrollment_expires_at: Option<String>,
     created_at: String,
     activated_at: Option<String>,
@@ -7454,7 +7468,166 @@ fn generate_enrollment_secret() -> String {
     format!("ens_{}", URL_SAFE_NO_PAD.encode(buf))
 }
 
+/// Pairing codes (docs/31): Crockford base32 — no I, L, O or U, so a code
+/// cannot be misread — 10 characters, 50 bits. Shown as `XXXXX-XXXXX`.
+/// A pairing code is the credential's enrollment secret, stored only as
+/// the SHA-256 of its normalized form, valid for 10 minutes and once.
+const PAIRING_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const PAIRING_CODE_LEN: usize = 10;
+const PAIRING_TTL_MINUTES: i64 = 10;
+/// Lookups per IP per window on POST /agent-pairing/resolve. With 50-bit
+/// codes this is far from needed against guessing; it keeps the endpoint
+/// from being a free oracle all the same.
+const PAIRING_RESOLVE_LIMIT_PER_IP: u64 = 10;
+const PAIRING_RESOLVE_WINDOW_SECS: i64 = 600;
+
+fn generate_pairing_code() -> String {
+    let mut buf = [0u8; PAIRING_CODE_LEN];
+    rand::fill(&mut buf);
+    // 256 is a multiple of 32, so masking keeps every symbol equally likely.
+    let chars: String = buf
+        .iter()
+        .map(|b| PAIRING_ALPHABET[(b & 31) as usize] as char)
+        .collect();
+    format!("{}-{}", &chars[..5], &chars[5..])
+}
+
+/// Uppercase, drop dashes and spaces, read O as 0 and I or L as 1.
+fn normalize_pairing_code(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(PAIRING_CODE_LEN);
+    for c in raw.chars() {
+        if c == '-' || c.is_whitespace() {
+            continue;
+        }
+        if !c.is_ascii() {
+            return None;
+        }
+        let c = match c.to_ascii_uppercase() {
+            'O' => '0',
+            'I' | 'L' => '1',
+            other => other,
+        };
+        if !PAIRING_ALPHABET.contains(&(c as u8)) {
+            return None;
+        }
+        out.push(c);
+    }
+    (out.len() == PAIRING_CODE_LEN).then_some(out)
+}
+
+/// Fixed-window budget keyed by caller, for endpoint-specific limits.
+fn consume_keyed_budget(
+    budgets: &Mutex<HashMap<String, RequestBudget>>,
+    key: &str,
+    limit: u64,
+    window_secs: i64,
+) -> bool {
+    let now = Utc::now().timestamp();
+    let mut budgets = budgets.lock().unwrap_or_else(|e| e.into_inner());
+    if budgets.len() > MAX_RATE_LIMIT_ENTRIES {
+        budgets.retain(|_, b| now - b.window_started_at < window_secs * 2);
+    }
+    let budget = budgets.entry(key.to_string()).or_insert(RequestBudget {
+        window_started_at: now,
+        count: 0,
+    });
+    if now - budget.window_started_at >= window_secs {
+        budget.window_started_at = now;
+        budget.count = 0;
+    }
+    if budget.count >= limit {
+        return false;
+    }
+    budget.count += 1;
+    true
+}
+
+#[derive(Deserialize)]
+struct ResolvePairingRequest {
+    pairing_code: String,
+}
+
+#[derive(Serialize)]
+struct ResolvePairingResponse {
+    credential_id: Uuid,
+    aid: String,
+    agent_label: String,
+}
+
+/// POST /agent-pairing/resolve — which pending credential a pairing code
+/// belongs to (docs/31). Unauthenticated, like activation: the code is the
+/// secret. It changes nothing; the daemon then activates through
+/// POST /agent-credentials/{id}/activate with the code as the enrollment
+/// secret, which keeps that endpoint's failed-attempt cap.
+async fn resolve_pairing_code(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<ResolvePairingRequest>,
+) -> Result<Json<ResolvePairingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let client_ip = extract_client_ip(&headers);
+    if !consume_keyed_budget(
+        &state.pairing_ip_budgets,
+        &client_ip,
+        PAIRING_RESOLVE_LIMIT_PER_IP,
+        PAIRING_RESOLVE_WINDOW_SECS,
+    ) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "rate_limited".to_string(),
+                message: "too many pairing attempts from this IP; wait a few minutes".to_string(),
+            }),
+        ));
+    }
+    let code = normalize_pairing_code(&payload.pairing_code)
+        .ok_or_else(|| validation_error("pairing_code must be 10 letters and digits"))?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let row = sqlx::query(
+        r#"
+        SELECT c.id, c.aid, a.label
+        FROM agent_credentials c
+        JOIN agent_identities ai ON ai.aid = c.aid
+        JOIN agents a ON a.id = ai.agent_id
+        WHERE c.enrollment_hash = $1
+          AND c.status = 'pending'
+          AND c.enrollment_expires > NOW()
+        LIMIT 1
+        "#,
+    )
+    .bind(sha256_hex(code.as_bytes()))
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("pairing lookup failed", e))?;
+    let Some(row) = row else {
+        return Err(not_found_error("pairing code not found or expired"));
+    };
+    Ok(Json(ResolvePairingResponse {
+        credential_id: row.get("id"),
+        aid: row.get("aid"),
+        agent_label: row.get("label"),
+    }))
+}
+
 const VALID_SCOPES: &[&str] = &["messages.read", "messages.send", "messages.delete"];
+
+/// A device name for a credential label: printable, trimmed, at most 64
+/// bytes like any label; nothing usable means "keep the label".
+fn device_label_from(raw: Option<&str>) -> Option<String> {
+    let printable: String = raw?.chars().filter(|c| !c.is_control()).collect();
+    let mut label = String::new();
+    for c in printable.trim().chars() {
+        if label.len() + c.len_utf8() > 64 {
+            break;
+        }
+        label.push(c);
+    }
+    let label = label.trim_end();
+    (!label.is_empty()).then(|| label.to_string())
+}
 
 /// POST /agent-credentials — create a new credential (enrollment secret).
 /// Requires human Cookie session.
@@ -7516,9 +7689,27 @@ async fn create_agent_credential(
         }
     };
 
-    let secret = generate_enrollment_secret();
-    let enrollment_hash = sha256_hex(secret.as_bytes());
-    let expires = (Utc::now() + chrono::Duration::minutes(30)).to_rfc3339();
+    // A pairing code is the enrollment secret in a shorter, shorter-lived
+    // form; activation treats both the same way.
+    let (secret, pairing_code, enrollment_hash, expires) = if payload.pairing {
+        let code = generate_pairing_code();
+        let normalized = normalize_pairing_code(&code).expect("generated codes normalize");
+        (
+            None,
+            Some(code),
+            sha256_hex(normalized.as_bytes()),
+            (Utc::now() + chrono::Duration::minutes(PAIRING_TTL_MINUTES)).to_rfc3339(),
+        )
+    } else {
+        let secret = generate_enrollment_secret();
+        let hash = sha256_hex(secret.as_bytes());
+        (
+            Some(secret),
+            None,
+            hash,
+            (Utc::now() + chrono::Duration::minutes(30)).to_rfc3339(),
+        )
+    };
     let cred_id = Uuid::new_v4();
 
     sqlx::query(
@@ -7548,7 +7739,8 @@ async fn create_agent_credential(
             label,
             status: "pending".into(),
             allowed_scopes: scopes,
-            enrollment_secret: Some(secret), // plaintext returned ONLY here
+            enrollment_secret: secret, // plaintext returned ONLY here
+            pairing_code,
             enrollment_expires_at: Some(expires.clone()),
             created_at: Utc::now().to_rfc3339(),
             activated_at: None,
@@ -7617,6 +7809,7 @@ async fn list_agent_credentials(
             status,
             allowed_scopes: row.get("allowed_scopes"),
             enrollment_secret: None, // never returned after creation
+            pairing_code: None,
             enrollment_expires_at,
             created_at: row
                 .get::<Option<String>, _>("created_at")
@@ -7923,6 +8116,11 @@ struct ActivateCredentialRequest {
     /// docs/21_message_visibility_ux_for_mcp_modes.md §7.
     #[serde(default)]
     key_holder: Option<String>,
+    /// Optional name of the machine that activates (its hostname), shown
+    /// as the credential's label so the person can tell which device
+    /// connected (docs/31).
+    #[serde(default)]
+    device_label: Option<String>,
 }
 
 /// Clamp an incoming `key_holder` string to the allowed set. The DB
@@ -8084,7 +8282,11 @@ async fn activate_agent_credential(
     let stored_hash = stored_hash.ok_or_else(|| {
         validation_error("credential has no enrollment hash (already activated?)")
     })?;
-    let provided_hash = sha256_hex(payload.enrollment_secret.as_bytes());
+    // A pairing code is stored hashed in its normalized form, so accept it
+    // as typed (`7kq4p-zx9m2`). `ens_` secrets never normalize.
+    let provided_secret = normalize_pairing_code(&payload.enrollment_secret)
+        .unwrap_or_else(|| payload.enrollment_secret.clone());
+    let provided_hash = sha256_hex(provided_secret.as_bytes());
     if !constant_time_eq(stored_hash.as_bytes(), provided_hash.as_bytes()) {
         return Err(record_failed_attempt(
             &pool,
@@ -8225,7 +8427,8 @@ async fn activate_agent_credential(
             enrollment_expires = NULL,
             activated_at = NOW(),
             failed_activation_attempts = 0,
-            key_holder = $3
+            key_holder = $3,
+            label = COALESCE($5, label)
         WHERE id = $2 AND status = 'pending' AND enrollment_hash = $4
         "#,
     )
@@ -8233,6 +8436,7 @@ async fn activate_agent_credential(
     .bind(credential_id)
     .bind(key_holder)
     .bind(&stored_hash)
+    .bind(device_label_from(payload.device_label.as_deref()))
     .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to activate credential", e))?;
@@ -14676,6 +14880,7 @@ fn app_with_state(state: AppState) -> Router {
             "/agent-credentials/{id}/activate",
             post(activate_agent_credential),
         )
+        .route("/agent-pairing/resolve", post(resolve_pairing_code))
         .route(
             "/agent-credentials/{id}/rotate",
             post(rotate_agent_credential),
@@ -14876,6 +15081,45 @@ mod internal_tests {
         let mut legacy = metadata.clone();
         legacy.insert("owner-user-id".to_string(), Uuid::new_v4().to_string());
         assert!(attachment_object_matches(2048, &legacy, 2048, id));
+    }
+
+    #[test]
+    fn pairing_codes_are_unambiguous_and_normalize() {
+        for _ in 0..200 {
+            let code = generate_pairing_code();
+            assert_eq!(code.len(), 11);
+            assert_eq!(&code[5..6], "-");
+            assert!(!code.contains(['I', 'L', 'O', 'U']));
+            assert_eq!(normalize_pairing_code(&code).unwrap().len(), 10);
+        }
+        assert_eq!(
+            normalize_pairing_code(" 7kq4p-zx9m2 ").as_deref(),
+            Some("7KQ4PZX9M2")
+        );
+        // Read O as 0 and I / L as 1.
+        assert_eq!(
+            normalize_pairing_code("OIL00-11111").as_deref(),
+            Some("0110011111")
+        );
+        assert_eq!(normalize_pairing_code("7KQ4P-ZX9M"), None);
+        assert_eq!(normalize_pairing_code("7KQ4P-ZX9M22"), None);
+        assert_eq!(normalize_pairing_code("7KQ4P-ZX9MU"), None);
+        // An `ens_` secret is never mistaken for a pairing code.
+        assert_eq!(normalize_pairing_code(&generate_enrollment_secret()), None);
+        assert_eq!(normalize_pairing_code("7KQ4P-ZX9M\u{30A2}"), None);
+        assert_eq!(
+            device_label_from(Some("  MacBook-Air\n ")),
+            Some("MacBook-Air".into())
+        );
+        assert_eq!(device_label_from(Some(" \t ")), None);
+        // 64 bytes at most, cut on a character boundary.
+        assert_eq!(
+            device_label_from(Some(&"\u{30A2}".repeat(30)))
+                .unwrap()
+                .len(),
+            63
+        );
+        assert_eq!(device_label_from(None), None);
     }
 
     #[test]

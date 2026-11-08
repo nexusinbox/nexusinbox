@@ -102,6 +102,8 @@ export type AgentCredential = {
   status: "pending" | "active" | "revoked" | "compromised";
   allowed_scopes: string[];
   enrollment_secret?: string | null;
+  /** `XXXXX-XXXXX`, only in the answer to a create with `pairing: true`. */
+  pairing_code?: string;
   enrollment_expires_at?: string | null;
   created_at: string;
   activated_at?: string | null;
@@ -129,6 +131,8 @@ export type CreateAgentCredentialRequest = {
   agent_id: string;
   label: string;
   scopes?: string[];
+  /** Issue a 10-minute pairing code instead of an enrollment secret (docs/31). */
+  pairing?: boolean;
 };
 
 export type RecipientResolutionResponse = {
@@ -516,6 +520,8 @@ export type AutoReplyProtocolAction = {
 export type AutoReplyPolicy = {
   v: 1;
   default_action: AutoReplyAction;
+  /** Checked by the server too, since it cannot see which protocol a message uses. */
+  default_conditions?: AutoReplyConditions;
   protocols?: {
     schedule_negotiation?: {
       propose?: AutoReplyProtocolAction;

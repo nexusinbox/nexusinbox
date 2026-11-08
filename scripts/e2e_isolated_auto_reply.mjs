@@ -2,10 +2,13 @@
 // End-to-end check of the Isolated-mode auto-reply executor with the real
 // API, signer daemon and agent gateway (docs/29, runbook 19 §7.3).
 //
-//   agent A: created the way the web UI does it; the signer daemon enrolls
-//            for it with `--enroll --dir`, and the stack script starts the
-//            daemon and gateway from that directory, as a person would
+//   agent A: created the way the web UI does it, then connected the way a
+//            person does it: the web shows a pairing code and
+//            `run_noninteractive_stack.sh connect <code>` enrolls the daemon
+//            and starts the daemon and gateway (docs/31)
 //   agent B: plain keypairs held by this script (the sender)
+//   agent C: enrolled with `nexusinbox-signer --enroll --dir`, the flow the
+//            settings page still offers
 //
 // B sends A a schedule_negotiation propose. With A's policy set to
 // auto_accept, the gateway executor must reply on its own: claim the row,
@@ -15,9 +18,12 @@
 // Local only. Prerequisites:
 //   - Postgres from `docker-compose up -d postgres` (container nexusinbox-postgres)
 //   - an API on localhost started with
-//       AGENT_INBOX_ALLOW_DEV_BEARER=true AGENT_INBOX_DISABLE_CSRF_CHECK=true
+//       AGENT_INBOX_ALLOW_DEV_BEARER=true
+//       AGENT_INBOX_CORS_ORIGINS=http://localhost:3100   (the Origin this script sends)
 //       AGENT_INBOX_PUBLIC_API_URL=<the same URL as API below>
 //       AGENT_INBOX_STORAGE_BACKEND=localfs
+//     Keep the CSRF check on, as in production: the daemon calls the API
+//     without an Origin, and only the cookie-less routes may let it through.
 //   - `cargo build` in services/signer-daemon and services/agent-gateway
 //
 // Usage: API=http://localhost:8080 node scripts/e2e_isolated_auto_reply.mjs
@@ -176,6 +182,8 @@ const STACK = path.join(REPO, "scripts/run_noninteractive_stack.sh");
 const PASSPHRASE = "e2e-passphrase";
 let stackDir = null;
 let stackEnv = null;
+// The OS name the daemon reports as the device label.
+const DEVICE_LABEL = { darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform] ?? process.platform;
 function stack(command, input) {
   return execFileSync("sh", [STACK, command, stackDir], {
     cwd: REPO,
@@ -195,9 +203,9 @@ async function main() {
     `INSERT INTO users (id, world_id_hash, nullifier_hash, verification_level) VALUES ('${userId}', 'e2e-${userId}', 'e2e-${userId}', 'orb')`,
   ]);
 
-  step("register agents A (Isolated) and B (sender)");
-  // A is created the way the web UI does it; the daemon's --enroll below
-  // gives it the keys it will actually use.
+  step("register agents A (Isolated), B (sender) and C (classic enroll)");
+  // A is created the way the web UI does it; connecting below gives it the
+  // keys it will actually use.
   const placeholder = makeAgentKeys();
   const B = makeAgentKeys();
   const agentA = expectStatus(
@@ -206,48 +214,104 @@ async function main() {
   const agentB = expectStatus(
     await api("POST", "/agents", { auth: human, body: { label: "e2e-B-sender", public_key: B.signPubB64, encryption_key: B.encPubB64 } }),
     [200, 201], "create agent B");
+  const placeholderC = makeAgentKeys();
+  const agentC = expectStatus(
+    await api("POST", "/agents", { auth: human, body: { label: "e2e-C-enroll", public_key: placeholderC.signPubB64, encryption_key: placeholderC.encPubB64 } }),
+    [200, 201], "create agent C");
   console.log(`  B ${agentB.did}`);
 
-  step("create A's credential and enroll the signer daemon for it (--enroll)");
+  const mode = (f) => (fs.statSync(f).mode & 0o777).toString(8);
+  const checkAgentDir = (dir, credentialId) => {
+    if (mode(dir) !== "700") fail(`${dir} mode ${mode(dir)}, expected 700`);
+    for (const f of ["signing.key.enc", "encryption.key.enc", "agent.env"]) {
+      if (mode(path.join(dir, f)) !== "600") fail(`${f} mode ${mode(path.join(dir, f))}, expected 600`);
+    }
+    const agentEnv = fs.readFileSync(path.join(dir, "agent.env"), "utf8");
+    for (const expected of [`AGENT_INBOX_CREDENTIAL_ID=${credentialId}`, `AGENT_INBOX_API_URL=${API}`]) {
+      if (!agentEnv.includes(expected)) fail(`agent.env lacks ${expected}`, agentEnv);
+    }
+    return agentEnv;
+  };
+
+  step("connect A with a pairing code: run_noninteractive_stack.sh connect <code>");
   const cred = expectStatus(
-    await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"] } }),
-    [200, 201], "create credential");
-  const agentDir = path.join(WORK, "agent-a");
-  const signerBin = path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer");
+    await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"], pairing: true } }),
+    [201], "create pairing credential");
+  if (cred.enrollment_secret || !/^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$/.test(cred.pairing_code ?? "")) {
+    fail("expected a pairing code and no enrollment secret", cred);
+  }
+  // Unix socket paths must stay under SUN_LEN (104 bytes on macOS), which
+  // the scratch directory may exceed; put the sockets in a short temp dir.
+  // HOME points at the scratch directory, so ~/.nexusinbox lands there;
+  // cargo and rustup keep their own homes.
+  const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-"));
+  stackEnv = {
+    ...process.env,
+    HOME: WORK,
+    CARGO_HOME: process.env.CARGO_HOME ?? path.join(os.homedir(), ".cargo"),
+    RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(os.homedir(), ".rustup"),
+    AGENT_INBOX_SIGNER_SOCKET: path.join(sockDir, "signer.sock"),
+    AGENT_INBOX_GATEWAY_SOCKET: path.join(sockDir, "gateway.sock"),
+    AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS: "5",
+  };
+  const agentDir = path.join(WORK, ".nexusinbox", "e2e-a-isolated");
   try {
-    // The passphrase is asked twice; stdin is not a terminal here.
-    execFileSync(signerBin, [
+    // Typed in lower case on purpose. The new passphrase is asked twice;
+    // stdin is not a terminal here.
+    const out = execFileSync("sh", [STACK, "connect", cred.pairing_code.toLowerCase(), API], {
+      cwd: REPO,
+      env: stackEnv,
+      input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString();
+    stackDir = agentDir;
+    if (!/Signer up:\s+yes/.test(out) || !/Gateway up:\s+yes/.test(out)) fail("stack did not come up", out);
+  } catch (e) {
+    if (fs.existsSync(path.join(agentDir, "agent.env"))) stackDir = agentDir;
+    fail("connect failed", `${e.stdout ?? ""}${e.stderr ?? e}`);
+  }
+  const agentEnv = checkAgentDir(agentDir, cred.credential_id);
+  if (!agentEnv.includes(`AGENT_INBOX_AID=${agentA.aid}`)) fail("agent.env names another agent", agentEnv);
+  console.log(`  ${agentDir}: keys and agent.env (700 / 600)`);
+  // The web sees the machine connected, under its OS name only.
+  const creds = expectStatus(await api("GET", "/agent-credentials", { auth: human }), [200], "list credentials");
+  const connected = creds.credentials.find((c) => c.credential_id === cred.credential_id);
+  if (connected?.status !== "active" || connected?.label !== DEVICE_LABEL) fail(`expected an active credential labelled ${DEVICE_LABEL}`, connected);
+  // The code is spent.
+  const reused = await api("POST", "/agent-pairing/resolve", { body: { pairing_code: cred.pairing_code } });
+  if (reused.status !== 404) fail(`a used pairing code resolved (${reused.status})`);
+  // The agent now answers on the daemon's keys.
+  const resolved = expectStatus(
+    await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
+    [200], "resolve A");
+  const A = { did: resolved.did, encPubB64: resolved.encryption_public_key };
+  console.log(`  A ${A.did} (connected, labelled ${connected.label})`);
+  if (A.did === agentA.did) fail("A still answers on the placeholder keys after connecting");
+
+  step("enroll C the classic way: nexusinbox-signer --enroll --dir");
+  const credC = expectStatus(
+    await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentC.id, label: "e2e-classic" } }),
+    [201], "create credential for C");
+  const agentDirC = path.join(WORK, "agent-c");
+  try {
+    execFileSync(path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer"), [
       "--enroll",
-      "--credential-id", cred.credential_id,
-      "--dir", agentDir,
+      "--credential-id", credC.credential_id,
+      "--dir", agentDirC,
       "--api-url", API,
     ], {
-      env: { ...process.env, AGENT_INBOX_ENROLLMENT_SECRET: cred.enrollment_secret },
+      env: { ...process.env, AGENT_INBOX_ENROLLMENT_SECRET: credC.enrollment_secret },
       input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
       stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (e) {
     fail("signer --enroll failed", `${e.stderr ?? e}`);
   }
-  // Everything a later start needs is in the directory, private to us.
-  const envFile = path.join(agentDir, "agent.env");
-  const mode = (f) => (fs.statSync(f).mode & 0o777).toString(8);
-  if (mode(agentDir) !== "700") fail(`agent dir mode ${mode(agentDir)}, expected 700`);
-  for (const f of ["signing.key.enc", "encryption.key.enc", "agent.env"]) {
-    if (mode(path.join(agentDir, f)) !== "600") fail(`${f} mode ${mode(path.join(agentDir, f))}, expected 600`);
-  }
-  const agentEnv = fs.readFileSync(envFile, "utf8");
-  for (const expected of [`AGENT_INBOX_AID=${agentA.aid}`, `AGENT_INBOX_CREDENTIAL_ID=${cred.credential_id}`, `AGENT_INBOX_API_URL=${API}`]) {
-    if (!agentEnv.includes(expected)) fail(`agent.env lacks ${expected}`, agentEnv);
-  }
-  console.log(`  ${agentDir}: keys and agent.env (700 / 600)`);
-  // The agent now answers on the daemon's keys.
-  const resolved = expectStatus(
-    await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
-    [200], "resolve A");
-  const A = { did: resolved.did, encPubB64: resolved.encryption_public_key };
-  console.log(`  A ${A.did} (enrolled by the daemon)`);
-  if (A.did === agentA.did) fail("A still answers on the placeholder keys after --enroll");
+  checkAgentDir(agentDirC, credC.credential_id);
+  const credsAfter = expectStatus(await api("GET", "/agent-credentials", { auth: human }), [200], "list credentials");
+  const classic = credsAfter.credentials.find((c) => c.credential_id === credC.credential_id);
+  if (classic?.status !== "active" || classic?.label !== "e2e-classic") fail("C's credential should be active and keep its label", classic);
+  console.log(`  ${agentDirC}: enrolled, label kept`);
 
   step("turn A's auto-reply on with an auto_accept policy");
   expectStatus(await api("PATCH", `/agents/${agentA.id}`, { auth: human, body: { auto_reply: true } }), [200], "enable auto-reply");
@@ -311,24 +375,6 @@ async function main() {
   if (!inboxRow) fail("the server never stamped A's inbox row");
   console.log(`  A's row ${inboxRow.id}: decision=${inboxRow.auto_reply_decision} (${inboxRow.auto_reply_reason})`);
   if (inboxRow.auto_reply_decision !== "auto_accept") fail("expected an auto_accept stamp", inboxRow);
-
-  step("start the daemon and gateway: run_noninteractive_stack.sh start <dir>");
-  // Unix socket paths must stay under SUN_LEN (104 bytes on macOS), which
-  // the scratch directory may exceed; put the sockets in a short temp dir.
-  const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-"));
-  stackDir = agentDir;
-  stackEnv = {
-    ...process.env,
-    AGENT_INBOX_SIGNER_SOCKET: path.join(sockDir, "signer.sock"),
-    AGENT_INBOX_GATEWAY_SOCKET: path.join(sockDir, "gateway.sock"),
-    AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS: "5",
-  };
-  try {
-    const out = stack("start", `${PASSPHRASE}\n`);
-    if (!/Signer up:\s+yes/.test(out) || !/Gateway up:\s+yes/.test(out)) fail("stack did not come up", out);
-  } catch (e) {
-    fail("stack start failed", `${e.stdout ?? ""}${e.stderr ?? e}`);
-  }
 
   step("wait for A's auto-reply to reach B");
   let reply;

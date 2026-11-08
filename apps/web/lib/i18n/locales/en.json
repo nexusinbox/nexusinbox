@@ -434,6 +434,7 @@
     "policyLoadFailed": "Failed to load policy. Refresh to retry.",
     "policyDefaultAction": "Default action",
     "policyDefaultActionDesc": "Applied when no protocol-specific override matches.",
+    "policyDefaultContactsOnly": "This default applies only to senders in your contacts. You check everything else.",
     "policyScheduleProposeTitle": "schedule_negotiation · propose",
     "policyScheduleProposeDesc": "Run when an incoming meeting proposal arrives.",
     "policyTaskDelegateTitle": "task_delegation · delegate",
@@ -1215,5 +1216,91 @@
     "errorTitle2": "UNCAUGHT",
     "errorLabel": "RUNTIME FAULT · NET-0",
     "errorSubtitle": "An unexpected error occurred while processing the page."
+  },
+
+  "firstRun": {
+    "title": "Getting started",
+    "stepOf": "Step {current} of {total}",
+    "back": "Back",
+    "next": "Next",
+    "name": {
+      "title": "Name your agent",
+      "desc": "An agent sends and receives messages on your behalf.",
+      "label": "Name",
+      "hint": "Others see it too. You can change it later.",
+      "placeholder": "e.g. Assistant",
+      "create": "Create and continue",
+      "creating": "Creating…",
+      "empty": "Enter a name.",
+      "failed": "Could not create the agent. Please try again."
+    },
+    "where": {
+      "title": "Where should it run?",
+      "desc": "If unsure, start with \"This browser only\". You can connect a computer later.",
+      "browserTitle": "This browser only",
+      "browserBadge": "Easy",
+      "browserDesc": "Read and write messages on this screen. Auto-replies run while this agent's inbox is open.",
+      "pcTitle": "Also on my computer",
+      "pcDesc": "Auto-replies and AI tools keep working with the browser closed. A small program runs on your computer.",
+      "pcNote": "Once connected, message bodies open on the computer. This browser shows only that messages arrived and their status."
+    },
+    "connect": {
+      "title": "Connect your computer",
+      "desc": "Run this command once in a terminal on your computer, from the NexusInbox repository folder. Keep this screen open.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "passphrase": "It asks you to choose a passphrase that protects the keys on your computer. The first run takes a few minutes to build the programs.",
+      "codeNote": "The code {code} works once, for 10 minutes. Do not share it.",
+      "waiting": "Waiting for your computer…",
+      "connected": "Connected ({device})",
+      "expired": "The code has expired.",
+      "newCode": "Show a new code",
+      "issuing": "Preparing a code…",
+      "issueFailed": "Could not prepare a code.",
+      "retry": "Try again",
+      "credentialLabel": "Computer"
+    },
+    "replies": {
+      "title": "How should requests be handled?",
+      "desc": "You can fine-tune this later in the agent settings.",
+      "manualTitle": "I check them first",
+      "manualBadge": "Recommended",
+      "manualDesc": "Requests arrive in your inbox, and you decide how to answer.",
+      "contactsTitle": "Accept scheduling requests from contacts",
+      "contactsDesc": "Scheduling requests from people in your contacts are accepted for their first proposed time. You check everything else.",
+      "allTitle": "Accept all scheduling requests",
+      "allDesc": "Scheduling requests from anyone are accepted for their first proposed time. You check other requests.",
+      "saving": "Saving…",
+      "saveFailed": "Could not save. Please try again."
+    },
+    "test": {
+      "title": "Try it out",
+      "desc": "Send yourself one scheduling request to see that it arrives and how it is handled.",
+      "send": "Send a test request",
+      "sending": "Sending…",
+      "eventTitle": "Test meeting",
+      "body": "A test request sent from the getting started guide.",
+      "waiting": "Waiting for it to arrive…",
+      "arrived": "It arrived",
+      "deciding": "Applying your setting…",
+      "queued": "As set, you decide how to answer",
+      "queuedNotContact": "You are not in your own contacts, so you decide how to answer (requests from contacts are accepted automatically)",
+      "acceptPendingPc": "As set, it will be accepted automatically. Waiting for your computer to answer…",
+      "acceptedPc": "Your computer sent the acceptance",
+      "acceptInBrowser": "As set, it will be accepted automatically. This browser answers when you open this agent's inbox",
+      "noKey": "This browser does not hold this agent's keys, so it cannot send the test.",
+      "failed": "Could not send the test: {error}",
+      "timeout": "Could not confirm in time. Check your inbox.",
+      "skip": "Skip",
+      "retry": "Send again"
+    },
+    "done": {
+      "title": "You're all set",
+      "desc": "\"{name}\" is ready.",
+      "inbox": "Your inbox shows the messages and requests that arrive.",
+      "details": "Technical details such as the AID and keys are in the agent settings.",
+      "toInbox": "Go to inbox",
+      "toSettings": "Agent settings"
+    }
   }
 }

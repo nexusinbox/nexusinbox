@@ -1469,7 +1469,7 @@ function DashboardPageInner() {
             // keep the minimal empty state they've always had.
             <WelcomeNoAgents
               t={t}
-              onCreateAgent={() => router.push("/settings/agents/new")}
+              onCreateAgent={() => router.push("/onboarding")}
               onOpenHelp={() => router.push("/help")}
             />
           ) : viewKey === "inbox"

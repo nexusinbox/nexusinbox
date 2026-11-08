@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>はじめての設定（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn-soft: #fff7e6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .steps { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .steps button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .steps button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; min-height: 420px; }
+  .card h2 { font-size: 22px; margin: 0 0 6px; }
+  .card .sub { color: var(--muted); margin: 0 0 22px; }
+  label.field { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  input.text { width: 100%; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .choices { display: grid; gap: 12px; }
+  .choice { display: flex; gap: 14px; border: 1.5px solid var(--line); border-radius: 12px; padding: 16px; cursor: pointer; align-items: flex-start; }
+  .choice.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .choice .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #9ca3af; margin-top: 3px; flex: none; }
+  .choice.sel .dot { border: 6px solid var(--accent); }
+  .choice b { display: block; }
+  .choice span { color: var(--muted); font-size: 13px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 16px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 8px 0; }
+  .cmd code { flex: 1; overflow-x: auto; white-space: nowrap; }
+  .cmd button { font: 12px system-ui; background: #334155; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  ol.plain { padding-left: 20px; margin: 0 0 16px; }
+  ol.plain li { margin: 6px 0; }
+  .status { display: flex; align-items: center; gap: 10px; border-radius: 10px; padding: 12px 14px; margin-top: 18px; font-weight: 600; }
+  .status.wait { background: var(--warn-soft); color: #8a5a00; }
+  .status.ok { background: var(--ok-soft); color: var(--ok); }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #e0b25c; border-top-color: transparent; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .actions { display: flex; justify-content: space-between; margin-top: 28px; }
+  .btn { font: inherit; border-radius: 999px; padding: 10px 22px; cursor: pointer; border: 1px solid var(--line); background: var(--card); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .check { color: var(--ok); font-weight: 700; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  .now { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>はじめての設定（画面の流れの案）</h1>
+    <p class="lead">クリックで各ステップを確かめられます。文言・選択肢・順番について、気になるところを教えてください。</p>
+    <div class="steps" id="steps"></div>
+
+    <!-- 1 -->
+    <section class="card" data-step="1">
+      <h2>エージェントに名前を付けましょう</h2>
+      <p class="sub">エージェントは、あなたの代わりにメッセージをやり取りする窓口です。</p>
+      <label class="field" for="n">名前</label>
+      <input class="text" id="n" value="秘書">
+      <p class="hint">相手にも表示されます。あとで変えられます。</p>
+      <div class="actions"><span></span><button class="btn primary" data-next>作成して次へ</button></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="card" data-step="2" hidden>
+      <h2>どこで動かしますか？</h2>
+      <p class="sub">あとから変えられます。迷ったら「このブラウザだけ」で始めてください。</p>
+      <div class="choices" data-group="where">
+        <div class="choice sel" data-value="browser"><i class="dot"></i><div><b>このブラウザだけ<span class="tag">かんたん</span></b><span>メッセージの読み書きは、この画面で行います。自動返信は、この画面を開いている間に動きます。</span></div></div>
+        <div class="choice" data-value="pc"><i class="dot"></i><div><b>自分のパソコンでも動かす</b><span>ブラウザを閉じていても、自動返信や AI との連携を続けます。パソコンに小さなプログラムを入れます。</span></div></div>
+      </div>
+      <div class="actions"><button class="btn" data-prev>戻る</button><button class="btn primary" data-next>次へ</button></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="card" data-step="3" hidden>
+      <h2>パソコンとつなぎます</h2>
+      <p class="sub">ターミナルで次のコマンドを 1 回実行してください。この画面はそのままで大丈夫です。</p>
+      <div class="cmd"><code>nexusinbox connect 7KQ-4PZ</code><button type="button">コピー</button></div>
+      <ol class="plain">
+        <li>実行すると、パソコンの中の鍵を守る<b>パスフレーズ</b>を決めるよう聞かれます。</li>
+        <li>つながると、この画面が自動で切り替わります。</li>
+      </ol>
+      <p class="muted">コード <b>7KQ-4PZ</b> は 10 分間、1 回だけ使えます。シークレットを手で写す必要はありません。</p>
+      <div class="status wait" id="wait"><i class="spinner"></i>パソコンからの接続を待っています…</div>
+      <div class="status ok" id="ok" hidden><span class="check">✓</span>接続しました（MacBook Air）</div>
+      <p class="muted"><a href="#" id="sim">（モック: 接続した状態を見る）</a></p>
+      <div class="actions"><button class="btn" data-prev>戻る</button><button class="btn primary" data-next>次へ</button></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="card" data-step="4" hidden>
+      <h2>届いた依頼にどう対応しますか？</h2>
+      <p class="sub">細かい条件は、あとで「詳細設定」から変えられます。</p>
+      <div class="choices" data-group="reply">
+        <div class="choice sel"><i class="dot"></i><div><b>まず私が確認する<span class="tag">おすすめ</span></b><span>依頼は受信箱の「承認待ち」に入ります。返事はあなたが決めます。</span></div></div>
+        <div class="choice"><i class="dot"></i><div><b>連絡先からの日程調整は、自動で承諾する</b><span>登録した相手からの日程調整だけ、候補の最初の時間で承諾します。それ以外は確認待ちです。</span></div></div>
+        <div class="choice"><i class="dot"></i><div><b>日程調整は、自動で承諾する</b><span>誰からの日程調整でも、自動で承諾します。</span></div></div>
+      </div>
+      <div class="actions"><button class="btn" data-prev>戻る</button><button class="btn primary" data-next>次へ</button></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="card" data-step="5" hidden>
+      <h2>試してみましょう</h2>
+      <p class="sub">自分宛てに日程調整の依頼を 1 通送って、届くか・どう対応するかを確かめます。</p>
+      <button class="btn primary" id="test">テストの依頼を送る</button>
+      <div id="testResult" hidden>
+        <div class="status ok"><span class="check">✓</span>届きました</div>
+        <div class="status ok"><span class="check">✓</span>選んだ設定どおり「承認待ち」に入りました</div>
+      </div>
+      <div class="actions"><button class="btn" data-prev>戻る</button><button class="btn primary" data-next>完了</button></div>
+    </section>
+
+    <!-- done -->
+    <section class="card" data-step="6" hidden>
+      <h2>準備ができました</h2>
+      <p class="sub">「秘書」が使えるようになりました。</p>
+      <ul>
+        <li>受信箱で、届いたメッセージと依頼を確かめられます。</li>
+        <li>エージェントの画面に「パソコン: 接続中（2 分前）」「自動返信: 最後の対応」が表示されます。</li>
+        <li>AID や鍵などの技術的な情報は、エージェントの画面の「詳細」にまとめてあります。</li>
+      </ul>
+      <div class="actions"><button class="btn" data-prev>戻る</button><button class="btn primary">受信箱へ</button></div>
+    </section>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>今回の検証からの変更点</h3>
+      <ul>
+        <li>手順は 1 本道。用語（DID・AID・credential・鍵の所在・Bridge）は出さない</li>
+        <li>シークレットのコピーをやめ、短い<b>接続コード</b>にする</li>
+        <li>長い起動コマンドをやめ、<b>コマンド 1 つ</b>にする</li>
+        <li>つながったか・自動返信が動いたかを<b>画面で</b>見せる</li>
+        <li>自動返信はポリシー編集ではなく<b>3 つの選択肢</b>から選ぶ</li>
+        <li>最後に<b>自分宛てのテスト</b>で動作を確かめる</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>実装に必要なもの</h3>
+      <ul>
+        <li>接続コード: 短命・1 回限り・試行回数の上限つきで、サーバ側で登録用シークレットに対応させる</li>
+        <li><code>nexusinbox connect &lt;コード&gt;</code>: 登録と起動を 1 つにした入口（今の <code>--enroll --dir</code> と <code>start &lt;dir&gt;</code> をまとめる）。配布方法（Homebrew など）も決める</li>
+        <li>接続状態: デーモンの最後のトークン発行時刻などから「接続中 / n 分前」を出す API</li>
+        <li>自動返信の 3 択を、今のポリシー（JSON）に対応づける</li>
+        <li>自分宛てのテスト送信と、その結果の表示</li>
+      </ul>
+      <p class="now">今あるもの: <code>--enroll --dir</code> と <code>start &lt;dir&gt;</code>（今日の 1 歩目）。ここからこの形に寄せていきます。</p>
+    </div>
+  </aside>
+</div>
+<script>
+  const cards = [...document.querySelectorAll("section.card")];
+  const names = ["名前", "どこで動かす", "パソコンとつなぐ", "自動返信", "テスト", "完了"];
+  const stepsEl = document.getElementById("steps");
+  let current = 1;
+  function show(n) {
+    current = Math.max(1, Math.min(cards.length, n));
+    cards.forEach((c) => (c.hidden = Number(c.dataset.step) !== current));
+    [...stepsEl.children].forEach((b, i) => b.classList.toggle("on", i + 1 === current));
+  }
+  names.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.textContent = `${i + 1}. ${name}`;
+    b.onclick = () => show(i + 1);
+    stepsEl.appendChild(b);
+  });
+  const where = () => document.querySelector('[data-group="where"] .sel')?.dataset.value;
+  document.querySelectorAll("[data-next]").forEach((b) => (b.onclick = () => {
+    if (current === 2 && where() === "browser") return show(4);
+    show(current + 1);
+  }));
+  document.querySelectorAll("[data-prev]").forEach((b) => (b.onclick = () => {
+    if (current === 4 && where() === "browser") return show(2);
+    show(current - 1);
+  }));
+  document.querySelectorAll(".choices").forEach((group) => {
+    group.querySelectorAll(".choice").forEach((c) => (c.onclick = () => {
+      group.querySelectorAll(".choice").forEach((x) => x.classList.remove("sel"));
+      c.classList.add("sel");
+    }));
+  });
+  document.getElementById("sim").onclick = (e) => {
+    e.preventDefault();
+    document.getElementById("wait").hidden = true;
+    document.getElementById("ok").hidden = false;
+  };
+  document.getElementById("test").onclick = () => (document.getElementById("testResult").hidden = false);
+  show(1);
+</script>
+</body>
+</html>

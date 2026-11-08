@@ -186,6 +186,12 @@ paths:
         Signer Daemon uses with `POST /agent-credentials/{id}/activate`
         to register its public keys. The secret is returned exactly once
         and only for `status='pending'` rows.
+
+        With `pairing: true` it issues a `pairing_code` instead
+        (`XXXXX-XXXXX`, Crockford base32, 50 bits, valid for 10 minutes):
+        the person runs `connect <code>` on their machine, which finds the
+        credential with `POST /agent-pairing/resolve` and activates it with
+        the code as the enrollment secret (docs/31).
       requestBody:
         required: true
         content:
@@ -276,6 +282,50 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '422':
           $ref: '#/components/responses/ValidationError'
+
+  /agent-pairing/resolve:
+    post:
+      summary: Find the pending credential a pairing code belongs to
+      description: |
+        Called by the Signer Daemon before activation (docs/31). The code
+        is the secret, so no session is required; the lookup changes
+        nothing. Codes are accepted as typed: case, dashes and spaces are
+        ignored, and O, I and L are read as 0, 1 and 1. Limited to 10
+        lookups per IP address per 10 minutes, malformed ones included.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pairing_code:
+                  type: string
+                  example: 7KQ4P-ZX9M2
+              required: [pairing_code]
+      responses:
+        '200':
+          description: The pending, unexpired credential for this code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential_id:
+                    type: string
+                    format: uuid
+                  aid:
+                    type: string
+                  agent_label:
+                    type: string
+                required: [credential_id, aid, agent_label]
+        '404':
+          description: No pending credential has this code, or it expired
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          description: Too many lookups from this IP address
 
   /agent-credentials/{id}/rotate:
     post:
@@ -1573,6 +1623,12 @@ components:
           items:
             type: string
             enum: [messages.read, messages.send, messages.delete]
+        pairing:
+          type: boolean
+          default: false
+          description: |
+            Issue a 10-minute `pairing_code` instead of an `ens_`
+            enrollment secret (docs/31).
       required: [agent_id, label]
 
     AgentCredentialResponse:
@@ -1597,7 +1653,13 @@ components:
           description: |
             One-time activation secret (prefix `ens_`). Returned exactly
             once from `POST /agent-credentials` (and from
-            `POST /agent-credentials/{id}/rotate`). Null everywhere else.
+            `POST /agent-credentials/{id}/rotate`). Null everywhere else,
+            and null when the credential was created with `pairing: true`.
+        pairing_code:
+          type: string
+          description: |
+            `XXXXX-XXXXX`. Present only in the response to
+            `POST /agent-credentials` with `pairing: true`.
         enrollment_expires_at:
           type: [string, 'null']
           format: date-time
@@ -1646,7 +1708,9 @@ components:
       properties:
         enrollment_secret:
           type: string
-          description: One-time secret returned from credential creation.
+          description: |
+            One-time secret returned from credential creation: the `ens_`
+            secret, or the pairing code (accepted as typed).
         signing_public_key:
           type: string
           description: Ed25519 public key (multibase encoded).
@@ -1664,6 +1728,13 @@ components:
           description: |
             Hint about where the private key lives. Unrecognised values
             are stored as `unknown`.
+        device_label:
+          type: string
+          description: |
+            Name of the activating machine (its hostname). When given,
+            it becomes the credential's label so the person can tell
+            which device connected. Control characters are dropped and
+            it is cut to 64 bytes.
       required:
         - enrollment_secret
         - signing_public_key

@@ -144,3 +144,39 @@ async fn csrf_allows_get_without_origin() {
     assert_eq!(response.status(), StatusCode::OK);
     restore_csrf_bypass();
 }
+
+/// The daemon calls these without a browser, so without an Origin. They use
+/// no cookie, so there is nothing for a cross-site request to borrow.
+#[tokio::test]
+#[serial]
+async fn csrf_lets_cookie_less_daemon_endpoints_through() {
+    let app = setup_app_with_csrf_enabled();
+    // A malformed code is refused by the handler itself, not by the check.
+    let resolve = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/agent-pairing/resolve")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"pairing_code":"x"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let activate = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/agent-credentials/00000000-0000-4000-8000-000000000000/activate")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    restore_csrf_bypass();
+
+    assert_eq!(resolve.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_ne!(activate.status(), StatusCode::FORBIDDEN);
+}

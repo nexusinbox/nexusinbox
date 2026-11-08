@@ -190,7 +190,7 @@ const settingsItems: MailboxItem[] = [
     )
   },
   {
-    href: "/settings/agents/new",
+    href: "/onboarding",
     labelKey: "nav.createAgent",
     countKey: null,
     icon: (

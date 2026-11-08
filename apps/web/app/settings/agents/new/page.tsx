@@ -3,15 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppShell } from "../../../_components/AppShell";
+import { createAgentWithLocalKeys } from "../../../../lib/agents/create-agent";
 import { useCreateAgentMutation } from "../../../../lib/api/hooks";
-import {
-  generateX25519KeyPairMaterial,
-  saveRecipientPrivateKey,
-} from "../../../../lib/crypto/recipient-keyring";
-import {
-  generateEd25519SigningKeyPairMaterial,
-  saveSigningPrivateKey,
-} from "../../../../lib/crypto/signing-keyring";
 import { useTranslation } from "../../../../lib/i18n";
 
 type Banner = { tone: "info" | "error" | "success"; text: string } | null;
@@ -31,15 +24,7 @@ export default function CreateAgentPage() {
     }
     setBanner({ tone: "info", text: t("agentCreate.bannerCreating") });
     try {
-      const signingKeyPair = await generateEd25519SigningKeyPairMaterial();
-      const encryptionKeyPair = await generateX25519KeyPairMaterial();
-      const created = await createAgent.mutateAsync({
-        label: trimmed,
-        public_key: signingKeyPair.publicKey,
-        encryption_key: encryptionKeyPair.publicKey,
-      });
-      saveSigningPrivateKey(created.did, signingKeyPair.privateKey);
-      saveRecipientPrivateKey(created.did, encryptionKeyPair.privateKey);
+      await createAgentWithLocalKeys(trimmed, createAgent.mutateAsync);
       setBanner({ tone: "success", text: t("agentCreate.bannerCreated") });
       setLabel("");
       // Give the user a beat to see the success banner before navigating.

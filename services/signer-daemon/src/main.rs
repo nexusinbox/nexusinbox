@@ -132,6 +132,15 @@ struct Cli {
     #[arg(long)]
     enroll: bool,
 
+    /// Connect this machine to an agent with the pairing code the web UI
+    /// shows (docs/31), then exit: look the code up, generate both keys in
+    /// a new directory under ~/.nexusinbox (or --dir), activate the
+    /// credential and write `agent.env`. The directory is printed on
+    /// stdout. Unlike an enrollment secret the code may be on the command
+    /// line: it works once and expires 10 minutes after it was shown.
+    #[arg(long, value_name = "CODE", conflicts_with = "enroll")]
+    connect: Option<String>,
+
     /// With --enroll: keep everything for this agent in one directory
     /// (created with mode 0700 if missing): the two key files and
     /// `agent.env`, the settings `scripts/run_noninteractive_stack.sh start
@@ -296,10 +305,16 @@ fn derive_kek(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     output
 }
 
-/// Read passphrase from stdin (no echo).
+/// Read passphrase from stdin (no echo). The prompt is shown only to
+/// someone typing: when a script pipes the passphrase in (the stack
+/// script's `connect` and `start`), a prompt after the fact would read as
+/// a second question.
 fn read_passphrase(prompt: &str) -> String {
-    eprint!("{}", prompt);
-    std::io::stderr().flush().ok();
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        eprint!("{}", prompt);
+        std::io::stderr().flush().ok();
+    }
     rpassword_fallback()
 }
 
@@ -1098,7 +1113,7 @@ fn agent_env_contents(
     encryption_key_file: &Path,
 ) -> String {
     format!(
-        "# Written by nexusinbox-signer --enroll. Read by scripts/run_noninteractive_stack.sh.\n\
+        "# Written by nexusinbox-signer --enroll or --connect. Read by scripts/run_noninteractive_stack.sh.\n\
          AGENT_INBOX_API_URL={api_url}\n\
          AGENT_INBOX_AID={aid}\n\
          AGENT_INBOX_CREDENTIAL_ID={credential_id}\n\
@@ -1188,50 +1203,33 @@ async fn run_enroll(cli: &Cli) -> i32 {
         return 2;
     }
 
-    let passphrase = prompt_new_passphrase(cli.unsafe_plaintext_key);
-    let signing_key = generate_and_save_key(&key_file, passphrase.as_deref(), cli.force);
-    let encryption_secret =
-        generate_and_save_encryption_secret(encryption_key_file, passphrase.as_deref(), cli.force);
-
-    let body = serde_json::json!({
-        "enrollment_secret": enrollment_secret,
-        "signing_public_key": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
-        "encryption_public_key":
-            URL_SAFE_NO_PAD.encode(X25519PublicKey::from(&encryption_secret).as_bytes()),
-        "enrollment_proof": build_enrollment_proof(&signing_key, credential_id, Utc::now().timestamp()),
-        "key_holder": "signer_daemon",
-    });
-    let url = format!(
-        "{}/agent-credentials/{}/activate",
-        cli.api_url.trim_end_matches('/'),
-        credential_id
-    );
-    let response = match reqwest::Client::new().post(&url).json(&body).send().await {
-        Ok(response) => response,
-        Err(e) => {
+    let (aid, did) = match activate_with_new_keys(
+        cli,
+        credential_id,
+        &enrollment_secret,
+        &key_file,
+        encryption_key_file,
+        None,
+    )
+    .await
+    {
+        Ok(activated) => activated,
+        Err(Refused::Unreachable(e)) => {
             eprintln!("[ERROR] activation request failed: {e}");
             eprintln!(
                 "[ERROR] The keys were written. Rerun with --force once the API is reachable."
             );
             return 1;
         }
+        Err(Refused::Rejected(status, message)) => {
+            eprintln!("[ERROR] activation was refused ({status}): {message}");
+            eprintln!(
+                "[ERROR] The keys were written but are not enrolled. Fix the cause above and rerun with --force; if the credential has expired, create a new one in the web UI."
+            );
+            return 1;
+        }
     };
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        let message = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
-            .unwrap_or_else(|| text.chars().take(200).collect());
-        eprintln!("[ERROR] activation was refused ({status}): {message}");
-        eprintln!(
-            "[ERROR] The keys were written but are not enrolled. Fix the cause above and rerun with --force; if the credential has expired, create a new one in the web UI."
-        );
-        return 1;
-    }
-    let activated: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-    let aid = activated["aid"].as_str().unwrap_or("?");
-    let did = activated["did"].as_str().unwrap_or("?");
+    let (aid, did) = (aid.as_str(), did.as_str());
     eprintln!("[INFO] Enrolled.");
     eprintln!("[INFO]   AID:           {aid}");
     eprintln!("[INFO]   DID:           {did}");
@@ -1266,15 +1264,323 @@ async fn run_enroll(cli: &Cli) -> i32 {
     0
 }
 
+/// Why an activation did not happen.
+enum Refused {
+    /// The API could not be reached.
+    Unreachable(String),
+    /// The API answered with an error: status and message.
+    Rejected(reqwest::StatusCode, String),
+}
+
+/// Ask for a new passphrase, write both keys with it, and register their
+/// public halves with the credential. Returns the agent's AID and the new
+/// DID. The key files are written before the request, so on an error they
+/// exist but are not enrolled.
+async fn activate_with_new_keys(
+    cli: &Cli,
+    credential_id: &str,
+    enrollment_secret: &str,
+    key_file: &Path,
+    encryption_key_file: &Path,
+    device_label: Option<&str>,
+) -> Result<(String, String), Refused> {
+    let passphrase = prompt_new_passphrase(cli.unsafe_plaintext_key);
+    let signing_key = generate_and_save_key(key_file, passphrase.as_deref(), cli.force);
+    let encryption_secret =
+        generate_and_save_encryption_secret(encryption_key_file, passphrase.as_deref(), cli.force);
+
+    let mut body = serde_json::json!({
+        "enrollment_secret": enrollment_secret,
+        "signing_public_key": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
+        "encryption_public_key":
+            URL_SAFE_NO_PAD.encode(X25519PublicKey::from(&encryption_secret).as_bytes()),
+        "enrollment_proof": build_enrollment_proof(&signing_key, credential_id, Utc::now().timestamp()),
+        "key_holder": "signer_daemon",
+    });
+    if let Some(label) = device_label {
+        body["device_label"] = serde_json::json!(label);
+    }
+    let url = format!(
+        "{}/agent-credentials/{}/activate",
+        cli.api_url.trim_end_matches('/'),
+        credential_id
+    );
+    let (status, text) = post_json(&url, &body).await.map_err(Refused::Unreachable)?;
+    if !status.is_success() {
+        return Err(Refused::Rejected(status, error_message(&text)));
+    }
+    let activated: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    Ok((
+        activated["aid"].as_str().unwrap_or("?").to_string(),
+        activated["did"].as_str().unwrap_or("?").to_string(),
+    ))
+}
+
+async fn post_json(
+    url: &str,
+    body: &serde_json::Value,
+) -> Result<(reqwest::StatusCode, String), String> {
+    let response = reqwest::Client::new()
+        .post(url)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    Ok((status, response.text().await.unwrap_or_default()))
+}
+
+/// The `message` of an API error body, or the start of the body.
+fn error_message(text: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+        .unwrap_or_else(|| text.chars().take(200).collect())
+}
+
+/// Pairing codes as the API issues them: Crockford base32, 10 symbols,
+/// shown as `XXXXX-XXXXX`. Accept them as typed — any case, with dashes or
+/// spaces, O for 0 and I or L for 1 — the way the API does.
+const PAIRING_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+fn normalize_pairing_code(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(10);
+    for c in raw.chars() {
+        if c == '-' || c.is_whitespace() {
+            continue;
+        }
+        if !c.is_ascii() {
+            return None;
+        }
+        let c = match c.to_ascii_uppercase() {
+            'O' => '0',
+            'I' | 'L' => '1',
+            other => other,
+        };
+        if !PAIRING_ALPHABET.contains(&(c as u8)) {
+            return None;
+        }
+        out.push(c);
+    }
+    (out.len() == 10).then_some(out)
+}
+
+/// The directory under ~/.nexusinbox for an agent, named after it the way
+/// the web UI names it (apps/web/lib/agents/enroll-command.ts): lowercase
+/// letters, digits and dashes, at most 32 characters, else `agent-` and
+/// the end of the AID.
+fn agent_dir_name(label: &str, aid: &str) -> String {
+    let mut slug = String::new();
+    for c in label.to_lowercase().chars() {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            slug.push(c);
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug: String = slug.trim_matches('-').chars().take(32).collect();
+    let slug = slug.trim_end_matches('-');
+    if !slug.is_empty() {
+        return slug.to_string();
+    }
+    let tail: Vec<char> = aid
+        .trim_start_matches("aid:ai:")
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    let tail: String = tail[tail.len().saturating_sub(8)..].iter().collect();
+    format!("agent-{}", tail.to_lowercase())
+}
+
+/// The first of `<name>`, `<name>-2`, … under `base` that holds no agent
+/// yet, so connecting never touches another agent's keys.
+fn free_agent_dir(base: &Path, name: &str) -> Option<PathBuf> {
+    (1..100)
+        .map(|n| match n {
+            1 => base.join(name),
+            n => base.join(format!("{name}-{n}")),
+        })
+        .find(|dir| {
+            [DIR_SIGNING_KEY, DIR_ENCRYPTION_KEY, DIR_AGENT_ENV]
+                .iter()
+                .all(|file| !dir.join(file).exists())
+        })
+}
+
+/// What the credential is labelled with once this machine connects: the
+/// kind of system only. The hostname is not sent; it often carries the
+/// person's name, and the service keeps as little as it can.
+fn device_label() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS",
+        "linux" => "Linux",
+        "windows" => "Windows",
+        other => other,
+    }
+}
+
+/// `--connect <code>`: see the flag. Returns the process exit code.
+async fn run_connect(cli: &Cli, raw_code: &str) -> i32 {
+    let Some(code) = normalize_pairing_code(raw_code) else {
+        eprintln!("[ERROR] A pairing code is 10 letters and digits, like 7KQ4P-ZX9M2.");
+        return 2;
+    };
+    let api_url = cli.api_url.trim_end_matches('/');
+    let (status, text) = match post_json(
+        &format!("{api_url}/agent-pairing/resolve"),
+        &serde_json::json!({ "pairing_code": code }),
+    )
+    .await
+    {
+        Ok(answer) => answer,
+        Err(e) => {
+            eprintln!("[ERROR] Could not reach {api_url}: {e}");
+            return 1;
+        }
+    };
+    match status {
+        s if s.is_success() => {}
+        reqwest::StatusCode::NOT_FOUND => {
+            eprintln!("[ERROR] This pairing code is not valid any more: codes work once, for 10 minutes. Show a new one in the web UI and run the command again.");
+            return 1;
+        }
+        reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            eprintln!(
+                "[ERROR] Too many attempts from this network. Wait 10 minutes and try again."
+            );
+            return 1;
+        }
+        s => {
+            eprintln!(
+                "[ERROR] The pairing code was refused ({s}): {}",
+                error_message(&text)
+            );
+            return 1;
+        }
+    }
+    let found: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let (Some(credential_id), Some(aid), Some(agent_label)) = (
+        found["credential_id"]
+            .as_str()
+            .filter(|id| uuid::Uuid::parse_str(id).is_ok()),
+        found["aid"].as_str(),
+        found["agent_label"].as_str(),
+    ) else {
+        eprintln!("[ERROR] Unexpected answer from {api_url}");
+        return 1;
+    };
+
+    let dir = match cli.dir.clone() {
+        Some(dir) => dir,
+        None => {
+            let Some(home) = std::env::var_os("HOME") else {
+                eprintln!("[ERROR] HOME is not set; pass --dir.");
+                return 2;
+            };
+            let base = PathBuf::from(home).join(".nexusinbox");
+            if let Err(e) = ensure_agent_dir(&base) {
+                eprintln!("[ERROR] Cannot create {}: {e}", base.display());
+                return 2;
+            }
+            match free_agent_dir(&base, &agent_dir_name(agent_label, aid)) {
+                Some(dir) => dir,
+                None => {
+                    eprintln!(
+                        "[ERROR] No free directory for this agent under {}; pass --dir.",
+                        base.display()
+                    );
+                    return 2;
+                }
+            }
+        }
+    };
+    let created_dir = !dir.exists();
+    if let Err(e) = ensure_agent_dir(&dir) {
+        eprintln!("[ERROR] Cannot create {}: {e}", dir.display());
+        return 2;
+    }
+    let dir = match std::fs::canonicalize(&dir) {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("[ERROR] Cannot use {}: {e}", dir.display());
+            return 2;
+        }
+    };
+    let key_file = dir.join(DIR_SIGNING_KEY);
+    let encryption_key_file = dir.join(DIR_ENCRYPTION_KEY);
+    if !cli.force {
+        for path in [&key_file, &encryption_key_file] {
+            if path.exists() {
+                eprintln!(
+                    "[ERROR] {} already holds an agent's keys. Choose another --dir.",
+                    dir.display()
+                );
+                return 2;
+            }
+        }
+    }
+
+    eprintln!("[INFO] Connecting this machine to \"{agent_label}\".");
+    let refused = match activate_with_new_keys(
+        cli,
+        credential_id,
+        &code,
+        &key_file,
+        &encryption_key_file,
+        Some(device_label()),
+    )
+    .await
+    {
+        Ok((activated_aid, _)) => {
+            let contents = agent_env_contents(
+                api_url,
+                &activated_aid,
+                credential_id,
+                &key_file,
+                &encryption_key_file,
+            );
+            let env_path = dir.join(DIR_AGENT_ENV);
+            if let Err(e) = write_key_file_0600(&env_path, contents.as_bytes(), true) {
+                eprintln!(
+                    "[ERROR] Connected, but could not write {}: {e}",
+                    env_path.display()
+                );
+                return 1;
+            }
+            eprintln!(
+                "[INFO] Connected. The keys and settings are in {}.",
+                dir.display()
+            );
+            println!("{}", dir.display());
+            return 0;
+        }
+        Err(Refused::Unreachable(e)) => format!("could not reach {api_url}: {e}"),
+        Err(Refused::Rejected(status, message)) => format!("refused ({status}): {message}"),
+    };
+    // Keys that were never enrolled are no use to anyone: remove them, so
+    // the next attempt starts from the same, empty directory.
+    let _ = std::fs::remove_file(&key_file);
+    let _ = std::fs::remove_file(&encryption_key_file);
+    if created_dir {
+        let _ = std::fs::remove_dir(&dir);
+    }
+    eprintln!("[ERROR] Connecting failed: {refused}");
+    eprintln!("[ERROR] Nothing was kept. Show a new code in the web UI and run the command again.");
+    1
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
+    if let Some(code) = cli.connect.as_deref() {
+        std::process::exit(run_connect(&cli, code).await);
+    }
     if cli.enroll {
         std::process::exit(run_enroll(&cli).await);
     }
     if cli.dir.is_some() {
-        eprintln!("[ERROR] --dir is for --enroll; to run, use scripts/run_noninteractive_stack.sh start <dir>");
+        eprintln!("[ERROR] --dir is for --enroll and --connect; to run, use scripts/run_noninteractive_stack.sh start <dir>");
         std::process::exit(2);
     }
 
@@ -1974,6 +2280,78 @@ mod tests {
                 "AGENT_INBOX_MODE_A_EXECUTOR=on",
             ]
         );
+    }
+
+    #[test]
+    fn pairing_codes_are_read_as_typed() {
+        assert_eq!(
+            normalize_pairing_code("7kq4p-zx9m2").as_deref(),
+            Some("7KQ4PZX9M2")
+        );
+        assert_eq!(
+            normalize_pairing_code(" 7KQ4P ZX9M2 ").as_deref(),
+            Some("7KQ4PZX9M2")
+        );
+        assert_eq!(
+            normalize_pairing_code("OIL00-11111").as_deref(),
+            Some("0110011111")
+        );
+        for bad in [
+            "",
+            "7KQ4P-ZX9M",
+            "7KQ4P-ZX9M22",
+            "7KQ4P-ZX9MU",
+            "ens_abcdefghij",
+        ] {
+            assert_eq!(normalize_pairing_code(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn agent_directories_are_named_like_the_web_names_them() {
+        // The same cases as apps/web/lib/agents/enroll-command.test.ts.
+        assert_eq!(
+            agent_dir_name("enroll-test", "aid:ai:01M6W9J3TAQPHX7R3W591MMFYF"),
+            "enroll-test"
+        );
+        assert_eq!(
+            agent_dir_name("  First Secretary!  ", "aid:ai:X"),
+            "first-secretary"
+        );
+        assert_eq!(
+            agent_dir_name(&format!("{}-b", "a".repeat(40)), "aid:ai:X"),
+            "a".repeat(32)
+        );
+        assert_eq!(
+            agent_dir_name("秘書", "aid:ai:01M6W9J3TAQPHX7R3W591MMFYF"),
+            "agent-591mmfyf"
+        );
+        // Whatever the server sends, the name stays inside the base.
+        assert_eq!(agent_dir_name("../..", "aid:ai:../../x"), "agent-x");
+    }
+
+    #[test]
+    fn connecting_never_reuses_a_directory_that_holds_an_agent() {
+        let base =
+            std::env::temp_dir().join(format!("nexusinbox-signer-dirtest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        assert_eq!(
+            free_agent_dir(base.as_path(), "secretary").unwrap(),
+            base.as_path().join("secretary")
+        );
+        // An empty directory, or one with only run/, is free.
+        std::fs::create_dir_all(base.as_path().join("secretary/run")).unwrap();
+        assert_eq!(
+            free_agent_dir(base.as_path(), "secretary").unwrap(),
+            base.as_path().join("secretary")
+        );
+        std::fs::write(base.as_path().join("secretary").join(DIR_AGENT_ENV), "").unwrap();
+        assert_eq!(
+            free_agent_dir(base.as_path(), "secretary").unwrap(),
+            base.as_path().join("secretary-2")
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
