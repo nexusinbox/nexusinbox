@@ -8,7 +8,16 @@ const isDev = process.env.NODE_ENV !== "production";
 // for the script-src directive (required for an E2E-encrypted app where
 // XSS could exfiltrate plaintext at decryption time).
 
+// Which build this is. Open tabs compare theirs with the server's to tell
+// the person a new version is out (app/_components/NewVersionNotice.tsx).
+// It must be the same in every build worker, so it comes from the
+// environment: the deployed commit on Vercel; empty, and the notice off,
+// elsewhere unless set.
+const appVersion =
+  process.env.NEXT_PUBLIC_APP_VERSION || process.env.VERCEL_GIT_COMMIT_SHA || "";
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_APP_VERSION: appVersion },
   allowedDevOrigins: ["https://app.nexusinbox.ai"],
   async rewrites() {
     const apiOrigin = process.env.API_ORIGIN ?? (isDev ? "http://localhost:8080" : "");

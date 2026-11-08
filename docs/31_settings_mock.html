@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>エージェント設定の整理（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --warn: #8a5a00; --danger: #b3261e; --danger-soft: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .views { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .views button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .page { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 640px) { .page { grid-template-columns: 1fr; } }
+  .list { display: grid; gap: 8px; align-content: start; }
+  .newbtn { font: inherit; font-size: 13px; font-weight: 600; border: 0; border-radius: 999px; padding: 7px 14px; background: var(--accent); color: #fff; cursor: pointer; justify-self: start; }
+  .agent { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+  .agent.sel { border: 1.5px solid var(--accent); background: var(--accent-soft); }
+  .agent b { display: block; font-size: 14px; }
+  .muted { color: var(--muted); }
+  .did { color: var(--muted); font-size: 11px; word-break: break-all; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dot.ok { background: #16a34a; } .dot.off { background: #9ca3af; }
+
+  .detail { display: grid; gap: 12px; align-content: start; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .head h2 { margin: 0; font-size: 20px; }
+  .ghost { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .status { border: 1.5px solid var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-of-type { border-top: 0; }
+  .row .k { flex: 0 0 7.5em; color: var(--muted); font-size: 13px; }
+  .row .v { flex: 1 1 16em; min-width: 0; }
+  .addr { display: flex; align-items: center; gap: 8px; background: #f8fafd; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .addr code { flex: 1 1 0; width: 0; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .addr button, .linkbtn { font: 12px system-ui; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .gone { text-decoration: line-through; color: var(--muted); }
+
+  details.more { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  details.more > summary { cursor: pointer; padding: 14px 18px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; }
+  details.more > summary::after { content: "開く ▾"; color: var(--accent); font-weight: 400; font-size: 13px; }
+  details.more[open] > summary::after { content: "閉じる ▴"; }
+  details.more .inner { padding: 0 18px 14px; display: grid; gap: 10px; }
+  .sub { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .sub b { display: block; font-size: 14px; }
+
+  .danger { border: 1px solid #f3c7c3; background: var(--danger-soft); }
+  .danger h3 { color: var(--danger); }
+  .dbtn { font: inherit; font-size: 13px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 999px; padding: 5px 12px; cursor: pointer; margin-right: 6px; margin-top: 6px; }
+
+  /* "Today" view */
+  .today .sec { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; font-size: 13px; }
+  .today .sec b { display: block; font-size: 14px; }
+
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>エージェント設定の整理（画面案）</h1>
+    <p class="lead">エージェント設定を「よく使うもの」と「詳細」に分ける案です（docs/31 §4 の 4）。上のボタンで、今の画面と比べられます。</p>
+
+    <div class="views">
+      <button class="on" data-view="after">整理後</button>
+      <button data-view="before">今の画面（並び）</button>
+    </div>
+
+    <!-- After -->
+    <div class="page" data-show="after">
+      <div class="list">
+        <button class="newbtn">＋ 新規エージェント</button>
+        <div class="agent sel">
+          <b>秘書</b>
+          <span class="muted"><span class="dot ok"></span>パソコンで動作中</span><br>
+          <span class="muted">未読 2</span>
+        </div>
+        <div class="agent">
+          <b>経理アシスタント</b>
+          <span class="muted"><span class="dot off"></span>このブラウザ</span><br>
+          <span class="muted">未読 0</span>
+        </div>
+      </div>
+
+      <div class="detail">
+        <div class="head">
+          <h2>秘書</h2>
+          <button class="ghost">名前を編集</button>
+        </div>
+
+        <section class="card status">
+          <h3>いまの状態</h3>
+          <div class="row"><div class="k">動いている場所</div><div class="v"><span class="dot ok"></span><b>パソコン（macOS）</b> つながっています <span class="muted">· 20 秒前に確認</span></div></div>
+          <div class="row"><div class="k">自動返信</div><div class="v"><b>日程調整は、自動で承諾する</b> <a class="muted" style="color: var(--accent); font-size: 13px;">変更</a></div></div>
+          <div class="row"><div class="k">最近の対応</div><div class="v">11/8 11:34　接続テスト からの依頼に、承諾の返事を送りました</div></div>
+        </section>
+
+        <section class="card">
+          <h3>相手に伝えるアドレス <span class="tag">NEW</span></h3>
+          <p class="muted" style="margin: 0 0 8px; font-size: 13px;">このアドレスを相手に伝えると、このエージェント宛てにメッセージが届きます。鍵を作り直しても変わりません。</p>
+          <div class="addr"><code>aid:ai:01M6WFYRJXK12W1GJJF59PQ6Z0</code><button>コピー</button></div>
+          <div style="margin-top: 10px;"><button class="linkbtn">受信箱を開く</button></div>
+        </section>
+
+        <details class="more">
+          <summary>詳細（技術的な情報と細かい設定）</summary>
+          <div class="inner">
+            <div class="sub"><b>技術情報</b>エージェント ID・現在の DID（コピー）・作成日・ステータス</div>
+            <div class="sub"><b>動作モードと鍵の所在</b>Interactive / Autonomous、鍵がこの端末・パソコン（Signer Daemon）・AI ツールのどこにあるか</div>
+            <div class="sub"><b>Signer Daemon Bridge</b>（ADVANCED）ブラウザから 1 通だけ本文を復元するためのペアリング</div>
+            <div class="sub"><b>自動返信の細かい設定</b>自動返信のスイッチ、自動応答ポリシー（条件・プロトコル別の上書き）、判定履歴。<br>「優先度の高いメッセージは、設定にかかわらず承認待ちに入ります」と 1 行添える</div>
+            <div class="sub"><b>API クレデンシャル</b>MCP・AI ツール向けの登録、一覧、失効</div>
+          </div>
+        </details>
+
+        <section class="card danger">
+          <h3>危険な操作</h3>
+          <p class="muted" style="margin: 0; font-size: 13px;">緊急停止: このエージェントのすべての接続（パソコン・AI ツール）を即座に止めます。</p>
+          <button class="dbtn">緊急停止</button><button class="dbtn">エージェントを削除</button>
+        </section>
+      </div>
+    </div>
+
+    <!-- Before -->
+    <div class="page" data-show="before" hidden>
+      <div class="list">
+        <button class="newbtn">＋ 新規エージェント</button>
+        <div class="agent sel">
+          <b>秘書</b>
+          <span class="did">did:key:z6MkjPFUhuvwhvWg6cJBbrTEUmoGzajCP6VCHdmWzVQdCZ9y</span><br>
+          <span class="muted"><span class="dot ok"></span>パソコンで動作中</span><br>
+          <span class="muted">未読 2 · 自動返信: ON</span>
+        </div>
+      </div>
+      <div class="detail today">
+        <div class="head"><h2>秘書</h2><button class="ghost">名前を編集</button></div>
+        <div class="sec"><b>見出しの下</b>aid:ai:01M6WF… / did:key:z6Mk…（2 行）</div>
+        <div class="sec"><b>いまの状態</b>（今日追加）</div>
+        <div class="sec"><b>概要</b>エージェント ID・DID（コピー）、未読、作成日、ステータス</div>
+        <div class="sec"><b>モード</b>Interactive / Autonomous / Default の説明</div>
+        <div class="sec"><b>鍵の所在（この端末から見た状態）</b>ブラウザの keystore / Signer Daemon（Bridge）/ AI runtime の keystore</div>
+        <div class="sec"><b>SIGNER DAEMON BRIDGE（ADVANCED · DEV）</b>ペアリングコード、Device label、Bridge URL…</div>
+        <div class="sec"><b>自動返信</b>「信頼度の高い送信者に自動で返信します」＋ 有効にする / 無効にする</div>
+        <div class="sec"><b>自動応答ポリシー</b>デフォルトアクション、プロトコル別の上書き…</div>
+        <div class="sec"><b>Auto-reply の判定履歴</b></div>
+        <div class="sec"><b>動作ルール</b><span class="gone">信頼度 70% 未満の送信者には自動返信が無効になります。</span>（実装にない）</div>
+        <div class="sec"><b>API クレデンシャル</b></div>
+        <div class="sec"><b>危険な操作</b>緊急遮断、削除</div>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>変わるところ</h3>
+      <ul>
+        <li>見える場所に残すのは「いまの状態」「相手に伝えるアドレス」「危険な操作」だけ</li>
+        <li>技術的な欄（ID・DID・モード・鍵の所在・Bridge・ポリシー・クレデンシャル）は「詳細」にまとめ、最初は閉じておく</li>
+        <li>左の一覧から DID を外し、名前・状態・未読だけにする</li>
+        <li>「＋ 新規エージェント」は、はじめての設定（ガイド）を開く</li>
+        <li>見出しの下の AID・DID の 2 行は外す（アドレスの欄と「詳細」にある）</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>文言を直すところ</h3>
+      <ul>
+        <li>「動作ルール」欄は消す。「信頼度 70% 未満は自動返信しない」という決まりは実装になく、信頼度の条件はポリシーで指定したときだけ効く</li>
+        <li>「優先度の高いメッセージは常に承認待ち」は正しいので、自動返信の詳細に 1 行で残す</li>
+        <li>自動返信の説明「信頼度の高い送信者に自動で返信します」も同じ理由で、「選んだ設定に沿って、届いた依頼に自動で返事をします」にする</li>
+        <li>「緊急遮断」は「緊急停止」にし、何が止まるか（パソコン・AI ツールの接続）を書く</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと（推奨）</h3>
+      <ol>
+        <li>「詳細」は最初は閉じておき、開いたかどうかはこの端末で覚える（推奨）</li>
+        <li>危険な操作は「詳細」に入れず、一番下に常に出す。いざというときにすぐ押せるように（推奨）</li>
+        <li>「動作ルール」欄は消し、正しい 1 行だけ自動返信の詳細に残す（推奨）</li>
+        <li>「＋ 新規エージェント」もガイドを開く。今の名前だけの作成画面は残すが、どこからもリンクしない（推奨）</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.views button');
+  function show(view) {
+    buttons.forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+    document.querySelectorAll('[data-show]').forEach((el) => { el.hidden = el.dataset.show !== view; });
+  }
+  buttons.forEach((b) => b.addEventListener('click', () => show(b.dataset.view)));
+</script>
+</body>
+</html>

@@ -26,6 +26,7 @@ export default defineConfig({
     : {
         command: `pnpm exec next dev -p ${port}`,
         url: localBaseUrl,
+        env: { NEXT_PUBLIC_APP_VERSION: "e2e-build" },
         reuseExistingServer: true,
         timeout: 120_000,
       },

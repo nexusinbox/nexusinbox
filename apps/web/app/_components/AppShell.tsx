@@ -13,6 +13,7 @@ import { AppBackdrop } from "./AppBackdrop";
 import { AuthLogoutButton } from "./AuthLogoutButton";
 import { AuthSessionStatus } from "./AuthSessionStatus";
 import { DisplayNamePrompt } from "./DisplayNamePrompt";
+import { NewVersionNotice } from "./NewVersionNotice";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Logo } from "./Logo";
 import { RealtimeSubscriber } from "./RealtimeSubscriber";
@@ -350,6 +351,7 @@ export function AppShell({
           in AppBackdrop.tsx + globals.css (.ai-app-*). */}
       <AppBackdrop />
       <DisplayNamePrompt />
+      <NewVersionNotice />
       {/* Mobile drawer backdrop. Renders only when open; clicking it
           dismisses the drawer. CSS hides it on desktop. */}
       {mobileNavOpen ? (

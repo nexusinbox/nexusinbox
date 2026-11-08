@@ -6,6 +6,7 @@ import { AppShell } from "../../_components/AppShell";
 import { RefreshIconButton } from "../../_components/RefreshIconButton";
 import { AutoReplyPolicyPanel } from "../../_components/AutoReplyPolicyPanel";
 import { AgentStatusCard, AgentStatusLine, useNow } from "../../_components/AgentStatusCard";
+import { CommandLine } from "../../_components/AgentSetup";
 import {
   useAgentCredentialsQuery,
   useAgentsQuery,
@@ -45,6 +46,8 @@ import {
   daemonEnrollCommand,
   daemonStartCommand,
 } from "../../../lib/agents/enroll-command";
+
+const DETAILS_OPEN_KEY = "nexusinbox-agent-details-open";
 
 type Banner = { tone: "info" | "error" | "success"; text: string } | null;
 type CreatedCredentialNotice = {
@@ -1361,6 +1364,16 @@ export default function AgentsSettingsPage() {
   const deleteAgent = useDeleteAgentMutation();
   const credentialsQuery = useAgentCredentialsQuery();
   const now = useNow(15_000);
+  // The details start closed; whether they were left open is remembered
+  // on this device.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => {
+    try {
+      setDetailsOpen(window.localStorage.getItem(DETAILS_OPEN_KEY) === "1");
+    } catch {
+      // Storage unavailable: start closed.
+    }
+  }, []);
   const createCredential = useCreateAgentCredentialMutation();
   const revokeCredential = useRevokeAgentCredentialMutation();
   const purgeCredential = usePurgeAgentCredentialMutation();
@@ -1501,7 +1514,7 @@ export default function AgentsSettingsPage() {
           switcher bar on /agent/{did} so create/refresh affordances stay in
           a consistent location across settings screens. */}
       <section className="agent-switcher-bar">
-        <Link className="btn primary" href="/settings/agents/new">
+        <Link className="btn primary" href="/onboarding">
           {t("agents.newAgent")}
         </Link>
       </section>
@@ -1524,9 +1537,6 @@ export default function AgentsSettingsPage() {
                   onClick={() => setActiveDid(agent.did)}
                 >
                   <p className="card-title">{agent.label}</p>
-                  <p className="card-sub" style={{ wordBreak: "break-all" }}>
-                    {agent.did}
-                  </p>
                   <AgentStatusLine
                     aid={agent.aid}
                     credentials={credentialsQuery.data?.credentials ?? []}
@@ -1534,9 +1544,6 @@ export default function AgentsSettingsPage() {
                   />
                   <p className="card-meta">
                     <span>{t("agents.unread", { count: agent.unread_count })}</span>
-                    <span>
-                      {agent.auto_reply ? t("agents.autoReplyOn") : t("agents.autoReplyOff")}
-                    </span>
                   </p>
                 </article>
               );
@@ -1571,25 +1578,6 @@ export default function AgentsSettingsPage() {
                     ) : (
                       <h2 className="reader-subject">{activeAgent.label}</h2>
                     )}
-                    {activeAgent.aid ? (
-                      <p
-                        className="reader-meta"
-                        style={{ wordBreak: "break-all", marginTop: 6 }}
-                      >
-                        {activeAgent.aid}
-                      </p>
-                    ) : null}
-                    <p
-                      className="reader-meta"
-                      style={{
-                        wordBreak: "break-all",
-                        marginTop: 4,
-                        fontSize: 11,
-                        opacity: 0.7,
-                      }}
-                    >
-                      {activeAgent.did}
-                    </p>
                   </div>
                   <div className="row" style={{ gap: 8, flexShrink: 0 }}>
                     {isEditing ? (
@@ -1640,7 +1628,49 @@ export default function AgentsSettingsPage() {
 
                 <AgentStatusCard agent={activeAgent} />
 
-                <div className="panel">
+                <div className="panel" data-testid="agent-address">
+                  <p style={{ margin: 0, fontWeight: 600 }}>{t("agents.addressTitle")}</p>
+                  <p className="item-sub" style={{ marginTop: 4 }}>
+                    {t("agents.addressDesc")}
+                  </p>
+                  <CommandLine command={activeAgent.aid || activeAgent.did} testId="agent-address-value" />
+                  <Link
+                    className="btn"
+                    href={`/agent/${encodeURIComponent(activeAgent.did)}`}
+                    style={{ display: "inline-block", marginTop: 10 }}
+                  >
+                    {t("agents.openInbox")}
+                  </Link>
+                </div>
+
+                <details
+                  open={detailsOpen}
+                  onToggle={(event) => {
+                    const open = event.currentTarget.open;
+                    setDetailsOpen(open);
+                    try {
+                      window.localStorage.setItem(DETAILS_OPEN_KEY, open ? "1" : "0");
+                    } catch {
+                      // Private mode: it just will not be remembered.
+                    }
+                  }}
+                  style={{ marginTop: 12 }}
+                  data-testid="agent-details"
+                >
+                  <summary
+                    style={{
+                      cursor: "pointer",
+                      padding: "12px 16px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 12,
+                      background: "var(--surface)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {t("agents.detailsTitle")}
+                  </summary>
+
+                <div className="panel" style={{ marginTop: 10 }}>
                   <p className="item-title">{t("agents.overviewTitle")}</p>
                   {activeAgent.aid ? (
                     <div style={{ marginTop: 6 }}>
@@ -1727,6 +1757,9 @@ export default function AgentsSettingsPage() {
                       <p className="item-sub" style={{ marginTop: 4 }}>
                         {t("agents.autoReplyDesc")}
                       </p>
+                      <p className="item-sub" style={{ marginTop: 4 }}>
+                        {t("agents.approvalQueueNote")}
+                      </p>
                     </div>
                     <button
                       className="btn"
@@ -1745,16 +1778,6 @@ export default function AgentsSettingsPage() {
                 />
 
                 <AutoReplyVisibilityPanel aid={activeAgent.aid} />
-
-                <div className="panel" style={{ marginTop: 10 }}>
-                  <p className="item-title">{t("agents.rulesTitle")}</p>
-                  <p className="item-sub" style={{ marginTop: 6 }}>
-                    {t("agents.rule1")}
-                  </p>
-                  <p className="item-sub">
-                    {t("agents.rule2")}
-                  </p>
-                </div>
 
                 <div className="panel" style={{ marginTop: 10 }}>
                   <p className="item-title">{t("agents.credentialsTitle")}</p>
@@ -2144,11 +2167,12 @@ export default function AgentsSettingsPage() {
                     </div>
                   ) : null}
                 </div>
+                </details>
 
                 <div
                   className="panel"
                   style={{
-                    marginTop: 10,
+                    marginTop: 12,
                     borderColor: "rgba(220, 38, 38, 0.35)",
                   }}
                 >
