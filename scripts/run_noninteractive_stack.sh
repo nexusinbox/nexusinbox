@@ -2,6 +2,30 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+# `start|stop|status <dir>`: the directory `nexusinbox-signer --enroll --dir`
+# wrote. Its agent.env holds this agent's settings; only the keys below are
+# read, as plain KEY=VALUE lines — nothing in it is run. PID files, logs
+# and sockets then live in <dir>/run, next to the keys.
+AGENT_DIR="${2:-}"
+if [ -n "$AGENT_DIR" ]; then
+  if [ ! -f "$AGENT_DIR/agent.env" ]; then
+    echo "No $AGENT_DIR/agent.env. Enroll first: nexusinbox-signer --enroll --credential-id <id> --dir $AGENT_DIR --api-url <api>" >&2
+    exit 1
+  fi
+  while IFS='=' read -r key value; do
+    case "$key" in
+      AGENT_INBOX_API_URL|AGENT_INBOX_AID|AGENT_INBOX_CREDENTIAL_ID|AGENT_INBOX_KEY_FILE|AGENT_INBOX_ENCRYPTION_KEY_FILE|AGENT_INBOX_MODE_A_EXECUTOR|AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS)
+        export "$key=$value"
+        ;;
+    esac
+  done <"$AGENT_DIR/agent.env"
+  : "${AGENT_INBOX_RUNTIME_DIR:=$AGENT_DIR/run}"
+  : "${AGENT_INBOX_SIGNER_SOCKET:=$AGENT_DIR/run/signer.sock}"
+  : "${AGENT_INBOX_GATEWAY_SOCKET:=$AGENT_DIR/run/gateway.sock}"
+  export AGENT_INBOX_RUNTIME_DIR AGENT_INBOX_SIGNER_SOCKET AGENT_INBOX_GATEWAY_SOCKET
+fi
+
 RUNTIME_DIR="${AGENT_INBOX_RUNTIME_DIR:-/tmp/nexusinbox-noninteractive}"
 SIGNER_PID_FILE="$RUNTIME_DIR/signer.pid"
 GATEWAY_PID_FILE="$RUNTIME_DIR/gateway.pid"
@@ -19,6 +43,10 @@ ENCRYPTION_KEY_FILE="${AGENT_INBOX_ENCRYPTION_KEY_FILE:-}"
 usage() {
   cat <<EOF
 Usage:
+  $0 start|stop|status <dir>
+      <dir> is what \`nexusinbox-signer --enroll --dir <dir>\` wrote.
+
+  Or with the settings spelled out:
   AGENT_INBOX_AID=aid:ai:... \\
   AGENT_INBOX_CREDENTIAL_ID=<uuid> \\
   AGENT_INBOX_KEY_FILE=/path/to/signing.key.enc \\

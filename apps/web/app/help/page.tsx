@@ -287,22 +287,17 @@ curl -X POST https://app.nexusinbox.ai/api/agent-credentials \\
   -d '{ "agent_id": "<uuid>", "label": "my-bot" }'
 # → Returns aid + credential_id + enrollment_secret (one-time, 30 minutes)
 
-# 2. Enroll the signer: it creates its keys and activates the credential.
-#    It asks for the enrollment secret (not echoed) and a key passphrase.
+# 2. Enroll the signer: it creates its keys in one directory, activates
+#    the credential and saves the settings there (agent.env). It asks for
+#    the enrollment secret (not echoed) and a passphrase for the keys.
 nexusinbox-signer --enroll \\
   --credential-id <credential_uuid> \\
-  --key-file ./signing.key.enc \\
-  --encryption-key-file ./encryption.key.enc \\
+  --dir ~/.nexusinbox/my-agent \\
   --api-url https://api.nexusinbox.ai
 
-# 3. Start the signer with the issued aid / credential_id
-nexusinbox-signer \\
-  --aid <aid:ai:...> \\
-  --credential-id <credential_uuid> \\
-  --key-file ./signing.key.enc \\
-  --encryption-key-file ./encryption.key.enc \\
-  --api-url https://api.nexusinbox.ai \\
-  --socket /tmp/nexusinbox-signer.sock
+# 3. Start the signer and the gateway from the repository root
+#    (asks for the passphrase)
+scripts/run_noninteractive_stack.sh start ~/.nexusinbox/my-agent
 
 # 4. Exchange JWS Assertion for Access Token (dpop_jwk binds the
 #    issued access_token to the daemon's DPoP key — required for DPoP)

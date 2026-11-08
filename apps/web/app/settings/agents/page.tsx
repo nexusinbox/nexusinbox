@@ -39,26 +39,20 @@ import {
   saveBridgeToken,
 } from "../../../lib/bridge/token-store";
 import { secureLoadKey } from "../../../lib/crypto/keystore";
+import {
+  agentDirName,
+  daemonEnrollCommand,
+  daemonStartCommand,
+} from "../../../lib/agents/enroll-command";
 
 type Banner = { tone: "info" | "error" | "success"; text: string } | null;
 type CreatedCredentialNotice = {
   credentialId: string;
   enrollmentSecret: string;
   aid: string;
+  /** ~/.nexusinbox/<dirName> holds this agent's daemon keys and settings */
+  dirName: string;
 };
-
-// The signer daemon calls the API directly, not the web's /api proxy
-// (help page, runbook 19 §3). The secret is left out: the daemon asks for
-// it, so it stays out of shell history.
-function daemonEnrollCommand(credentialId: string): string {
-  return [
-    "nexusinbox-signer --enroll \\",
-    `  --credential-id ${credentialId} \\`,
-    "  --key-file ./signing.key.enc \\",
-    "  --encryption-key-file ./encryption.key.enc \\",
-    "  --api-url https://api.nexusinbox.ai",
-  ].join("\n");
-}
 
 // Renders the Standard / Daemon-isolated pill next to a credential's
 // label in the settings list. Reads `key_holder` straight from the
@@ -1997,6 +1991,7 @@ export default function AgentsSettingsPage() {
                                     credentialId: result.credential_id,
                                     enrollmentSecret: result.enrollment_secret,
                                     aid: result.aid,
+                                    dirName: agentDirName(activeAgent.label, result.aid),
                                   }
                                 : null,
                             );
@@ -2098,7 +2093,7 @@ export default function AgentsSettingsPage() {
                             userSelect: "all",
                           }}
                         >
-                          {daemonEnrollCommand(createdCredential.credentialId)}
+                          {daemonEnrollCommand(createdCredential.credentialId, createdCredential.dirName)}
                         </code>
                         <button
                           className="btn"
@@ -2106,13 +2101,28 @@ export default function AgentsSettingsPage() {
                           style={{ marginTop: 6, fontSize: 12 }}
                           onClick={() =>
                             copyValue(
-                              daemonEnrollCommand(createdCredential.credentialId),
+                              daemonEnrollCommand(createdCredential.credentialId, createdCredential.dirName),
                               t("agents.bannerEnrollCommandCopied"),
                             )
                           }
                         >
                           {t("agents.copyEnrollCommand")}
                         </button>
+                        <p className="item-sub" style={{ fontSize: 11, marginTop: 10 }}>
+                          {t("agents.enrollmentStartLabel")}
+                        </p>
+                        <code
+                          style={{
+                            display: "block",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                            fontSize: 12,
+                            marginTop: 4,
+                            userSelect: "all",
+                          }}
+                        >
+                          {daemonStartCommand(createdCredential.dirName)}
+                        </code>
                       </div>
                       <button
                         className="btn"

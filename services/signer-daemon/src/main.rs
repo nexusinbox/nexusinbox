@@ -127,9 +127,17 @@ struct Cli {
     /// one-shot enrollment secret is read from AGENT_INBOX_ENROLLMENT_SECRET
     /// or asked for without echo — never taken from the command line, so it
     /// does not show in the process list or shell history.
-    /// Needs --credential-id and --encryption-key-file.
+    /// Needs --credential-id, and --dir (or --key-file and
+    /// --encryption-key-file).
     #[arg(long)]
     enroll: bool,
+
+    /// With --enroll: keep everything for this agent in one directory
+    /// (created with mode 0700 if missing): the two key files and
+    /// `agent.env`, the settings `scripts/run_noninteractive_stack.sh start
+    /// <dir>` reads, so starting never needs them spelled out again.
+    #[arg(long)]
+    dir: Option<PathBuf>,
 
     /// API base URL for token endpoint
     #[arg(long, default_value = "http://localhost:3001/api")]
@@ -1075,6 +1083,47 @@ fn build_enrollment_proof(key: &SigningKey, credential_id: &str, iat: i64) -> St
 
 /// `--enroll`: generate both keys, activate the credential, exit. Returns
 /// the process exit code.
+/// File names inside an `--enroll --dir` directory.
+const DIR_SIGNING_KEY: &str = "signing.key.enc";
+const DIR_ENCRYPTION_KEY: &str = "encryption.key.enc";
+const DIR_AGENT_ENV: &str = "agent.env";
+
+/// `agent.env` for `scripts/run_noninteractive_stack.sh start <dir>`: plain
+/// KEY=VALUE lines the script reads without evaluating them.
+fn agent_env_contents(
+    api_url: &str,
+    aid: &str,
+    credential_id: &str,
+    key_file: &Path,
+    encryption_key_file: &Path,
+) -> String {
+    format!(
+        "# Written by nexusinbox-signer --enroll. Read by scripts/run_noninteractive_stack.sh.\n\
+         AGENT_INBOX_API_URL={api_url}\n\
+         AGENT_INBOX_AID={aid}\n\
+         AGENT_INBOX_CREDENTIAL_ID={credential_id}\n\
+         AGENT_INBOX_KEY_FILE={}\n\
+         AGENT_INBOX_ENCRYPTION_KEY_FILE={}\n\
+         AGENT_INBOX_MODE_A_EXECUTOR=on\n",
+        key_file.display(),
+        encryption_key_file.display()
+    )
+}
+
+/// Create the agent directory (mode 0700) if it does not exist yet.
+fn ensure_agent_dir(dir: &Path) -> std::io::Result<()> {
+    if dir.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
 async fn run_enroll(cli: &Cli) -> i32 {
     let Some(credential_id) = cli.credential_id.as_deref() else {
         eprintln!("[ERROR] --enroll needs --credential-id (shown in the web UI)");
@@ -1085,16 +1134,42 @@ async fn run_enroll(cli: &Cli) -> i32 {
         eprintln!("[ERROR] --credential-id must be a UUID");
         return 2;
     }
-    let Some(encryption_key_file) = cli.encryption_key_file.as_ref() else {
+    // With --dir, the key files live there unless given explicitly.
+    let agent_dir = match cli.dir.as_ref() {
+        Some(dir) => {
+            if let Err(e) = ensure_agent_dir(dir) {
+                eprintln!("[ERROR] Cannot create {}: {e}", dir.display());
+                return 2;
+            }
+            match std::fs::canonicalize(dir) {
+                Ok(dir) => Some(dir),
+                Err(e) => {
+                    eprintln!("[ERROR] Cannot use {}: {e}", dir.display());
+                    return 2;
+                }
+            }
+        }
+        None => None,
+    };
+    let key_file = match agent_dir.as_ref() {
+        Some(dir) if cli.key_file == Path::new(DIR_SIGNING_KEY) => dir.join(DIR_SIGNING_KEY),
+        _ => cli.key_file.clone(),
+    };
+    let Some(encryption_key_file) = cli
+        .encryption_key_file
+        .clone()
+        .or_else(|| agent_dir.as_ref().map(|dir| dir.join(DIR_ENCRYPTION_KEY)))
+    else {
         eprintln!(
-            "[ERROR] --enroll needs --encryption-key-file: the daemon holds the agent's receiving key"
+            "[ERROR] --enroll needs --dir (or --encryption-key-file): the daemon holds the agent's receiving key"
         );
         return 2;
     };
+    let encryption_key_file = &encryption_key_file;
     // Check both files before asking for anything, so a refusal never
     // leaves one new key written and the other missing.
     if !cli.force {
-        for path in [&cli.key_file, encryption_key_file] {
+        for path in [&key_file, encryption_key_file] {
             if path.exists() {
                 eprintln!(
                     "[ERROR] Key file already exists: {}. Pass --force to replace it.",
@@ -1114,7 +1189,7 @@ async fn run_enroll(cli: &Cli) -> i32 {
     }
 
     let passphrase = prompt_new_passphrase(cli.unsafe_plaintext_key);
-    let signing_key = generate_and_save_key(&cli.key_file, passphrase.as_deref(), cli.force);
+    let signing_key = generate_and_save_key(&key_file, passphrase.as_deref(), cli.force);
     let encryption_secret =
         generate_and_save_encryption_secret(encryption_key_file, passphrase.as_deref(), cli.force);
 
@@ -1161,8 +1236,33 @@ async fn run_enroll(cli: &Cli) -> i32 {
     eprintln!("[INFO]   AID:           {aid}");
     eprintln!("[INFO]   DID:           {did}");
     eprintln!("[INFO]   Credential ID: {credential_id}");
-    eprintln!("[INFO] Start the daemon with the same --key-file, --encryption-key-file and --api-url, plus:");
-    eprintln!("[INFO]   --aid {aid} --credential-id {credential_id}");
+    let Some(dir) = agent_dir else {
+        eprintln!("[INFO] Start the daemon with the same --key-file, --encryption-key-file and --api-url, plus:");
+        eprintln!("[INFO]   --aid {aid} --credential-id {credential_id}");
+        return 0;
+    };
+    let env_path = dir.join(DIR_AGENT_ENV);
+    let contents = agent_env_contents(
+        cli.api_url.trim_end_matches('/'),
+        aid,
+        credential_id,
+        &key_file,
+        encryption_key_file,
+    );
+    if let Err(e) = write_key_file_0600(&env_path, contents.as_bytes(), true) {
+        eprintln!(
+            "[ERROR] Enrolled, but could not write {}: {e}",
+            env_path.display()
+        );
+        eprintln!("[INFO] Start the daemon with --aid {aid} --credential-id {credential_id}");
+        return 1;
+    }
+    eprintln!("[INFO] Saved the settings to {}.", env_path.display());
+    eprintln!("[INFO] Start the daemon and gateway from the repository root with:");
+    eprintln!(
+        "[INFO]   scripts/run_noninteractive_stack.sh start {}",
+        dir.display()
+    );
     0
 }
 
@@ -1172,6 +1272,10 @@ async fn main() {
 
     if cli.enroll {
         std::process::exit(run_enroll(&cli).await);
+    }
+    if cli.dir.is_some() {
+        eprintln!("[ERROR] --dir is for --enroll; to run, use scripts/run_noninteractive_stack.sh start <dir>");
+        std::process::exit(2);
     }
 
     // Key management — single passphrase prompt for both Ed25519 and
@@ -1847,6 +1951,29 @@ mod tests {
         assert_eq!(decoded.len(), 32);
         let did = result["did"].as_str().unwrap().to_string();
         assert!(did.starts_with("did:key:z"));
+    }
+
+    #[test]
+    fn agent_env_lists_what_the_start_script_needs() {
+        let env = agent_env_contents(
+            "https://api.example",
+            "aid:ai:01TEST",
+            "00000000-0000-4000-8000-000000000000",
+            Path::new("/home/a/.nexusinbox/x/signing.key.enc"),
+            Path::new("/home/a/.nexusinbox/x/encryption.key.enc"),
+        );
+        let lines: Vec<&str> = env.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(
+            lines,
+            [
+                "AGENT_INBOX_API_URL=https://api.example",
+                "AGENT_INBOX_AID=aid:ai:01TEST",
+                "AGENT_INBOX_CREDENTIAL_ID=00000000-0000-4000-8000-000000000000",
+                "AGENT_INBOX_KEY_FILE=/home/a/.nexusinbox/x/signing.key.enc",
+                "AGENT_INBOX_ENCRYPTION_KEY_FILE=/home/a/.nexusinbox/x/encryption.key.enc",
+                "AGENT_INBOX_MODE_A_EXECUTOR=on",
+            ]
+        );
     }
 
     #[test]

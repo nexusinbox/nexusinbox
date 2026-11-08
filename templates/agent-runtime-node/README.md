@@ -111,23 +111,17 @@ key. Start both with the helper script:
 # From repo root
 cd ../..
 
-# First time only: create the daemon's keys and enroll them for the
-# credential you created in the web UI. It asks for the enrollment secret
-# (not echoed) and a passphrase for the key files, then prints the AID.
+# First time only: create the daemon's keys in one directory and enroll
+# them for the credential you created in the web UI. It asks for the
+# enrollment secret (not echoed) and a passphrase for the keys, and saves
+# the settings for the start script in that directory (agent.env).
 cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll \
   --credential-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
-  --key-file /absolute/path/to/signing.key.enc \
-  --encryption-key-file /absolute/path/to/encryption.key.enc \
+  --dir ~/.nexusinbox/my-agent \
   --api-url http://localhost:8080
 
-export AGENT_INBOX_API_URL=http://localhost:8080
-export AGENT_INBOX_AID=aid:ai:...
-export AGENT_INBOX_CREDENTIAL_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-export AGENT_INBOX_KEY_FILE=/absolute/path/to/signing.key.enc
-export AGENT_INBOX_ENCRYPTION_KEY_FILE=/absolute/path/to/encryption.key.enc
-
 # Asks for the key passphrase, then starts both in the background.
-scripts/run_noninteractive_stack.sh start
+scripts/run_noninteractive_stack.sh start ~/.nexusinbox/my-agent
 ```
 
 Then from this directory:

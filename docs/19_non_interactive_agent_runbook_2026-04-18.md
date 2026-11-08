@@ -26,19 +26,16 @@
 
 ## 2. 起動
 
-初回は、先に §3 で daemon を登録しておく。以下を設定して起動する。
+初回は、先に §3 で daemon を登録しておく。登録したディレクトリを渡して起動する。
 
 ```bash
 # from repo root
-
-export AGENT_INBOX_API_URL=http://localhost:8080
-export AGENT_INBOX_AID=aid:ai:...
-export AGENT_INBOX_CREDENTIAL_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-export AGENT_INBOX_KEY_FILE=/absolute/path/to/signing.key.enc
-export AGENT_INBOX_ENCRYPTION_KEY_FILE=/absolute/path/to/encryption.key.enc
-
-scripts/run_noninteractive_stack.sh start
+scripts/run_noninteractive_stack.sh start ~/.nexusinbox/my-agent
 ```
+
+- ディレクトリの `agent.env` (登録時に保存) から API の URL・AID・credential ID・鍵ファイルを読む。PID ファイル・ログ・ソケットはそのディレクトリの `run/` に置く
+- 停止と状態確認も同じ: `scripts/run_noninteractive_stack.sh stop ~/.nexusinbox/my-agent`、`... status ~/.nexusinbox/my-agent`
+- 設定を個別に渡すこともできる (`AGENT_INBOX_API_URL`、`AGENT_INBOX_AID`、`AGENT_INBOX_CREDENTIAL_ID`、`AGENT_INBOX_KEY_FILE`、`AGENT_INBOX_ENCRYPTION_KEY_FILE` を設定して `start` だけを実行)
 
 - `start` は鍵のパスフレーズを聞く (入力は画面に出ない)。端末から起動していないときは、標準入力の 1 行目をパスフレーズとして読む
 - パスフレーズが空 (入力前にタブを閉じた等) なら何も起動しない。パスフレーズが違って daemon が起動できなければ、ログの末尾を表示して止まり、Gateway も起動しない
@@ -76,10 +73,11 @@ Web で作った credential (`pending`) に、daemon の鍵を登録する。署
 # from repo root
 cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll \
   --credential-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
-  --key-file /absolute/path/to/signing.key.enc \
-  --encryption-key-file /absolute/path/to/encryption.key.enc \
+  --dir ~/.nexusinbox/my-agent \
   --api-url http://localhost:8080
 ```
+
+- `--dir` のディレクトリ (無ければ 700 で作る) に、鍵 2 つ (`signing.key.enc`、`encryption.key.enc`) と、起動に要る設定 `agent.env` (600) を置く。Web の credential 作成画面には、エージェント名から決めたディレクトリのコマンドが出る
 
 - `enrollment_secret` は聞かれたときに貼り付ける (画面には出ない)。環境変数 `AGENT_INBOX_ENROLLMENT_SECRET` でも渡せる。コマンドライン引数では受け付けない (プロセス一覧やシェルの履歴に残るため)
 - 続けて、鍵ファイルを暗号化するパスフレーズを 2 回聞かれる

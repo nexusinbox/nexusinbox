@@ -3,7 +3,8 @@
 // API, signer daemon and agent gateway (docs/29, runbook 19 §7.3).
 //
 //   agent A: created the way the web UI does it; the signer daemon enrolls
-//            for it with --enroll and holds the keys it answers on (Isolated)
+//            for it with `--enroll --dir`, and the stack script starts the
+//            daemon and gateway from that directory, as a person would
 //   agent B: plain keypairs held by this script (the sender)
 //
 // B sends A a schedule_negotiation propose. With A's policy set to
@@ -26,7 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const API = process.env.API ?? "http://localhost:8080";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -170,12 +171,18 @@ function expectStatus(resp, ok, what) {
 
 // --- main -------------------------------------------------------------------
 
-const children = [];
-function startProcess(name, cmd, args, env) {
-  const log = fs.openSync(path.join(WORK, `${name}.log`), "w");
-  const child = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: ["ignore", log, log] });
-  children.push(child);
-  return child;
+// The stack script, as a person runs it from the repository root.
+const STACK = path.join(REPO, "scripts/run_noninteractive_stack.sh");
+const PASSPHRASE = "e2e-passphrase";
+let stackDir = null;
+let stackEnv = null;
+function stack(command, input) {
+  return execFileSync("sh", [STACK, command, stackDir], {
+    cwd: REPO,
+    env: stackEnv,
+    input,
+    stdio: ["pipe", "pipe", "pipe"],
+  }).toString();
 }
 
 async function main() {
@@ -205,22 +212,35 @@ async function main() {
   const cred = expectStatus(
     await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"] } }),
     [200, 201], "create credential");
-  const signKey = path.join(WORK, "a_signing.key");
-  const encKey = path.join(WORK, "a_encryption.key");
+  const agentDir = path.join(WORK, "agent-a");
   const signerBin = path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer");
   try {
+    // The passphrase is asked twice; stdin is not a terminal here.
     execFileSync(signerBin, [
       "--enroll",
       "--credential-id", cred.credential_id,
-      "--key-file", signKey,
-      "--encryption-key-file", encKey,
-      "--unsafe-plaintext-key",
-      "--force",
+      "--dir", agentDir,
       "--api-url", API,
-    ], { env: { ...process.env, AGENT_INBOX_ENROLLMENT_SECRET: cred.enrollment_secret }, stdio: ["ignore", "pipe", "pipe"] });
+    ], {
+      env: { ...process.env, AGENT_INBOX_ENROLLMENT_SECRET: cred.enrollment_secret },
+      input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
   } catch (e) {
     fail("signer --enroll failed", `${e.stderr ?? e}`);
   }
+  // Everything a later start needs is in the directory, private to us.
+  const envFile = path.join(agentDir, "agent.env");
+  const mode = (f) => (fs.statSync(f).mode & 0o777).toString(8);
+  if (mode(agentDir) !== "700") fail(`agent dir mode ${mode(agentDir)}, expected 700`);
+  for (const f of ["signing.key.enc", "encryption.key.enc", "agent.env"]) {
+    if (mode(path.join(agentDir, f)) !== "600") fail(`${f} mode ${mode(path.join(agentDir, f))}, expected 600`);
+  }
+  const agentEnv = fs.readFileSync(envFile, "utf8");
+  for (const expected of [`AGENT_INBOX_AID=${agentA.aid}`, `AGENT_INBOX_CREDENTIAL_ID=${cred.credential_id}`, `AGENT_INBOX_API_URL=${API}`]) {
+    if (!agentEnv.includes(expected)) fail(`agent.env lacks ${expected}`, agentEnv);
+  }
+  console.log(`  ${agentDir}: keys and agent.env (700 / 600)`);
   // The agent now answers on the daemon's keys.
   const resolved = expectStatus(
     await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
@@ -292,29 +312,23 @@ async function main() {
   console.log(`  A's row ${inboxRow.id}: decision=${inboxRow.auto_reply_decision} (${inboxRow.auto_reply_reason})`);
   if (inboxRow.auto_reply_decision !== "auto_accept") fail("expected an auto_accept stamp", inboxRow);
 
-  step("start the signer daemon (A's keys) and the gateway executor");
+  step("start the daemon and gateway: run_noninteractive_stack.sh start <dir>");
   // Unix socket paths must stay under SUN_LEN (104 bytes on macOS), which
-  // the scratch directory exceeds; use a short private temp dir for them.
+  // the scratch directory may exceed; put the sockets in a short temp dir.
   const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-"));
-  const signerSock = path.join(sockDir, "signer.sock");
-  const gatewaySock = path.join(sockDir, "gateway.sock");
-  for (const s of [signerSock, gatewaySock]) fs.rmSync(s, { force: true });
-  startProcess("signer", signerBin, [
-    "--socket", signerSock,
-    "--key-file", signKey,
-    "--encryption-key-file", encKey,
-    "--unsafe-plaintext-key",
-    "--aid", agentA.aid,
-    "--credential-id", cred.credential_id,
-    "--api-url", API,
-  ]);
-  for (let i = 0; i < 40 && !fs.existsSync(signerSock); i++) await sleep(250);
-  if (!fs.existsSync(signerSock)) fail("signer daemon did not open its socket", fs.readFileSync(path.join(WORK, "signer.log"), "utf8"));
-  startProcess("gateway", path.join(REPO, "services/agent-gateway/target/debug/nexusinbox-gateway"), [
-    "--llm-socket", gatewaySock,
-    "--signer-socket", signerSock,
-    "--api-url", API,
-  ], { AGENT_INBOX_MODE_A_EXECUTOR: "on", AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS: "5" });
+  stackDir = agentDir;
+  stackEnv = {
+    ...process.env,
+    AGENT_INBOX_SIGNER_SOCKET: path.join(sockDir, "signer.sock"),
+    AGENT_INBOX_GATEWAY_SOCKET: path.join(sockDir, "gateway.sock"),
+    AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS: "5",
+  };
+  try {
+    const out = stack("start", `${PASSPHRASE}\n`);
+    if (!/Signer up:\s+yes/.test(out) || !/Gateway up:\s+yes/.test(out)) fail("stack did not come up", out);
+  } catch (e) {
+    fail("stack start failed", `${e.stdout ?? ""}${e.stderr ?? e}`);
+  }
 
   step("wait for A's auto-reply to reach B");
   let reply;
@@ -324,7 +338,7 @@ async function main() {
     reply = list.messages.find((m) => m.sender_did === A.did && m.folder !== "sent");
   }
   if (!reply) {
-    fail("no reply within 60s", { gateway: fs.readFileSync(path.join(WORK, "gateway.log"), "utf8").slice(-3000) });
+    fail("no reply within 60s", { gateway: fs.readFileSync(path.join(agentDir, "run", "gateway.log"), "utf8").slice(-3000) });
   }
   console.log(`  reply ${reply.id} from A`);
 
@@ -363,5 +377,11 @@ main()
     }
   })
   .finally(() => {
-    for (const c of children) c.kill("SIGTERM");
+    if (stackDir) {
+      try {
+        stack("stop");
+      } catch {
+        // already stopped
+      }
+    }
   });
