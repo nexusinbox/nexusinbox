@@ -820,6 +820,11 @@ struct MessageIndexEntryResponse {
     /// PATCH /messages/:id/auto-reply-sent. See docs/25c §3.2.
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_reply_sent_at: Option<String>,
+    /// The automatic reply, when one was sent. A row marked sent without
+    /// it was handled without answering (not a request, a policy
+    /// override, …), and the inbox does not label it as auto-replied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_reply_message_id: Option<String>,
     /// Set when an executor claimed the row to send an auto-reply
     /// (docs/29 §2.5). With no `auto_reply_sent_at`, the send was
     /// attempted but not confirmed, and the inbox shows it as
@@ -13245,6 +13250,7 @@ async fn list_messages(
               m.auto_reply_decision,
               m.auto_reply_reason,
               m.auto_reply_sent_at::text AS auto_reply_sent_at,
+              m.auto_reply_message_id::text AS auto_reply_message_id,
               m.auto_reply_claimed_at::text AS auto_reply_claimed_at,
               -- One bit per pending row for the Agent Gateway instead of
               -- the owner's contact list (docs/29 §2.2). NULL otherwise.
@@ -13366,6 +13372,7 @@ async fn list_messages(
                 auto_reply_decision: row.try_get("auto_reply_decision").ok(),
                 auto_reply_reason: row.try_get("auto_reply_reason").ok(),
                 auto_reply_sent_at: row.try_get("auto_reply_sent_at").ok(),
+                auto_reply_message_id: row.try_get("auto_reply_message_id").ok(),
                 auto_reply_claimed_at: row.try_get("auto_reply_claimed_at").ok(),
                 sender_is_contact: row
                     .try_get::<Option<bool>, _>("sender_is_contact")
@@ -13444,6 +13451,7 @@ async fn list_messages(
                 auto_reply_decision: None,
                 auto_reply_reason: None,
                 auto_reply_sent_at: None,
+                auto_reply_message_id: None,
                 auto_reply_claimed_at: None,
                 sender_is_contact: None,
             })
@@ -14264,7 +14272,8 @@ async fn mark_auto_reply_sent(
     let updated = sqlx::query(
         r#"
         UPDATE message_index
-        SET auto_reply_sent_at = COALESCE(auto_reply_sent_at, NOW())
+        SET auto_reply_sent_at = COALESCE(auto_reply_sent_at, NOW()),
+            auto_reply_message_id = COALESCE(auto_reply_message_id, $3)
         WHERE id = $1 AND owner_user_id = $2
         RETURNING auto_reply_sent_at::text AS auto_reply_sent_at,
                   (auto_reply_sent_at = NOW() OR auto_reply_sent_at IS NULL) AS newly_stamped
@@ -14272,6 +14281,7 @@ async fn mark_auto_reply_sent(
     )
     .bind(message_id)
     .bind(user_uuid)
+    .bind(payload.reply_message_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| internal_error("failed to mark auto-reply sent", e))?;

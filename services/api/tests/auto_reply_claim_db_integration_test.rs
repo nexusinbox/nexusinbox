@@ -581,3 +581,166 @@ async fn older_auto_reply_audit_rows_get_their_aid() {
         ]
     );
 }
+
+/// A well-formed Ed25519 did:key for a fresh random key.
+fn real_did() -> String {
+    let seed: [u8; 32] = rand::random();
+    let verifying_key = ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key();
+    let mut multicodec = vec![0xed, 0x01];
+    multicodec.extend_from_slice(&verifying_key.to_bytes());
+    format!("did:key:z{}", bs58::encode(&multicodec).into_string())
+}
+
+async fn mark_sent(app: &axum::Router, row: Uuid, auth: &str, body: Value) -> StatusCode {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/messages/{row}/auto-reply-sent"))
+                .header("authorization", auth)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+}
+
+/// The inbox labels a row "auto-replied" only when a reply went out: the
+/// list carries the reply's id, and rows handled without one have none.
+#[tokio::test]
+#[serial]
+async fn the_inbox_learns_which_rows_were_answered() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xanswered").await;
+    let mut agent = seed_agent(&pool, &owner, "a", true).await;
+    // The list endpoint checks the DID's format, so give this one a real did:key.
+    let did = real_did();
+    sqlx::query("UPDATE agent_identity_keys SET did = $1 WHERE aid = $2")
+        .bind(&did)
+        .bind(&agent.aid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE agents SET did = $1 WHERE id = $2")
+        .bind(&did)
+        .bind(agent.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    agent.did = did;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+    let answered = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let handled = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let reply_id = Uuid::new_v4();
+
+    assert_eq!(
+        mark_sent(
+            &app,
+            answered,
+            &token,
+            json!({ "reply_message_id": reply_id })
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        mark_sent(&app, handled, &token, json!({})).await,
+        StatusCode::OK
+    );
+    // A second mark changes nothing.
+    assert_eq!(
+        mark_sent(
+            &app,
+            answered,
+            &token,
+            json!({ "reply_message_id": Uuid::new_v4() })
+        )
+        .await,
+        StatusCode::OK
+    );
+
+    let (status, list) = call(
+        &app,
+        "GET",
+        &format!("/messages?agent_did={}&status=all", agent.did),
+        &owner.session,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let rows = list["messages"].as_array().unwrap();
+    let find = |id: Uuid| {
+        rows.iter()
+            .find(|m| m["id"] == id.to_string())
+            .unwrap_or_else(|| panic!("row {id} missing from {list}"))
+    };
+    assert_eq!(
+        find(answered)["auto_reply_message_id"],
+        reply_id.to_string()
+    );
+    assert!(find(handled)["auto_reply_sent_at"].is_string());
+    assert!(find(handled).get("auto_reply_message_id").is_none());
+}
+
+/// Migration 0025 takes older rows' reply ids from the audit log: only
+/// for the row's owner, only real ids, never over an existing one.
+#[tokio::test]
+#[serial]
+async fn older_rows_get_their_reply_id_from_the_audit_log() {
+    skip_without_db!();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xreply-backfill").await;
+    let stranger = seed_owner(&pool, "0xreply-stranger").await;
+    let agent = seed_agent(&pool, &owner, "a", true).await;
+    let answered = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let handled = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let spoofed = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    sqlx::query("UPDATE message_index SET auto_reply_sent_at = NOW()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reply_id = Uuid::new_v4();
+    for (user_id, message_id, reply) in [
+        (owner.user_id, answered, json!(reply_id.to_string())),
+        (owner.user_id, handled, Value::Null),
+        // Another user's event naming this row is not believed.
+        (stranger.user_id, spoofed, json!(Uuid::new_v4().to_string())),
+    ] {
+        sqlx::query(
+            "INSERT INTO agent_audit_log (user_id, event, detail) VALUES ($1, 'auto_reply_sent', $2)",
+        )
+        .bind(user_id)
+        .bind(json!({ "message_id": message_id.to_string(), "reply_message_id": reply }))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/0025_message_index_auto_reply_message_id.sql"
+    ))
+    .execute(&pool)
+    .await
+    .expect("migration 0025");
+
+    let reply_of = |id: Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<Uuid>>(
+                "SELECT auto_reply_message_id FROM message_index WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(reply_of(answered).await, Some(reply_id));
+    assert_eq!(reply_of(handled).await, None);
+    assert_eq!(reply_of(spoofed).await, None);
+}

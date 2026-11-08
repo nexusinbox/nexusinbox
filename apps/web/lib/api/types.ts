@@ -206,6 +206,9 @@ export type MessageIndexEntry = {
   // Phase 4.4c: set by the executor after it has dispatched the
   // auto-reply for this recipient-side row. See docs/25c §3.2.
   auto_reply_sent_at?: string;
+  // The automatic reply, when one went out. Rows handled without one
+  // (not a request, a policy override, …) are marked sent without it.
+  auto_reply_message_id?: string;
   // docs/29 §2.5: set when an executor claimed the row before sending.
   // Without auto_reply_sent_at, the send was attempted but not confirmed.
   auto_reply_claimed_at?: string;

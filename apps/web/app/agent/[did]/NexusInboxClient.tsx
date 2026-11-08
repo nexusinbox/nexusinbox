@@ -38,6 +38,7 @@ import { formatListTimestamp } from "../../../lib/format/messageTime";
 import { defaultApiClient } from "../../../lib/api/client";
 import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
 import { runAutoReplyExecutor } from "../../../lib/protocol/autoReplyExecutor";
+import { autoReplyBadge } from "../../../lib/inbox/auto-reply-badge";
 import { sendProtocolReply as realSendProtocolReply } from "../../_components/protocol/sendProtocolReply";
 import { getCalendarToken } from "../../../lib/calendar/gcalAuth";
 import { findFirstFreeCandidate } from "../../../lib/calendar/gcalFreebusy";
@@ -61,6 +62,7 @@ type ThreadView = {
   autoReplyDecision?: import("../../../lib/api/types").AutoReplyDecision;
   autoReplyReason?: string;
   autoReplySentAt?: string;
+  autoReplyMessageId?: string;
   autoReplyClaimedAt?: string;
   /**
    * Number of messages collapsed into this row. 1 for a standalone
@@ -340,6 +342,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
         autoReplyDecision: m.auto_reply_decision,
         autoReplyReason: m.auto_reply_reason,
         autoReplySentAt: m.auto_reply_sent_at,
+        autoReplyMessageId: m.auto_reply_message_id,
         autoReplyClaimedAt: m.auto_reply_claimed_at,
         messageCount: group.count,
       };
@@ -644,6 +647,12 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
               const keyKnownMissing = thread.recipientDid
                 ? keyPresenceByDid[thread.recipientDid] === false
                 : false;
+              const badge = autoReplyBadge({
+                sentAt: thread.autoReplySentAt,
+                replyMessageId: thread.autoReplyMessageId,
+                claimedAt: thread.autoReplyClaimedAt,
+                decision: thread.autoReplyDecision,
+              });
               return (
                 <article className={className} key={thread.id} onClick={() => handleOpen(thread)}>
                   <div className="thread-item-top">
@@ -710,7 +719,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                     <>
                       <p className="thread-subject">{subjectTextById[thread.id] ?? thread.subject}</p>
                       <p className="thread-preview">{thread.preview}</p>
-                      {thread.autoReplySentAt ? (
+                      {badge === "replied" && thread.autoReplySentAt ? (
                         <p
                           className="thread-autoreply-badge"
                           title={t("inbox.autoReply.sentTooltip")}
@@ -728,7 +737,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                             }),
                           })}
                         </p>
-                      ) : thread.autoReplyClaimedAt ? (
+                      ) : badge === "incomplete" ? (
                         // docs/29 §2.5: a send was attempted but could not be
                         // confirmed, so the executor left it to the human.
                         <p
@@ -744,7 +753,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                         >
                           {t("inbox.autoReply.incomplete")}
                         </p>
-                      ) : thread.autoReplyDecision ? (
+                      ) : badge === "decided" && thread.autoReplyDecision ? (
                         <p
                           className="thread-autoreply-badge"
                           title={
