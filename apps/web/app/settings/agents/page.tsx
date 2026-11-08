@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { AppShell } from "../../_components/AppShell";
 import { RefreshIconButton } from "../../_components/RefreshIconButton";
 import { AutoReplyPolicyPanel } from "../../_components/AutoReplyPolicyPanel";
+import { AgentStatusCard, AgentStatusLine, useNow } from "../../_components/AgentStatusCard";
 import {
   useAgentCredentialsQuery,
   useAgentsQuery,
@@ -1359,6 +1360,7 @@ export default function AgentsSettingsPage() {
   const updateAgent = useUpdateAgentMutation();
   const deleteAgent = useDeleteAgentMutation();
   const credentialsQuery = useAgentCredentialsQuery();
+  const now = useNow(15_000);
   const createCredential = useCreateAgentCredentialMutation();
   const revokeCredential = useRevokeAgentCredentialMutation();
   const purgeCredential = usePurgeAgentCredentialMutation();
@@ -1525,6 +1527,11 @@ export default function AgentsSettingsPage() {
                   <p className="card-sub" style={{ wordBreak: "break-all" }}>
                     {agent.did}
                   </p>
+                  <AgentStatusLine
+                    aid={agent.aid}
+                    credentials={credentialsQuery.data?.credentials ?? []}
+                    now={now}
+                  />
                   <p className="card-meta">
                     <span>{t("agents.unread", { count: agent.unread_count })}</span>
                     <span>
@@ -1630,6 +1637,8 @@ export default function AgentsSettingsPage() {
                     {banner.text}
                   </p>
                 ) : null}
+
+                <AgentStatusCard agent={activeAgent} />
 
                 <div className="panel">
                   <p className="item-title">{t("agents.overviewTitle")}</p>

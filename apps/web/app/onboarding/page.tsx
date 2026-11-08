@@ -5,22 +5,19 @@
 // handled, and send the agent a test request. Identifiers and keys stay
 // out of sight here; the agent settings page has them.
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+  AutoReplyPresetChoices,
+  ChoiceCard,
+  ConnectComputer,
+  ErrorLine,
+  STRONG,
+  useApplyAutoReplyPreset,
+} from "../_components/AgentSetup";
 import { AppShell } from "../_components/AppShell";
-import { presetSettings, type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
+import { type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
 import { createAgentWithLocalKeys } from "../../lib/agents/create-agent";
-import { daemonConnectCommand } from "../../lib/agents/enroll-command";
 import {
   selfTestCandidates,
   selfTestSettled,
@@ -29,11 +26,9 @@ import {
 } from "../../lib/agents/self-test";
 import { defaultApiClient } from "../../lib/api/client";
 import {
-  queryKeys,
   useAgentsQuery,
   useCreateAgentMutation,
   useSendMessageMutation,
-  useUpdateAgentMutation,
 } from "../../lib/api/hooks";
 import type { MessageIndexEntry } from "../../lib/api/types";
 import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
@@ -45,8 +40,6 @@ type Where = "browser" | "pc";
 type NewAgent = { id: string; aid: string; did: string; label: string };
 
 const POLL_MS = 2000;
-// Emphasis without the .item-title class, which upper-cases Latin text.
-const STRONG: CSSProperties = { fontWeight: 600, color: "var(--text)" };
 // How long the test waits for the message and the setting to apply, and
 // for a connected computer to answer (its executor runs every 30 s).
 const ARRIVAL_TIMEOUT_MS = 60_000;
@@ -216,7 +209,7 @@ function WhereStep({
     <div className="panel">
       <StepHeading title={t("firstRun.where.title")} desc={t("firstRun.where.desc")} />
       <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-        <Choice
+        <ChoiceCard
           selected={where === "browser"}
           onSelect={() => onChange("browser")}
           title={t("firstRun.where.browserTitle")}
@@ -224,8 +217,8 @@ function WhereStep({
           testId="first-run-where-browser"
         >
           {t("firstRun.where.browserDesc")}
-        </Choice>
-        <Choice
+        </ChoiceCard>
+        <ChoiceCard
           selected={where === "pc"}
           onSelect={() => onChange("pc")}
           title={t("firstRun.where.pcTitle")}
@@ -234,7 +227,7 @@ function WhereStep({
           {t("firstRun.where.pcDesc")}
           <br />
           {t("firstRun.where.pcNote")}
-        </Choice>
+        </ChoiceCard>
       </div>
       <Actions>
         <button className="btn primary" type="button" onClick={onNext} data-testid="first-run-next">
@@ -244,8 +237,6 @@ function WhereStep({
     </div>
   );
 }
-
-type Pairing = { credentialId: string; code: string; expiresAt: number };
 
 function ConnectStep({
   agent,
@@ -261,73 +252,6 @@ function ConnectStep({
   onNext: () => void;
 }) {
   const { t } = useTranslation();
-  const [pairing, setPairing] = useState<Pairing | null>(null);
-  const [issueFailed, setIssueFailed] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const [copied, setCopied] = useState(false);
-  const issuing = useRef(false);
-
-  const issue = useCallback(async () => {
-    if (issuing.current) return;
-    issuing.current = true;
-    setIssueFailed(false);
-    try {
-      const created = await defaultApiClient.createAgentCredential({
-        agent_id: agent.id,
-        label: t("firstRun.connect.credentialLabel"),
-        pairing: true,
-      });
-      if (!created.pairing_code) throw new Error("no pairing code");
-      const expiresAt = Date.parse(created.enrollment_expires_at ?? "");
-      setPairing({
-        credentialId: created.credential_id,
-        code: created.pairing_code,
-        expiresAt: Number.isNaN(expiresAt) ? Date.now() + 10 * 60_000 : expiresAt,
-      });
-      setNow(Date.now());
-    } catch {
-      setIssueFailed(true);
-    } finally {
-      issuing.current = false;
-    }
-  }, [agent.id, t]);
-
-  useEffect(() => {
-    if (!device && !pairing && !issueFailed) void issue();
-  }, [device, pairing, issueFailed, issue]);
-
-  // Watch the credential until the computer activates it.
-  const expired = pairing !== null && now > pairing.expiresAt;
-  useEffect(() => {
-    if (!pairing || device || expired) return;
-    let stopped = false;
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      void defaultApiClient
-        .listAgentCredentials()
-        .then(({ credentials }) => {
-          const credential = credentials.find((c) => c.credential_id === pairing.credentialId);
-          if (!stopped && credential?.status === "active") onConnected(credential.label);
-        })
-        .catch(() => undefined);
-    }, POLL_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [pairing, device, expired, onConnected]);
-
-  const command = pairing ? daemonConnectCommand(pairing.code) : "";
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // The command stays visible for a manual copy.
-    }
-  };
-
   return (
     <div className="panel">
       <StepHeading title={t("firstRun.connect.title")} desc={t("firstRun.connect.desc")} />
@@ -335,73 +259,8 @@ function ConnectStep({
         <p style={{ ...STRONG, marginTop: 14, color: "var(--ok)" }} data-testid="first-run-connected">
           ✓ {t("firstRun.connect.connected", { device })}
         </p>
-      ) : issueFailed ? (
-        <div style={{ marginTop: 14 }}>
-          <ErrorLine>{t("firstRun.connect.issueFailed")}</ErrorLine>
-          <button className="btn" type="button" onClick={() => void issue()} style={{ marginTop: 8 }}>
-            {t("firstRun.connect.retry")}
-          </button>
-        </div>
-      ) : !pairing ? (
-        <p className="item-sub" style={{ marginTop: 14 }}>
-          {t("firstRun.connect.issuing")}
-        </p>
-      ) : expired ? (
-        <div style={{ marginTop: 14 }}>
-          <p className="item-sub">{t("firstRun.connect.expired")}</p>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => setPairing(null)}
-            style={{ marginTop: 8 }}
-            data-testid="first-run-new-code"
-          >
-            {t("firstRun.connect.newCode")}
-          </button>
-        </div>
       ) : (
-        <>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 14,
-              padding: "10px 12px",
-              borderRadius: 8,
-              background: "var(--surface-alt)",
-              border: "1px solid var(--line)",
-            }}
-          >
-            <code
-              // Width 0, then grow: a one-line command must not widen the
-              // page on a narrow screen; it scrolls inside its box instead.
-              style={{
-                flex: "1 1 0",
-                width: 0,
-                minWidth: 0,
-                overflowX: "auto",
-                whiteSpace: "nowrap",
-                fontSize: 13,
-              }}
-              data-testid="first-run-command"
-            >
-              {command}
-            </code>
-            <button className="btn" type="button" onClick={() => void copy()}>
-              {copied ? t("firstRun.connect.copied") : t("firstRun.connect.copy")}
-            </button>
-          </div>
-          <p className="item-sub" style={{ marginTop: 10 }}>
-            {t("firstRun.connect.passphrase")}
-          </p>
-          <p className="item-sub" style={{ marginTop: 6 }}>
-            {t("firstRun.connect.codeNote", { code: pairing.code })}
-          </p>
-          <p className="item-sub" style={{ marginTop: 12 }} aria-live="polite">
-            {t("firstRun.connect.waiting")}
-          </p>
-        </>
+        <ConnectComputer agentId={agent.id} onConnected={onConnected} />
       )}
       <Actions>
         {!device ? (
@@ -437,27 +296,15 @@ function RepliesStep({
   onNext: () => void;
 }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const updateAgent = useUpdateAgentMutation();
+  const applyPreset = useApplyAutoReplyPreset();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  // The policy first, then the switch, so auto-replies never run on a
-  // policy the person did not choose.
   const save = async () => {
     setBusy(true);
     setFailed(false);
     try {
-      const { autoReply, policy } = presetSettings(preset);
-      if (policy) {
-        const current = await defaultApiClient.getAutoReplyPolicy(agent.id);
-        const saved = await defaultApiClient.putAutoReplyPolicy(agent.id, {
-          policy,
-          revision: current.revision,
-        });
-        queryClient.setQueryData(queryKeys.autoReplyPolicy(agent.id), saved);
-      }
-      await updateAgent.mutateAsync({ id: agent.id, body: { auto_reply: autoReply } });
+      await applyPreset(agent.id, preset);
       onNext();
     } catch {
       setFailed(true);
@@ -469,33 +316,7 @@ function RepliesStep({
   return (
     <div className="panel">
       <StepHeading title={t("firstRun.replies.title")} desc={t("firstRun.replies.desc")} />
-      <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-        <Choice
-          selected={preset === "manual"}
-          onSelect={() => onChange("manual")}
-          title={t("firstRun.replies.manualTitle")}
-          badge={t("firstRun.replies.manualBadge")}
-          testId="first-run-preset-manual"
-        >
-          {t("firstRun.replies.manualDesc")}
-        </Choice>
-        <Choice
-          selected={preset === "contacts"}
-          onSelect={() => onChange("contacts")}
-          title={t("firstRun.replies.contactsTitle")}
-          testId="first-run-preset-contacts"
-        >
-          {t("firstRun.replies.contactsDesc")}
-        </Choice>
-        <Choice
-          selected={preset === "all"}
-          onSelect={() => onChange("all")}
-          title={t("firstRun.replies.allTitle")}
-          testId="first-run-preset-all"
-        >
-          {t("firstRun.replies.allDesc")}
-        </Choice>
-      </div>
+      <AutoReplyPresetChoices value={preset} onChange={onChange} />
       {failed ? <ErrorLine>{t("firstRun.replies.saveFailed")}</ErrorLine> : null}
       <Actions>
         <button className="btn" type="button" onClick={onBack} disabled={busy}>
@@ -701,77 +522,10 @@ function StepHeading({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-function Choice({
-  selected,
-  onSelect,
-  title,
-  badge,
-  testId,
-  children,
-}: {
-  selected: boolean;
-  onSelect: () => void;
-  title: string;
-  badge?: string;
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      data-testid={testId}
-      style={{
-        textAlign: "left",
-        width: "100%",
-        padding: "12px 14px",
-        borderRadius: 10,
-        border: selected ? "2px solid var(--primary)" : "1px solid var(--line)",
-        background: selected ? "var(--primary-soft)" : "var(--surface)",
-        color: "var(--text)",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        gap: 4,
-      }}
-    >
-      <span style={STRONG}>
-        {title}
-        {badge ? (
-          <span
-            style={{
-              marginLeft: 8,
-              padding: "1px 8px",
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 600,
-              background: "var(--surface-alt)",
-              border: "1px solid var(--line)",
-            }}
-          >
-            {badge}
-          </span>
-        ) : null}
-      </span>
-      <span className="item-sub">{children}</span>
-    </button>
-  );
-}
-
 function Actions({ children }: { children: ReactNode }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", marginTop: 18, gap: 8, justifyContent: "flex-end" }}>
       {children}
     </div>
-  );
-}
-
-function ErrorLine({ children }: { children: ReactNode }) {
-  return (
-    <p className="item-sub" role="alert" style={{ marginTop: 10, color: "var(--danger)" }}>
-      {children}
-    </p>
   );
 }

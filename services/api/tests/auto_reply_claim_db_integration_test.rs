@@ -448,3 +448,136 @@ async fn agent_token_cannot_claim_a_sibling_agents_row() {
             .unwrap();
     assert_eq!(claimed, None, "the sibling's row stays unclaimed");
 }
+
+/// The agent page lists an agent's automatic replies from the audit log
+/// filtered by AID (docs/31 §4 step 3), so a send must name the agent and
+/// what was decided, and tell a real reply from a row handled silently.
+#[tokio::test]
+#[serial]
+async fn sent_audit_names_the_agent_and_the_decision() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xsent-audit").await;
+    let agent = seed_agent(&pool, &owner, "a", true).await;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+    let answered = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let skipped = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let reply_id = Uuid::new_v4();
+
+    for (row, body) in [
+        (answered, json!({ "reply_message_id": reply_id })),
+        (skipped, json!({})),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/messages/{row}/auto-reply-sent"))
+                    .header("authorization", &token)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // The audit write is fire-and-forget.
+    let mut rows: Vec<(Option<String>, Value)> = Vec::new();
+    for _ in 0..40 {
+        rows = sqlx::query_as(
+            "SELECT aid, detail FROM agent_audit_log WHERE event = 'auto_reply_sent' \
+             ORDER BY detail->>'message_id'",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        if rows.len() == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(rows.len(), 2);
+    for (aid, detail) in &rows {
+        assert_eq!(aid.as_deref(), Some(agent.aid.as_str()));
+        assert_eq!(detail["decision"], "auto_accept");
+        let message_id = detail["message_id"].as_str().unwrap();
+        if message_id == answered.to_string() {
+            assert_eq!(detail["reply_message_id"], reply_id.to_string());
+        } else {
+            assert_eq!(message_id, skipped.to_string());
+            assert!(detail["reply_message_id"].is_null());
+        }
+    }
+}
+
+/// Migration 0024 fills in the AID of auto-reply rows written before the
+/// API recorded it, and touches nothing else.
+#[tokio::test]
+#[serial]
+async fn older_auto_reply_audit_rows_get_their_aid() {
+    skip_without_db!();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xaudit-backfill").await;
+    let agent = seed_agent(&pool, &owner, "a", true).await;
+
+    let insert = |event: &'static str, detail: Value| {
+        let pool = pool.clone();
+        let user_id = owner.user_id;
+        async move {
+            sqlx::query("INSERT INTO agent_audit_log (user_id, event, detail) VALUES ($1, $2, $3)")
+                .bind(user_id)
+                .bind(event)
+                .bind(detail)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    insert(
+        "auto_reply_evaluated",
+        json!({ "agent_id": agent.id.to_string() }),
+    )
+    .await;
+    insert("auto_reply_sent", json!({ "recipient_did": agent.did })).await;
+    // Unknown agent, and another event naming the agent: both stay as they are.
+    insert(
+        "auto_reply_sent",
+        json!({ "recipient_did": "did:key:zsomeone-else" }),
+    )
+    .await;
+    insert(
+        "auto_reply_policy_updated",
+        json!({ "agent_id": agent.id.to_string() }),
+    )
+    .await;
+
+    sqlx::raw_sql(include_str!("../migrations/0024_audit_auto_reply_aid.sql"))
+        .execute(&pool)
+        .await
+        .expect("migration 0024");
+
+    let rows: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT event, aid FROM agent_audit_log ORDER BY event, aid NULLS LAST")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let aids: Vec<(&str, Option<&str>)> = rows
+        .iter()
+        .map(|(event, aid)| (event.as_str(), aid.as_deref()))
+        .collect();
+    assert_eq!(
+        aids,
+        [
+            ("auto_reply_evaluated", Some(agent.aid.as_str())),
+            ("auto_reply_policy_updated", None),
+            ("auto_reply_sent", Some(agent.aid.as_str())),
+            ("auto_reply_sent", None),
+        ]
+    );
+}

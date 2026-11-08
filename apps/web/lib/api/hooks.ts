@@ -213,12 +213,13 @@ export function useUpdateAgentMutation() {
   });
 }
 
-export function useAgentCredentialsQuery() {
+export function useAgentCredentialsQuery(options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: queryKeys.agentCredentials(),
     queryFn: () => defaultApiClient.listAgentCredentials(),
     staleTime: 30_000,
     retry: 1,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -473,11 +474,12 @@ export function useMessageAttachmentsQuery(id: string | null) {
   });
 }
 
-export function useAuditLogQuery(query?: AuditLogQuery) {
+export function useAuditLogQuery(query?: AuditLogQuery, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: queryKeys.auditLog(query),
     queryFn: () => defaultApiClient.listAuditLog(query),
     staleTime: 15_000,
     retry: 1,
+    refetchInterval: options?.refetchInterval,
   });
 }

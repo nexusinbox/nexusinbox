@@ -7005,6 +7005,7 @@ fn spawn_auto_reply_evaluation(
             r#"
             SELECT
               a.id               AS agent_id,
+              ai.aid             AS aid,
               a.auto_reply       AS master_auto_reply_enabled,
               p.policy           AS policy,
               p.revision         AS policy_revision,
@@ -7035,6 +7036,7 @@ fn spawn_auto_reply_evaluation(
         };
 
         let agent_id: Uuid = row.get("agent_id");
+        let aid: String = row.get("aid");
         let master: bool = row.get("master_auto_reply_enabled");
         let policy: serde_json::Value = row
             .try_get::<serde_json::Value, _>("policy")
@@ -7068,7 +7070,7 @@ fn spawn_auto_reply_evaluation(
             pool.clone(),
             recipient_user_id,
             None,
-            None,
+            Some(aid),
             "auto_reply_evaluated",
             detail,
         );
@@ -14227,9 +14229,11 @@ async fn mark_auto_reply_sent(
     // `update_message_flags`.
     let pre = sqlx::query(
         r#"
-        SELECT sender_did, recipient_did
-        FROM message_index
-        WHERE id = $1 AND owner_user_id = $2
+        SELECT m.sender_did, m.recipient_did, m.auto_reply_decision,
+               (SELECT k.aid FROM agent_identity_keys k
+                 WHERE k.did = m.recipient_did LIMIT 1) AS recipient_aid
+        FROM message_index m
+        WHERE m.id = $1 AND m.owner_user_id = $2
         LIMIT 1
         "#,
     )
@@ -14250,6 +14254,8 @@ async fn mark_auto_reply_sent(
     };
     let sender_did: String = row.get("sender_did");
     let recipient_did: String = row.get("recipient_did");
+    let decision: Option<String> = row.get("auto_reply_decision");
+    let recipient_aid: Option<String> = row.get("recipient_aid");
     enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
 
     // Idempotent UPDATE: sets the column only when it's still NULL,
@@ -14286,13 +14292,16 @@ async fn mark_auto_reply_sent(
         pool,
         user_uuid,
         None,
-        None,
+        recipient_aid,
         "auto_reply_sent",
         serde_json::json!({
             "message_id": message_id.to_string(),
             "sender_did": sender_did,
             "recipient_did": recipient_did,
+            // Without a reply id the executor handled the row without
+            // answering (not a request, a policy override, …).
             "reply_message_id": payload.reply_message_id.map(|id| id.to_string()),
+            "decision": decision,
             "auto_reply_sent_at": auto_reply_sent_at,
             "executor_mode": payload
                 .executor_mode

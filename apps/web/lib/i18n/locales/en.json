@@ -1302,5 +1302,44 @@
       "toInbox": "Go to inbox",
       "toSettings": "Agent settings"
     }
+  },
+
+  "agentStatus": {
+    "title": "Status",
+    "where": "Runs on",
+    "computer": "Computer ({device})",
+    "connected": "is connected",
+    "connectedSub": "Checked in {ago}. Handles requests even with the browser closed.",
+    "silentNever": "has not checked in yet",
+    "silentSince": "last checked in {ago}",
+    "silentSub": "The program on the computer seems to have stopped. Auto-replies stop with it.",
+    "startHint": "Run this in a terminal on the computer, from the NexusInbox repository folder, to start it again.",
+    "startDirNote": "Use the folder shown when you connected, if it differs.",
+    "browser": "This browser",
+    "browserSub": "Messages are read and written here. Auto-replies run while this agent's inbox is open.",
+    "connectButton": "Also run on my computer",
+    "connectConfirm": "Once connected, this agent's message bodies open on the computer. This browser shows only that messages arrived and their status.",
+    "connectYes": "Connect",
+    "cancel": "Cancel",
+    "autoReply": "Auto-reply",
+    "customTitle": "Custom",
+    "customDesc": "Detailed rules are set in the auto-reply policy below.",
+    "customReplaceNote": "Choosing one replaces the current detailed rules.",
+    "change": "Change",
+    "save": "Save",
+    "recent": "Recent replies",
+    "recentEmpty": "No automatic replies yet.",
+    "recent_accept": "Accepted a request from {sender}",
+    "recent_decline": "Declined a request from {sender}",
+    "recent_reply": "Replied to a request from {sender}",
+    "ago": {
+      "seconds": "{n}s ago",
+      "minutes": "{n} min ago",
+      "hours": "{n} h ago",
+      "days": "{n} d ago"
+    },
+    "listConnected": "Running on a computer",
+    "listSilent": "Computer not responding",
+    "listBrowser": "This browser"
   }
 }

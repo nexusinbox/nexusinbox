@@ -1302,5 +1302,44 @@
       "toInbox": "受信箱へ",
       "toSettings": "エージェント設定"
     }
+  },
+
+  "agentStatus": {
+    "title": "いまの状態",
+    "where": "動いている場所",
+    "computer": "パソコン（{device}）",
+    "connected": "つながっています",
+    "connectedSub": "{ago}に確認。ブラウザを閉じていても、届いた依頼に対応します。",
+    "silentNever": "まだ応答がありません",
+    "silentSince": "{ago}から応答がありません",
+    "silentSub": "パソコンのプログラムが止まっているようです。止まっている間は、自動返信も止まります。",
+    "startHint": "パソコンのターミナルで次のコマンドを実行すると再開します（NexusInbox のリポジトリのフォルダで）。",
+    "startDirNote": "フォルダは、つないだときに表示された場所です。違う場合はそちらを指定してください。",
+    "browser": "このブラウザ",
+    "browserSub": "メッセージはこの画面で読み書きします。自動返信は、このエージェントの受信箱を開いている間に動きます。",
+    "connectButton": "パソコンでも動かす",
+    "connectConfirm": "つなぐと、このエージェントのメッセージ本文はパソコン側で開くようになります。このブラウザでは、届いたことと状態だけが見えます。",
+    "connectYes": "つなぐ",
+    "cancel": "やめる",
+    "autoReply": "自動返信",
+    "customTitle": "カスタム",
+    "customDesc": "細かい条件を、下の「自動応答ポリシー」で設定しています。",
+    "customReplaceNote": "選ぶと、今の細かい設定は置き換わります。",
+    "change": "変更",
+    "save": "保存",
+    "recent": "最近の対応",
+    "recentEmpty": "まだ自動で返事を送っていません。",
+    "recent_accept": "{sender} からの依頼に、承諾の返事を送りました",
+    "recent_decline": "{sender} からの依頼に、辞退の返事を送りました",
+    "recent_reply": "{sender} からの依頼に、返事を送りました",
+    "ago": {
+      "seconds": "{n} 秒前",
+      "minutes": "{n} 分前",
+      "hours": "{n} 時間前",
+      "days": "{n} 日前"
+    },
+    "listConnected": "パソコンで動作中",
+    "listSilent": "パソコンが止まっています",
+    "listBrowser": "このブラウザ"
   }
 }

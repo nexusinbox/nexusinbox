@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>エージェントの状態表示（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn: #8a5a00; --warn-soft: #fff7e6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 880px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .scenes { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .scenes button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .scenes button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* The settings page, simplified */
+  .page { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 640px) { .page { grid-template-columns: 1fr; } }
+  .list { display: grid; gap: 8px; align-content: start; }
+  .agent { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+  .agent.sel { border: 1.5px solid var(--accent); background: var(--accent-soft); }
+  .agent b { display: block; font-size: 14px; }
+  .agent .line { color: var(--muted); }
+  .new { color: var(--accent); font-size: 12px; font-weight: 700; margin-left: 4px; }
+  .detail { display: grid; gap: 14px; align-content: start; }
+  .head { display: flex; justify-content: space-between; align-items: center; }
+  .head h2 { margin: 0; font-size: 20px; }
+  .ghost { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+
+  .status { background: var(--card); border: 1.5px solid var(--accent); border-radius: 14px; padding: 18px 20px; box-shadow: 0 0 0 4px var(--accent-soft); }
+  .status h3 { margin: 0 0 12px; font-size: 15px; }
+  .row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; gap: 2px; } }
+  .key { color: var(--muted); font-size: 13px; padding-top: 1px; }
+  .val b { font-weight: 600; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dot.ok { background: #16a34a; }
+  .dot.warn { background: #f59e0b; }
+  .dot.off { background: #9ca3af; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-top: 8px; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 8px; }
+  .cmd code { flex: 1; min-width: 0; width: 0; overflow-x: auto; white-space: nowrap; }
+  .cmd button { font: 12px system-ui; background: #334155; color: #fff; border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  .link { color: var(--accent); font-size: 13px; cursor: pointer; margin-left: 8px; white-space: nowrap; }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--accent); background: var(--card); color: var(--accent); margin-top: 8px; }
+  ul.log { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+  ul.log li { font-size: 14px; }
+  ul.log time { color: var(--muted); font-size: 12px; margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .ok-t { color: var(--ok); font-weight: 600; }
+  .q-t { color: var(--warn); font-weight: 600; }
+
+  .rest { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 14px 18px; color: var(--muted); font-size: 13px; }
+  .rest div { padding: 6px 0; border-top: 1px dashed var(--line); }
+  .rest div:first-child { border-top: 0; }
+
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>エージェントの状態表示（画面案）</h1>
+    <p class="lead">エージェント設定の一番上に「いまの状態」を出す案です（docs/31 §4 の 3）。上のボタンで状態を切り替えて見られます。</p>
+
+    <div class="scenes" role="tablist">
+      <button class="on" data-scene="pc-ok">パソコン: つながっている</button>
+      <button data-scene="pc-stopped">パソコン: 止まっている</button>
+      <button data-scene="browser">このブラウザだけ</button>
+      <button data-scene="manual">自動返信なし</button>
+    </div>
+
+    <div class="page">
+      <!-- Agent list: one status line per agent -->
+      <div class="list">
+        <div class="agent sel">
+          <b>秘書</b>
+          <span class="line" data-show="pc-ok manual"><span class="dot ok"></span>パソコンで動作中</span>
+          <span class="line" data-show="pc-stopped"><span class="dot warn"></span>パソコンが止まっています</span>
+          <span class="line" data-show="browser"><span class="dot off"></span>このブラウザ</span>
+        </div>
+        <div class="agent">
+          <b>経理アシスタント</b>
+          <span class="line"><span class="dot off"></span>このブラウザ</span>
+        </div>
+        <div class="sub" style="padding: 0 4px;">一覧にも 1 行で状態を出します <span class="new">NEW</span></div>
+      </div>
+
+      <div class="detail">
+        <div class="head">
+          <h2>秘書</h2>
+          <button class="ghost">名前を編集</button>
+        </div>
+
+        <!-- The new status card -->
+        <section class="status">
+          <h3>いまの状態 <span class="new">NEW</span></h3>
+
+          <div class="row">
+            <div class="key">動いている場所</div>
+            <div class="val">
+              <div data-show="pc-ok manual">
+                <span class="dot ok"></span><b>パソコン（macOS）</b>　つながっています
+                <div class="sub">30 秒前に確認。ブラウザを閉じていても、届いた依頼に対応します。</div>
+              </div>
+              <div data-show="pc-stopped">
+                <span class="dot warn"></span><b>パソコン（macOS）</b>　2 時間前から応答がありません
+                <div class="sub">パソコンのプログラムが止まっているようです。止まっている間は、自動返信も止まります。</div>
+                <div class="note">パソコンのターミナルで、次のコマンドを実行すると再開します（NexusInbox のリポジトリのフォルダで）。
+                  <div class="cmd"><code>scripts/run_noninteractive_stack.sh start ~/.nexusinbox/agent-f59pq6z0</code><button>コピー</button></div>
+                </div>
+              </div>
+              <div data-show="browser">
+                <span class="dot off"></span><b>このブラウザ</b>
+                <div class="sub">メッセージはこの画面で読み書きします。自動返信は、このエージェントの受信箱を開いている間に動きます。</div>
+                <button class="btn">パソコンでも動かす</button>
+                <div class="sub">はじめての設定と同じ手順（接続コード → コマンド 1 つ）でつなぎます。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="key">自動返信</div>
+            <div class="val">
+              <div data-show="pc-ok pc-stopped browser">
+                <b>日程調整は、自動で承諾する</b><span class="link">変更</span>
+                <div class="sub">誰からの日程調整でも、候補の最初の時間で承諾します。それ以外の依頼は、あなたが決めます。</div>
+              </div>
+              <div data-show="manual">
+                <b>まず私が確認する</b><span class="link">変更</span>
+                <div class="sub">依頼は受信箱に届き、返事はあなたが決めます。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="key">最近の対応</div>
+            <div class="val">
+              <ul class="log" data-show="pc-ok pc-stopped">
+                <li><time>11/8 11:34</time>接続テスト からの日程調整に <span class="ok-t">承諾の返事を送りました</span></li>
+                <li><time>11/7 18:02</time>山田さん からの日程調整に <span class="ok-t">承諾の返事を送りました</span></li>
+                <li><time>11/7 09:15</time>佐藤さん からのタスク依頼は <span class="q-t">あなたの確認待ち</span></li>
+              </ul>
+              <ul class="log" data-show="browser">
+                <li><time>11/8 11:34</time>山田さん からの日程調整は <span class="q-t">承諾待ち（受信箱を開くと返事を送ります）</span></li>
+                <li><time>11/7 18:02</time>山田さん からの日程調整に <span class="ok-t">承諾の返事を送りました</span></li>
+              </ul>
+              <ul class="log" data-show="manual">
+                <li><time>11/8 11:34</time>山田さん からの日程調整は <span class="q-t">あなたの確認待ち</span></li>
+              </ul>
+              <div class="sub" style="margin-top: 6px;">直近 3 件。相手の名前は連絡先とエージェント名から出します（本文は表示しません）。</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Everything below stays as it is today (reorganised later, §4 step 4) -->
+        <section class="rest">
+          <div>ここから下は今の画面のまま（あとで「詳細」にまとめます: §4 の 4）</div>
+          <div>概要（エージェントID・DID）</div>
+          <div>モード / 鍵の所在 / Signer Daemon Bridge</div>
+          <div>自動返信のスイッチ / 自動応答ポリシー / 判定履歴</div>
+          <div>クレデンシャル / 緊急停止</div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>変わるところ</h3>
+      <ul>
+        <li>エージェント設定の一番上に「いまの状態」を出す（3 行）</li>
+        <li>左のエージェント一覧にも、1 行で状態を出す</li>
+        <li>DID・credential・鍵の所在などの用語は、この欄には出さない</li>
+        <li>画面を開いている間は 30 秒ごとに更新する</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>どう判断するか</h3>
+      <ul>
+        <li><b>つながっている</b>: パソコンのプログラムは自動返信の確認のため 30 秒ごとにサーバへ問い合わせる。最後の問い合わせが 2 分以内なら「つながっています」、それより前なら「○○前から応答がありません」</li>
+        <li><b>自動返信</b>: はじめての設定の 3 つの選択肢のどれに当たるかを出す。当てはまらない細かい設定は「カスタム（詳細で設定）」</li>
+        <li><b>最近の対応</b>: 依頼が届いたときの判定と、返事を送った記録から出す。運営は本文を読めないので、相手・時刻・結果だけ</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>作るときに要るもの</h3>
+      <ul>
+        <li>返事を送った記録に、どのエージェントのものかを残す（今は残っていない）</li>
+        <li>「パソコンでも動かす」は、はじめての設定の接続ステップをそのまま使う</li>
+        <li>起動コマンドのフォルダ名は、つないだときと同じ規則で画面側で決める（同名フォルダがあって番号が付いた場合だけずれる）</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ol>
+        <li>「つながっている」とみなすのは最後の問い合わせから 2 分以内、でよいか</li>
+        <li>既存のエージェントに「パソコンでも動かす」ボタンを置くか（つなぐと、このブラウザでは本文が読めなくなる）</li>
+        <li>最近の対応は 3 件でよいか</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.scenes button');
+  function show(scene) {
+    buttons.forEach((b) => b.classList.toggle('on', b.dataset.scene === scene));
+    document.querySelectorAll('[data-show]').forEach((el) => {
+      el.hidden = !el.dataset.show.split(' ').includes(scene);
+    });
+  }
+  buttons.forEach((b) => b.addEventListener('click', () => show(b.dataset.scene)));
+  show('pc-ok');
+</script>
+</body>
+</html>
