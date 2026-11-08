@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>クラウドの AI をつなぐ（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn: #8a5a00; --warn-soft: #fff6e0;
+    --danger: #b3261e; --danger-soft: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 960px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .views { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .views button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .card + .card { margin-top: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .note { font-size: 13px; border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+  .note.warn { background: var(--warn-soft); color: var(--warn); }
+  .note.ok { background: var(--ok-soft); color: var(--ok); }
+  .addr { display: flex; align-items: center; gap: 8px; background: #f8fafd; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .addr code { flex: 1 1 0; width: 0; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .sbtn { font: 12px system-ui; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+  .btn { font: inherit; font-size: 14px; font-weight: 600; border: 0; border-radius: 999px; padding: 8px 18px; background: var(--accent); color: #fff; cursor: pointer; }
+  .ghost { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 7px 16px; cursor: pointer; }
+  .dbtn { font: inherit; font-size: 13px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  ol.steps { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
+  ol.steps li { margin: 4px 0; }
+
+  .consent { max-width: 460px; margin: 0 auto; }
+  .consent .who { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; color: #fff; }
+  .logo.m { background: linear-gradient(135deg, #2563eb, #9333ea); }
+  .logo.n { background: #111827; font-size: 13px; }
+  .perm { list-style: none; padding: 0; margin: 8px 0; }
+  .perm li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; display: flex; gap: 8px; }
+  .perm li:first-child { border-top: 0; }
+  .perm .y { color: var(--ok); font-weight: 700; } .perm .n { color: var(--danger); font-weight: 700; }
+
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-of-type { border-top: 0; }
+
+  .field { display: grid; gap: 6px; }
+  .field label { font-size: 13px; font-weight: 700; }
+  .picked { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: #fff; }
+  .pill { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 700; }
+  .picker { border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; }
+  .picker input { width: 100%; border: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; font: inherit; }
+  .group { padding: 6px 10px 2px; font-size: 12px; color: var(--muted); font-weight: 700; }
+  .opt { padding: 6px 10px; font-size: 14px; cursor: pointer; display: flex; justify-content: space-between; }
+  .opt:hover { background: var(--accent-soft); }
+  .opt small { color: var(--muted); }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>クラウドの AI をつなぐ（画面案）</h1>
+    <p class="lead">Muse などのクラウドの AI に NexusInbox を使わせる流れの案です（docs/33 段階 2・4）。あわせて、作成画面の宛先を選ぶ形にする案（docs/34 §3 の 3）も入れています。</p>
+    <div class="views">
+      <button class="on" data-view="url">① つなぐ URL</button>
+      <button data-view="consent">② 許可の画面</button>
+      <button data-view="list">③ つながっている AI</button>
+      <button data-view="compose">④ 作成画面の宛先</button>
+    </div>
+
+    <!-- ① -->
+    <section data-panel="url">
+      <div class="card">
+        <h3>秘書 ― いまの状態</h3>
+        <p class="muted" style="margin:0">● つながっています（このパソコン: macOS）</p>
+      </div>
+      <div class="card">
+        <h3>クラウドの AI からつなぐ</h3>
+        <p style="margin:0 0 6px;font-size:14px">Muse など、インターネット上で動く AI に、この受信箱を読ませて下書きを作らせられます。送るのは、いつもあなたです。</p>
+        <div class="addr"><code>https://k3x9q7.mcp.nexusinbox.ai/mcp</code><button class="sbtn">コピー</button></div>
+        <ol class="steps">
+          <li>AI のアプリで「カスタムコネクタ」(または「MCP サーバを追加」) を開き、この URL を貼る</li>
+          <li>NexusInbox の許可の画面が開くので、内容を確かめて「許可する」</li>
+          <li>AI に「受信箱を見て」「この返事を下書きして」と頼む。下書きは「確認が必要」に届く</li>
+        </ol>
+        <div class="note warn">AI を提供する会社（Muse なら Meta）は、AI に読ませたメッセージの本文を見ます。NexusInbox の運営は見ません。</div>
+        <p class="muted" style="margin:0">このパソコンの NexusInbox が動いている間だけ使えます。</p>
+      </div>
+    </section>
+
+    <!-- ② -->
+    <section data-panel="consent" hidden>
+      <div class="card consent">
+        <div class="who"><div class="logo m">M</div><span style="font-size:20px">→</span><div class="logo n">NI</div></div>
+        <h3 style="font-size:18px">Muse が「秘書」を使う許可を求めています</h3>
+        <p class="muted" style="margin:0 0 6px">ログイン中: 水本 ・ つなぐ先: 秘書（このパソコン: macOS）</p>
+        <ul class="perm">
+          <li><span class="y">✓</span>受信箱の一覧を見る、メッセージを読む</li>
+          <li><span class="y">✓</span>返事や新しいメッセージの下書きを作る</li>
+          <li><span class="n">✕</span>送る（下書きは「確認が必要」で、あなたが送ります）</li>
+          <li><span class="n">✕</span>ほかのエージェント、連絡先、設定にさわる</li>
+        </ul>
+        <div class="note warn">Muse を提供する Meta は、Muse に読ませたメッセージの本文を見ます。</div>
+        <p class="muted" style="margin:0">あとで「エージェント」の設定からいつでも切れます。30 日使わなければ自動で切れます。</p>
+        <div class="btns"><button class="btn">許可する</button><button class="ghost">やめる</button></div>
+      </div>
+    </section>
+
+    <!-- ③ -->
+    <section data-panel="list" hidden>
+      <div class="card">
+        <h3>つながっている AI</h3>
+        <div class="row">
+          <div><b>Muse</b><br><span class="muted">秘書 ・ 読む・下書き ・ 許可: 11/8 ・ 最後に使った: 3 分前</span></div>
+          <button class="dbtn">切る</button>
+        </div>
+        <div class="row">
+          <div><b>Claude</b><br><span class="muted">秘書 ・ 読む・下書き ・ 許可: 11/2 ・ 最後に使った: 2 日前</span></div>
+          <button class="dbtn">切る</button>
+        </div>
+        <p class="muted" style="margin:8px 0 0">切ると、その AI はすぐに使えなくなります。作りかけの下書きは「確認が必要」に残ります。</p>
+      </div>
+    </section>
+
+    <!-- ④ -->
+    <section data-panel="compose" hidden>
+      <div class="card">
+        <div class="field">
+          <label>宛先</label>
+          <div class="picked"><span class="pill">佐藤さん（秘書） ×</span></div>
+          <div class="picker">
+            <input placeholder="名前で探す、またはアドレス (aid:ai:…) を貼る">
+            <div class="group">連絡先</div>
+            <div class="opt">佐藤さん（秘書）<small>連絡先</small></div>
+            <div class="opt">田中さん（アシスタント）<small>連絡先</small></div>
+            <div class="group">自分のエージェント</div>
+            <div class="opt">秘書<small>自分</small></div>
+            <div class="opt">接続テスト<small>自分</small></div>
+          </div>
+          <p class="muted" style="margin:0">候補は入力しなくても出ます。新しい相手は、相手から教わったアドレスを貼ります。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>しくみ（段階 2）</h3>
+      <ul>
+        <li>NexusInbox の API が OAuth 2.1 の許可を出す（MCP の標準どおり。PKCE、つなぐ先の URL に縛ったトークン）</li>
+        <li>AI のアプリの登録は、MCP の標準の 2 通り（クライアント情報の URL、または動的な登録）に対応する</li>
+        <li>パソコンは届いたトークンを API に問い合わせて確かめる。切ればすぐ使えなくなる</li>
+        <li>本文の復号はこれまでどおりパソコンだけ</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ul>
+        <li>使わない接続を自動で切るまでの日数（案: 30 日）</li>
+        <li>①の URL の場所: エージェントの「いまの状態」の下（案）</li>
+        <li>③の場所: エージェント設定の「詳細」の中（案）</li>
+        <li>①は中継（段階 3）ができるまで表示しない。段階 2 は手元で確かめるだけ</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+<script>
+  const show = (v) => {
+    document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== v));
+    document.querySelectorAll(".views button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
+  };
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+</script>
+</body>
+</html>

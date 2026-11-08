@@ -595,3 +595,25 @@ export type AgentDraft = {
 export type AgentDraftsResponse = {
   drafts: AgentDraft[];
 };
+
+// docs/33 §10: OAuth for cloud AIs.
+export type OAuthAuthorizeInfo = {
+  client_name: string;
+  client_id: string;
+  client_kind: "registered" | "metadata_document";
+  redirect_host: string;
+  agent_label: string;
+  device_label: string | null;
+  aid: string;
+  scope: string[];
+};
+
+export type OAuthGrant = {
+  id: string;
+  aid: string;
+  agent_label: string;
+  client_name: string;
+  scope: string[];
+  created_at: string;
+  last_used_at: string;
+};

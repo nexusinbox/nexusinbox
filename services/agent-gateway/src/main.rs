@@ -69,14 +69,22 @@ struct Cli {
     #[arg(long)]
     allowed_uid: Option<u32>,
 
-    /// Serve a read-only remote MCP endpoint on this loopback address
-    /// (e.g. 127.0.0.1:8787) for cloud-hosted agents (docs/33 §7 stage 1).
-    #[arg(long, requires = "mcp_token_file")]
+    /// Serve the remote MCP endpoint for cloud-hosted agents on this
+    /// loopback address, e.g. 127.0.0.1:8787 (docs/33 §7). Callers use
+    /// OAuth tokens from the API (docs/33 §10).
+    #[arg(long)]
     mcp_listen: Option<std::net::SocketAddr>,
 
-    /// Bearer token file for --mcp-listen; created (0600) if missing.
+    /// For local tests: also accept a static bearer token from this file,
+    /// created (0600) if missing.
     #[arg(long)]
     mcp_token_file: Option<std::path::PathBuf>,
+
+    /// For local tests: the URL this endpoint is reached at, registered as
+    /// its OAuth audience (the API must allow local resources). Normally
+    /// the API assigns one.
+    #[arg(long)]
+    mcp_public_url: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,14 +1192,17 @@ async fn main() {
         dpop_public_jwk,
     });
 
-    if let (Some(listen), Some(token_file)) = (cli.mcp_listen, cli.mcp_token_file.as_deref()) {
-        let token = remote_mcp::load_or_create_token(token_file).unwrap_or_else(|e| {
-            eprintln!("[ERROR] {e}");
-            std::process::exit(1);
+    if let Some(listen) = cli.mcp_listen {
+        let token = cli.mcp_token_file.as_deref().map(|file| {
+            remote_mcp::load_or_create_token(file).unwrap_or_else(|e| {
+                eprintln!("[ERROR] {e}");
+                std::process::exit(1);
+            })
         });
+        let public_url = cli.mcp_public_url.clone();
         let mcp_state = Arc::clone(&state);
         tokio::spawn(async move {
-            if let Err(e) = remote_mcp::serve(mcp_state, listen, token).await {
+            if let Err(e) = remote_mcp::serve(mcp_state, listen, token, public_url).await {
                 eprintln!("[ERROR] {e}");
                 std::process::exit(1);
             }

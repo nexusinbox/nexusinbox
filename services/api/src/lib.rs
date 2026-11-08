@@ -41,6 +41,8 @@ use uuid::Uuid;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
+mod oauth;
+
 const AUTH_COOKIE_NAME: &str = "nexusinbox_session";
 const MAX_REQUEST_BODY_BYTES: usize = 64 * 1024;
 /// Process-wide circuit breaker, sized to what one machine can serve and far
@@ -180,6 +182,8 @@ struct AppState {
     attachment_intent_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     /// Per-IP budget for POST /agent-pairing/resolve (docs/31).
     pairing_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
+    /// Per-IP budgets for OAuth registration and tokens (docs/33 §10).
+    oauth_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     ws_connections_per_user: Arc<Mutex<HashMap<String, usize>>>,
     // SECURITY: hierarchical block lists keyed by recipient owner user_id.
     // L1 (l1_did) drops messages silently; L2 (l2_identity) and L3 (l3_stealth)
@@ -379,6 +383,7 @@ impl AppState {
             caller_budgets: Arc::new(Mutex::new(HashMap::new())),
             attachment_intent_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             pairing_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
+            oauth_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             ws_connections_per_user: Arc::new(Mutex::new(HashMap::new())),
             blocks_by_user: Arc::new(Mutex::new(HashMap::new())),
             spam_sender_dids: Arc::new(parse_did_policy_env("AGENT_INBOX_SPAM_SENDER_DIDS")),
@@ -3822,6 +3827,10 @@ async fn enforce_csrf_protection(request: Request, next: Next) -> Response {
         || path == "/status"
         || path.starts_with("/agent-auth/")
         || path == "/agent-pairing/resolve"
+        // OAuth endpoints an AI app calls without a cookie (docs/33 §10).
+        || path == "/oauth/token"
+        || path == "/oauth/register"
+        || path == "/oauth/revoke"
         || (path.starts_with("/agent-credentials/") && path.ends_with("/activate"))
     {
         return next.run(request).await;
@@ -13325,6 +13334,8 @@ pub struct RetentionSummary {
     pub audit_log: u64,
     pub send_counters: u64,
     pub agent_drafts: u64,
+    /// Expired OAuth codes and tokens, ended grants, unused app registrations.
+    pub oauth: u64,
     pub errors: u64,
 }
 
@@ -13363,7 +13374,7 @@ async fn run_retention_pass_with_state(
     // logged and counted, and the remaining steps still run. Message rows
     // go first: deleting them cascades to message_attachments, and the
     // attachment cleanup job then purges the unlinked blobs.
-    let steps: [(&str, &str, &[i64]); 7] = [
+    let steps: [(&str, &str, &[i64]); 11] = [
         (
             "attachment_uploads",
             "purged_at < NOW() - ($1::bigint * INTERVAL '1 day') \
@@ -13410,6 +13421,33 @@ async fn run_retention_pass_with_state(
             "expires_at < NOW() - ($1::bigint * INTERVAL '1 day')",
             &[0],
         ),
+        // OAuth for cloud AIs (docs/33 §10). Codes live 10 minutes and are
+        // kept a day so a replay can still stop its grant.
+        (
+            "oauth_codes",
+            "expires_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[1],
+        ),
+        (
+            "oauth_tokens",
+            "refresh_expires_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[1],
+        ),
+        // Ended (disconnected or idle 30 days) grants, a month later.
+        (
+            "oauth_grants",
+            "revoked_at < NOW() - ($1::bigint * INTERVAL '1 day') \
+             OR last_used_at < NOW() - ($2::bigint * INTERVAL '1 day')",
+            &[30, 60],
+        ),
+        // App registrations nobody connected within 30 days.
+        (
+            "oauth_clients",
+            "created_at < NOW() - ($1::bigint * INTERVAL '1 day') \
+             AND NOT EXISTS (SELECT 1 FROM oauth_grants g \
+                             WHERE g.client_id = oauth_clients.client_id)",
+            &[30],
+        ),
     ];
     for (table, predicate, binds) in steps {
         match retention_step(&pool, config.mode, table, predicate, binds).await {
@@ -13420,6 +13458,9 @@ async fn run_retention_pass_with_state(
                 "sessions" => summary.sessions = rows,
                 "user_send_counters" => summary.send_counters = rows,
                 "agent_drafts" => summary.agent_drafts = rows,
+                "oauth_codes" | "oauth_tokens" | "oauth_grants" | "oauth_clients" => {
+                    summary.oauth += rows
+                }
                 _ => summary.audit_log = rows,
             },
             Err(error) => {
@@ -13619,6 +13660,7 @@ pub async fn spawn_retention_job_if_configured() -> bool {
                 audit_log = summary.audit_log,
                 send_counters = summary.send_counters,
                 agent_drafts = summary.agent_drafts,
+                oauth = summary.oauth,
                 errors = summary.errors,
                 "data retention pass completed"
             );
@@ -15575,6 +15617,22 @@ fn app_with_state(state: AppState) -> Router {
         )
         .route("/recipients/resolve", get(resolve_recipient))
         .route("/messages", get(list_messages).post(send_message))
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth::authorization_server_metadata),
+        )
+        .route("/oauth/register", post(oauth::register_client))
+        .route("/oauth/authorize/info", get(oauth::authorize_info))
+        .route("/oauth/authorize", post(oauth::authorize_decide))
+        .route("/oauth/token", post(oauth::token))
+        .route("/oauth/revoke", post(oauth::revoke))
+        .route("/oauth/introspect", post(oauth::introspect))
+        .route("/oauth/grants", get(oauth::list_grants))
+        .route(
+            "/oauth/grants/{id}",
+            axum::routing::delete(oauth::delete_grant),
+        )
+        .route("/mcp-resources", post(oauth::register_mcp_resource))
         .route(
             "/review-keys",
             get(list_review_keys).post(create_review_key),

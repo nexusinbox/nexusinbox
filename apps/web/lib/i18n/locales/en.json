@@ -255,6 +255,39 @@
     "archiveEmpty": "No archived messages."
   },
 
+  "connectedAIs": {
+    "title": "Connected AIs",
+    "empty": "No AI is connected.",
+    "readAndDraft": "read and draft",
+    "readOnly": "read only",
+    "allowed": "allowed {when}",
+    "lastUsed": "last used {when}",
+    "disconnect": "Disconnect",
+    "disconnected": "Disconnected {app}.",
+    "disconnectFailed": "Could not disconnect.",
+    "note": "A disconnected AI stops working within a minute. Its unfinished drafts stay in Needs review."
+  },
+
+  "oauthConsent": {
+    "loading": "Loading…",
+    "title": "{app} wants to use \"{agent}\"",
+    "target": "Connects to: {agent}",
+    "agentOnDevice": "{agent} (on this computer: {device})",
+    "verifiedApp": "App verified by: {host}",
+    "selfNamedApp": "The app chose this name itself",
+    "returnsTo": "Returns to: {host}",
+    "canRead": "See the inbox and read messages",
+    "canDraft": "Write drafts of replies and new messages",
+    "cannotSend": "Send (drafts wait in Needs review; you send them)",
+    "cannotOther": "Touch other agents, contacts or settings",
+    "providerSees": "The company behind {app} sees the messages you let {app} read. NexusInbox does not.",
+    "revokeLater": "You can disconnect it any time under the agent's Details. It disconnects by itself after 30 days without use.",
+    "allow": "Allow",
+    "deny": "Cancel",
+    "errorTitle": "This request cannot be accepted",
+    "errorBody": "Go back to the AI app and connect again. If it keeps happening, check that the app uses the right URL."
+  },
+
   "compose": {
     "title": "Compose Message",
     "subtitle": "Select a recipient, enter body, and send",
@@ -269,8 +302,8 @@
     "fromEmpty": "(No agents registered)",
     "fromHelp": "Sent in this agent's name.",
     "toLabel": "To",
-    "toPlaceholder": "aid:ai:... or did:key:...",
-    "toHelp": "Registered agents and contacts appear as suggestions. For new recipients, paste either the shared Agent ID (`aid:ai:...`) or the current `did:key` directly.",
+    "toPlaceholder": "Search by name, or paste an address (aid:ai:…)",
+    "toHelp": "Suggestions show without typing. For someone new, paste the address they gave you.",
     "recipientModeStandardHint": "This recipient can read messages in the web UI.",
     "recipientModeDaemonIsolatedHint": "This recipient runs on a computer. Sending works the same.",
     "subjectLabel": "Subject",
@@ -336,7 +369,11 @@
       "api_error": "Anthropic returned an error.",
       "network": "Network error reaching Anthropic.",
       "empty_response": "Anthropic returned an empty draft."
-    }
+    },
+    "toChosen": "To: {name}",
+    "toChange": "Change",
+    "toGroupContacts": "Contacts",
+    "toGroupOwn": "Your agents"
   },
 
   "agentDrafts": {
@@ -1132,7 +1169,7 @@
     "securityBody": "NexusInbox employs multiple layers of security: end-to-end encryption for all message content (X25519 ECDH to wrap a per-message content key plus AES-GCM-256 for the body, implemented via the Web Crypto API), Ed25519 digital signatures for message integrity, DPoP (RFC 9449) sender-constrained token binding, TLS encryption for all data in transit, and at-rest encryption of the Signer Daemon key file (Argon2id passphrase derivation plus XChaCha20-Poly1305). We implement industry-standard security measures, but no system can guarantee absolute security.",
 
     "retentionTitle": "8. Data Retention & Deletion",
-    "retentionBody": "Message bodies and attachments are stored end-to-end encrypted in storage the operator uses (Cloudflare R2). The operator holds no keys to decrypt them and cannot read their content. Messages (encrypted bodies and attachments, and their metadata) are deleted automatically 90 days after they are sent. You can delete individual messages, agents, and agent credentials from the Service UI at any time before that. Audit logs are deleted after 90 days, sessions and tokens within 7 days after they expire, and revoked agent credentials 30 days after revocation. You can delete your entire account yourself at any time from Profile in the settings (for safety, within 10 minutes of signing in with World ID). Deletion removes all associated data (agents, encrypted message bodies and attachments, message metadata, credentials, and audit logs) immediately. Messages in another user's inbox remain as that user's data. Data included in our providers' backups is erased when those backups expire. Drafts written by a cloud AI (encrypted for the recipient and for the browsers you set up) are deleted when you send or discard them, and at the latest 7 days after they were made.",
+    "retentionBody": "Message bodies and attachments are stored end-to-end encrypted in storage the operator uses (Cloudflare R2). The operator holds no keys to decrypt them and cannot read their content. Messages (encrypted bodies and attachments, and their metadata) are deleted automatically 90 days after they are sent. You can delete individual messages, agents, and agent credentials from the Service UI at any time before that. Audit logs are deleted after 90 days, sessions and tokens within 7 days after they expire, and revoked agent credentials 30 days after revocation. You can delete your entire account yourself at any time from Profile in the settings (for safety, within 10 minutes of signing in with World ID). Deletion removes all associated data (agents, encrypted message bodies and attachments, message metadata, credentials, and audit logs) immediately. Messages in another user's inbox remain as that user's data. Data included in our providers' backups is erased when those backups expire. Drafts written by a cloud AI (encrypted for the recipient and for the browsers you set up) are deleted when you send or discard them, and at the latest 7 days after they were made. Records of connected cloud AIs (the app name, where it returns to, and when you allowed it) end when you disconnect or after 30 days without use, and are deleted 30 days after you disconnect or 60 days after last use.",
 
     "rightsTitle": "9. Your Rights",
     "rightsBody": "You have the right to: access your data through the Service UI and API, delete individual agents, messages, and credentials, delete your entire account, and be informed of significant changes to this policy. Per-item deletion and full account deletion are available directly in the Service UI. Disclosure requests are handled through the contact form (normally within 30 days). If you are in the EU/EEA you may have additional rights under the General Data Protection Regulation (GDPR), including data portability and the right to lodge a complaint with your local data protection authority — those requests are handled through the same contact form within the timeframes that applicable law requires.",

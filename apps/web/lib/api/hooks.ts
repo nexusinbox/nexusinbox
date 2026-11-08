@@ -37,6 +37,7 @@ export const queryKeys = {
   autoReplyPolicy: (agentId: string | null) =>
     ["auto-reply-policy", agentId] as const,
   reviewKeys: () => ["review-keys"] as const,
+  oauthGrants: () => ["oauth-grants"] as const,
   agentDrafts: () => ["agent-drafts"] as const,
 };
 
@@ -550,6 +551,26 @@ export function useCreateReviewKeyMutation() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.reviewKeys() });
+    },
+  });
+}
+
+// docs/33 §10: AI apps connected to the person's agents.
+export function useOAuthGrantsQuery() {
+  return useQuery({
+    queryKey: queryKeys.oauthGrants(),
+    queryFn: () => defaultApiClient.listOAuthGrants(),
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+export function useDeleteOAuthGrantMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => defaultApiClient.deleteOAuthGrant(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.oauthGrants() });
     },
   });
 }

@@ -1,6 +1,6 @@
 # 33. クラウドで動く AI エージェントからつなぐ
 
-**Status**: C (暗号のまま通す中継) で進めることに決定 (2026-11-08)。段階 1 (パソコン側の MCP の入口と、下書きの承認) は済み (§9)
+**Status**: C (暗号のまま通す中継) で進めることに決定 (2026-11-08)。段階 1 (パソコン側の MCP の入口と、下書きの承認) と段階 2 (OAuth) は済み (§9、§10)
 **Scope**: Meta の Muse、OpenAI の dots、xAI の Grok Bot のような、事業者のクラウドで常時動く AI エージェントから NexusInbox を使えるようにする
 **Related**: [20 MCP / Skill 戦略](./20_mcp_skill_strategy.md)、[32 配布](./32_daemon_distribution.md)、[28 運営が持つデータと保持期間](./28_data_inventory_and_retention.md)
 
@@ -117,3 +117,58 @@
 - 信頼の前提: パソコンは確認用の公開鍵をサーバから受け取る (送るときに宛先の公開鍵を受け取るのと同じ)。DB の漏洩や運営に読まれることは防ぐが、鍵をすり替えるサーバは防がない。連絡先 (docs/28 P3-8) と同じ前提
 - 確かめたこと: `scripts/e2e_remote_mcp_drafts.mjs` (手元の API、署名デーモン、ゲートウェイ、公式の MCP クライアント)。確認用のブラウザが無いと断る → 読む → 下書き → 承認前は相手に届かない → 確認用の鍵で開ける → 承認すると相手が復号できる。`BROWSER_REVIEW=1` で、登録と承認を本物のブラウザの画面で行い、同じ結果になった
 - 気づいて直したこと: パソコンにつないだエージェントは、作ったときの DID と、パソコンの鍵の DID の 2 つを持つ。名前の引き当てが作ったときの DID だけを見ていたので、パソコン宛て・パソコンからの行で名前が出なかった。受信一覧と下書きの名前は両方の DID で引き、エージェント一覧は `dids` で全 DID を返すようにした
+
+## 10. 段階 2: OAuth 2.1 (2026-11-08)
+
+画面案: `docs/33_oauth_mock.html` (つなぐ URL、許可の画面、つながっている AI、あわせて作成画面の宛先)。運営者の承認: 「この案で、全て推奨でOK」(自動で切れるまで 30 日、URL は「いまの状態」の下、一覧は「詳細」の中、URL は段階 3 まで出さない)。
+
+### 10.1 役割
+
+| 役割 (MCP の認可仕様) | どこ |
+|---|---|
+| リソースサーバ | パソコンのゲートウェイ (`<id>.mcp.nexusinbox.ai/mcp`、段階 3 までは手元の URL) |
+| 認可サーバ | NexusInbox の API (`https://api.nexusinbox.ai`) |
+| 許可の画面 | Web (`https://app.nexusinbox.ai/oauth/authorize`)。World ID のログインを使う |
+| クライアント | Muse などのアプリ |
+
+### 10.2 流れ
+
+1. AI のアプリが MCP の URL に来る。トークンが無ければゲートウェイは 401 と `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource"` を返す
+2. ゲートウェイの Protected Resource Metadata (RFC 9728) が、認可サーバとして API を指す
+3. API の Authorization Server Metadata (RFC 8414): 認可・トークン・登録・取り消しの URL、PKCE は S256 だけ、クライアント情報の URL (Client ID Metadata Document) に対応
+4. クライアントの登録は 2 通り: クライアント情報の URL を `client_id` にする方式と、動的な登録 (RFC 7591)。Muse がどちらを使うかは実機で確かめる
+5. 許可の画面: ログインした人が、つなぐ先のエージェント (`resource` の URL から決まる) と、できること (読む・下書き、送れない) を見て「許可する」。認可コードを返す
+6. トークン: PKCE を確かめ、`resource` (RFC 8707) に縛ったアクセストークン (1 時間) とリフレッシュトークン (使うたびに入れ替え、30 日使わなければ失効) を出す。どちらもハッシュだけを保存する
+7. ゲートウェイは届いたトークンを API の introspection に問い合わせる (自分のエージェントトークンで認証。結果は 60 秒だけ覚える)。エージェントと `resource` が自分と一致し、取り消されていなければ通す
+8. 「つながっている AI」から切ると、その場で使えなくなる。許可・切断・トークン発行は操作履歴に残す
+
+### 10.3 守ること
+
+- 運営が持つのは、AI のアプリの名前と戻り先 URL、誰がどのエージェントにどの AI を許したか、トークンのハッシュと時刻だけ。本文や鍵には触れない
+- 権限は「読む・下書き」に固定する (§8)。送る権限は出さない
+- 戻り先 URL は https (手元の確かめでは localhost も可) で、登録と完全一致させる
+- 許可の画面はクリックジャッキング対策で枠の中に表示させない。`state` と PKCE を必須にする
+
+### 10.4 進め方
+
+1. API: メタデータ、登録 (クライアント情報の URL と動的な登録)、認可コード、トークン、introspection、取り消し、一覧 (migration 0027)
+2. ゲートウェイ: Protected Resource Metadata、401 の案内、introspection での確認 (今のファイルのトークンは手元の確かめ用に残す)
+3. Web: 許可の画面、つながっている AI の一覧
+4. 確かめ: 手元で、公式の MCP SDK の OAuth 付きクライアントでつなぐ
+
+### 10.5 実装 (済)
+
+- API (`services/api/src/oauth.rs`、migration 0027):
+  - `GET /.well-known/oauth-authorization-server`、`POST /oauth/register` (動的な登録。公開クライアントだけ、IP ごとに 1 時間 10 回)
+  - クライアント情報の URL (`client_id` が https の URL): 取りに行く前に、ホスト名を引いて公開のアドレスだけかを確かめ、そのアドレスに固定して取る (リダイレクトしない、5 秒、16 KB まで)。運営の内側のネットワークに届かせないため。1 日覚える
+  - `GET /oauth/authorize/info` と `POST /oauth/authorize` (人のセッション)。戻り先は登録と完全一致 (ループバックだけはポート違いを許す)、PKCE は S256 だけ、`state` は 512 文字まで。同じアプリと同じパソコンへの許可は、新しい許可で置き換える
+  - `POST /oauth/token`: 認可コード (10 分、一度だけ。二度目が来たらその許可を止める) と、リフレッシュ (使うたびに入れ替え、古いものが戻ってきたら許可を止める)。アクセストークンは 1 時間
+  - `POST /oauth/introspect` (パソコンのエージェントトークン): 自分のエージェント宛てのトークンだけを有効と答える。30 日使われていない許可は無効
+  - `POST /oauth/revoke`、`GET/DELETE /oauth/grants`、`POST /mcp-resources` (パソコンの MCP の URL。API が `https://<id>.mcp.nexusinbox.ai/mcp` を割り当てる。手元の確かめだけ、`AGENT_INBOX_MCP_ALLOW_LOCAL_RESOURCES=true` でループバックの URL を名乗れる)
+  - 保持ジョブ: 期限切れのコードとトークン、終わった許可 (切って 30 日、使わず 60 日)、誰もつながなかった登録 (30 日) を消す
+  - 許可・切断は操作履歴に `oauth_grant_created` / `oauth_grant_revoked` で残す
+- ゲートウェイ: 起動時に MCP の URL を API に登録し、`/.well-known/oauth-protected-resource[/mcp]` で API を案内する。トークンが無い・無効なら 401 と `resource_metadata`。届いたトークンは introspection で確かめ (有効なら 60 秒、無効なら 10 秒覚える)、`aud` が自分の URL と一致するものだけ通す。下書きは `inbox.draft` が要る。手元の確かめ用の固定トークンは `--mcp-token-file` のときだけ
+- Web: 許可の画面 `/oauth/authorize` (アプリの名乗った名前か、確かめた URL か、戻り先のホスト、できること・できないこと、事業者が本文を見ること)、エージェント設定の「詳細」に「つながっている AI」(切る)、作成画面の宛先の候補
+- 確かめたこと: `scripts/e2e_remote_mcp_drafts.mjs` の OAuth の段で、公式の MCP SDK (1.32.2) の OAuth 付きクライアントが、401 → 案内 → 登録 → 許可 → トークン → 読む・下書きまで通った。読むだけの許可では下書きを断る。本物のブラウザで許可の画面を開き、「許可する」でアプリの戻り先にコード・`state`・`iss` が渡ること、「つながっている AI」から切れることも確かめた。API の DB テスト (`oauth_db_integration_test.rs`) で、他人のパソコン・知らない戻り先・送る権限・plain の PKCE・コードの使い回し・リフレッシュの使い回し・30 日の放置を確かめた
+- 切ってから止まるまで、パソコンが覚えている間 (最大 60 秒) かかる。画面にもそう書いた
+- 未対応: ブラウザの中で OAuth を行うクライアント向けの CORS (MCP Inspector など)。Muse やほかの事業者のクライアントはサーバ側で行う想定。実機で必要になったら足す

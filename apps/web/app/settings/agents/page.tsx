@@ -46,6 +46,7 @@ import {
   daemonEnrollCommand,
   daemonStartCommand,
 } from "../../../lib/agents/enroll-command";
+import { ConnectedAIs } from "../../_components/ConnectedAIs";
 
 const DETAILS_OPEN_KEY = "nexusinbox-agent-details-open";
 
@@ -1669,6 +1670,8 @@ export default function AgentsSettingsPage() {
                   >
                     {t("agents.detailsTitle")}
                   </summary>
+
+                {activeAgent.aid ? <ConnectedAIs aid={activeAgent.aid} /> : null}
 
                 <div className="panel" style={{ marginTop: 10 }}>
                   <p className="item-title">{t("agents.overviewTitle")}</p>

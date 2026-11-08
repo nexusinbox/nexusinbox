@@ -139,11 +139,12 @@ function ComposePageInner() {
   // original DID is the browser key they were created with.
   const recipientOptions = useMemo(() => {
     const seen = new Set<string>();
-    const options: Array<{ address: string; label: string }> = [];
+    const options: Array<{ address: string; label: string; kind: "contact" | "own" }> = [];
     for (const agent of apiAgents) {
       if (seen.has(agent.did)) continue;
       seen.add(agent.did);
-      options.push({ address: agent.aid || agent.did, label: agent.label });
+      for (const did of agent.dids ?? []) seen.add(did);
+      options.push({ address: agent.aid || agent.did, label: agent.label, kind: "own" });
     }
     for (const contact of contacts) {
       if (!contact.readable || seen.has(contact.did)) continue;
@@ -151,7 +152,7 @@ function ComposePageInner() {
       const label = contact.agent_label
         ? `${contact.person_name}(${contact.agent_label})`
         : contact.person_name;
-      options.push({ address: contact.did, label });
+      options.push({ address: contact.did, label, kind: "contact" });
     }
     return options;
   }, [apiAgents, contacts]);
@@ -782,7 +783,7 @@ function ComposePageInner() {
                 ) : null}
                 {apiAgents.map((agent) => (
                   <option value={agent.did} key={agent.did}>
-                    {agent.label} — {agent.did}
+                    {agent.label}
                   </option>
                 ))}
               </select>
@@ -803,16 +804,82 @@ function ComposePageInner() {
                 value={recipientDid}
                 onChange={(event) => setRecipientDid(event.target.value)}
                 placeholder={t("compose.toPlaceholder")}
-                list="compose-recipient-options"
                 autoComplete="off"
               />
-              <datalist id="compose-recipient-options">
-                {recipientOptions.map((option) => (
-                  <option value={option.address} key={"rcpt-" + option.address}>
-                    {option.label}
-                  </option>
-                ))}
-              </datalist>
+              {/* Candidates show without typing (docs/34 §3): contacts,
+                  then the person's own agents, narrowed by what is typed. */}
+              {(() => {
+                const typed = recipientDid.trim();
+                const chosen = recipientOptions.find((o) => o.address === typed);
+                if (chosen) {
+                  return (
+                    <p className="field-help" data-testid="compose-recipient-chosen">
+                      {t("compose.toChosen", { name: chosen.label })}{" "}
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ fontSize: 12, padding: "2px 8px" }}
+                        onClick={() => setRecipientDid("")}
+                      >
+                        {t("compose.toChange")}
+                      </button>
+                    </p>
+                  );
+                }
+                const needle = typed.toLowerCase();
+                const matches = recipientOptions.filter(
+                  (o) =>
+                    !needle ||
+                    o.label.toLowerCase().includes(needle) ||
+                    o.address.toLowerCase().includes(needle),
+                );
+                if (matches.length === 0) return null;
+                return (
+                  <div
+                    data-testid="compose-recipient-picker"
+                    style={{
+                      border: "1px solid var(--line, #e5e7eb)",
+                      borderRadius: 10,
+                      marginTop: 6,
+                      maxHeight: 220,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {(["contact", "own"] as const).map((kind) => {
+                      const group = matches.filter((o) => o.kind === kind);
+                      if (group.length === 0) return null;
+                      return (
+                        <div key={kind}>
+                          <div
+                            style={{ padding: "6px 10px 2px", fontSize: 12, fontWeight: 700, color: "#6b7280" }}
+                          >
+                            {kind === "contact" ? t("compose.toGroupContacts") : t("compose.toGroupOwn")}
+                          </div>
+                          {group.map((o) => (
+                            <button
+                              key={"rcpt-" + o.address}
+                              type="button"
+                              onClick={() => setRecipientDid(o.address)}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                textAlign: "left",
+                                border: 0,
+                                background: "transparent",
+                                padding: "6px 10px",
+                                fontSize: 14,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               <p className="field-help">
                 {t("compose.toHelp")}
               </p>

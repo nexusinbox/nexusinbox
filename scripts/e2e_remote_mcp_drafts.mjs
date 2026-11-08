@@ -9,9 +9,13 @@
 //   4. the MCP client asks for a reply draft; nothing reaches B yet
 //   5. the "browser" opens the draft with its review key
 //   6. the person approves it; B receives it and can decrypt it
+//   7. OAuth (docs/33 §10): an app with the official SDK's OAuth client
+//      finds the API from the endpoint's 401, registers, gets the person's
+//      consent and a token, and drafts; a read-only grant cannot draft
 //
 // Needs the same local API as scripts/e2e_isolated_auto_reply.mjs (dev
-// bearer, CSRF on, migrations up to 0026) and a built gateway.
+// bearer, CSRF on, migrations up to 0027) with
+// AGENT_INBOX_MCP_ALLOW_LOCAL_RESOURCES=true, and a built gateway.
 //
 // Usage: API=http://localhost:8081 node scripts/e2e_remote_mcp_drafts.mjs
 //   KEEP=1 leaves the stack and the MCP endpoint running.
@@ -173,6 +177,7 @@ const PASSPHRASE = "e2e-passphrase";
 let stackDir = null;
 let stackEnv = null;
 let gateway = null;
+let oauthGateway = null;
 function stack(command, input) {
   return execFileSync("sh", [STACK, command, stackDir], {
     cwd: REPO,
@@ -383,6 +388,102 @@ async function main() {
   if (left.drafts.length !== 0) fail("the draft is still listed");
 
   await mcp.close();
+
+  step("OAuth: start a gateway that takes only OAuth tokens");
+  const oauthPort = MCP_PORT + 1;
+  const oauthUrl = `http://127.0.0.1:${oauthPort}/mcp`;
+  const oauthLog = path.join(WORK, "mcp-oauth-gateway.log");
+  oauthGateway = spawn(GATEWAY_BIN, [
+    "--llm-socket", path.join(sockDir, "mcp-oauth.sock"),
+    "--signer-socket", stackEnv.AGENT_INBOX_SIGNER_SOCKET,
+    "--api-url", API,
+    "--mcp-listen", `127.0.0.1:${oauthPort}`,
+    "--mcp-public-url", oauthUrl,
+  ], { stdio: ["ignore", fs.openSync(oauthLog, "a"), fs.openSync(oauthLog, "a")] });
+  for (let i = 0; i < 40 && !fs.readFileSync(oauthLog, "utf8").includes("OAuth audience"); i++) await sleep(250);
+  if (!fs.readFileSync(oauthLog, "utf8").includes("OAuth audience")) fail("OAuth gateway did not start", fs.readFileSync(oauthLog, "utf8"));
+  const prm = await (await fetch(`http://127.0.0.1:${oauthPort}/.well-known/oauth-protected-resource/mcp`)).json();
+  if (prm.resource !== oauthUrl || prm.authorization_servers?.[0] !== API) fail("protected resource metadata", prm);
+
+  // The person's side of consent, as the web page does it.
+  const consent = async (authUrl) => {
+    const params = Object.fromEntries(new URL(authUrl).searchParams);
+    const info = expectStatus(await api("GET", `/oauth/authorize/info?${new URLSearchParams(params)}`, { auth: human }), [200], "consent info");
+    const out = expectStatus(await api("POST", "/oauth/authorize", { auth: human, body: { ...params, approve: true } }), [200], "consent");
+    return { info, code: new URL(out.redirect_to).searchParams.get("code") };
+  };
+  const { UnauthorizedError } = await import(pathToFileURL(path.join(SDK, "client/auth.js")).href);
+  const makeProvider = () => {
+    const store = {};
+    return {
+      store,
+      get redirectUrl() { return "http://127.0.0.1:9/callback"; },
+      get clientMetadata() {
+        return { client_name: "e2e-oauth-muse", redirect_uris: ["http://127.0.0.1:9/callback"], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" };
+      },
+      clientInformation: () => store.client,
+      saveClientInformation: (c) => { store.client = c; },
+      tokens: () => store.tokens,
+      saveTokens: (t) => { store.tokens = t; },
+      redirectToAuthorization: (u) => { store.authUrl = u.toString(); },
+      saveCodeVerifier: (v) => { store.verifier = v; },
+      codeVerifier: () => store.verifier,
+    };
+  };
+  const oauthConnect = async (provider, scopeOverride) => {
+    const transport = new StreamableHTTPClientTransport(new URL(oauthUrl), { authProvider: provider });
+    const client = new Client({ name: "e2e-oauth-muse", version: "0" });
+    try {
+      await client.connect(transport);
+      fail("connected without a token");
+    } catch (e) {
+      if (!(e instanceof UnauthorizedError)) throw e;
+    }
+    if (!provider.store.authUrl) fail("the SDK did not reach the authorization endpoint");
+    let authUrl = provider.store.authUrl;
+    if (scopeOverride) {
+      const u = new URL(authUrl);
+      u.searchParams.set("scope", scopeOverride);
+      authUrl = u.toString();
+    }
+    const { info, code } = await consent(authUrl);
+    await transport.finishAuth(code);
+    const again = new Client({ name: "e2e-oauth-muse", version: "0" });
+    await again.connect(new StreamableHTTPClientTransport(new URL(oauthUrl), { authProvider: provider }));
+    return { client: again, info, authUrl };
+  };
+  const callOauth = async (client, name, args) => {
+    const r = await client.callTool({ name, arguments: args });
+    return { error: r.isError ? r.content?.[0]?.text : null, value: r.structuredContent };
+  };
+
+  step("OAuth: the SDK discovers, registers, gets consent and a token");
+  const provider = makeProvider();
+  const { client: oauthClient, info, authUrl } = await oauthConnect(provider);
+  console.log(`  authorize at ${new URL(authUrl).origin}${new URL(authUrl).pathname}`);
+  console.log(`  consent page: ${info.client_name} → ${info.agent_label} (${info.scope.join(" ")})`);
+  if (!provider.store.client?.client_id?.startsWith("nxc_")) fail("no dynamic registration", provider.store.client);
+  if (!provider.store.tokens?.access_token?.startsWith("nxa_")) fail("no access token", provider.store.tokens);
+  const oread = await callOauth(oauthClient, "read_message", { message_id: sent.message_id });
+  if (oread.error || oread.value.subject !== "Lunch on Friday?") fail("OAuth read", oread);
+  const odraft = await callOauth(oauthClient, "create_draft", { reply_to_message_id: sent.message_id, body: "Drafted over OAuth." });
+  if (odraft.error) fail("OAuth draft", odraft);
+  const listed = expectStatus(await api("GET", "/agent-drafts", { auth: human }), [200], "drafts");
+  const viaOauth = listed.drafts.find((x) => x.id === odraft.value.draft_id);
+  if (viaOauth?.via !== "e2e-oauth-muse") fail("the draft is not named after the OAuth app", viaOauth);
+  console.log(`  read and drafted as "${viaOauth.via}"`);
+  const grants = expectStatus(await api("GET", "/oauth/grants", { auth: human }), [200], "grants");
+  if (!grants.grants.some((g) => g.client_name === "e2e-oauth-muse")) fail("the connection is not listed", grants);
+  await oauthClient.close();
+  expectStatus(await api("DELETE", `/agent-drafts/${odraft.value.draft_id}`, { auth: human }), [204], "discard");
+
+  step("OAuth: a read-only grant cannot draft");
+  const { client: reader } = await oauthConnect(makeProvider(), "inbox.read");
+  const denied = await callOauth(reader, "create_draft", { reply_to_message_id: sent.message_id, body: "no" });
+  if (!denied.error?.includes("not allowed")) fail("a read-only grant drafted", denied);
+  console.log("  refused");
+  await reader.close();
+
   console.log("\nPASS: drafts from the remote MCP endpoint are sent only after approval");
   if (process.env.KEEP) {
     console.log(`  KEEP: MCP http://127.0.0.1:${MCP_PORT}/mcp, token ${tokenFile}, user ${userId}`);
@@ -394,6 +495,7 @@ function cleanup() {
   if (process.env.KEEP) return;
   try {
     gateway?.kill();
+    oauthGateway?.kill();
   } catch {}
   if (stackDir) {
     try {

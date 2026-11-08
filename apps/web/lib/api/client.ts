@@ -11,6 +11,8 @@ import {
   AgentDraftsResponse,
   ReviewKey,
   ReviewKeysResponse,
+  OAuthAuthorizeInfo,
+  OAuthGrant,
   ContactRecord,
   ContactRecordsResponse,
   CreateAgentRequest,
@@ -605,6 +607,28 @@ export class NexusInboxApiClient {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
+  }
+
+  async oauthAuthorizeInfo(query: string): Promise<OAuthAuthorizeInfo> {
+    return this.request<OAuthAuthorizeInfo>("/oauth/authorize/info?" + query);
+  }
+
+  async oauthAuthorizeDecide(
+    params: Record<string, string>,
+    approve: boolean,
+  ): Promise<{ redirect_to: string }> {
+    return this.request<{ redirect_to: string }>("/oauth/authorize", {
+      method: "POST",
+      body: JSON.stringify({ ...params, approve }),
+    });
+  }
+
+  async listOAuthGrants(): Promise<{ grants: OAuthGrant[] }> {
+    return this.request<{ grants: OAuthGrant[] }>("/oauth/grants");
+  }
+
+  async deleteOAuthGrant(id: string): Promise<void> {
+    await this.requestNoContent("/oauth/grants/" + encodeURIComponent(id), { method: "DELETE" });
   }
 
   async listReviewKeys(): Promise<ReviewKeysResponse> {
