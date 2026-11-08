@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { seedAuthSessionCookie } from "./_helpers/auth";
-import { mockNexusInboxBackend, SEED_AGENT } from "./_helpers/mocks";
+import { mockNexusInboxBackend } from "./_helpers/mocks";
 
 test("global navigation: menu links open target pages without bouncing back to inbox", async ({
   page,
@@ -8,20 +8,15 @@ test("global navigation: menu links open target pages without bouncing back to i
   baseURL,
 }) => {
   // Force the JA locale so the navigation labels below
-  // ("エージェント別", "エージェント設定", etc.) match what the
+  // ("確認が必要", "エージェント", etc.) match what the
   // shell renders. The i18n provider defaults to `en` for a fresh
   // Playwright context.
   await page.addInitScript(() => {
     window.localStorage.setItem("nexusinbox-locale", "ja");
   });
 
-  // Wire up the deterministic backend before navigation. Without the
-  // /api/agents seed, the sidebar's "エージェント別" link falls back
-  // to the placeholder /agent route and the count badge stays in a
-  // loading-shaped state — both of which can throw off Playwright's
-  // accessible-name lookup. With the seed in place, the link
-  // resolves to /agent/<seed-did> and the rest of the shell mounts
-  // cleanly.
+  // Wire up the deterministic backend before navigation, so the shell
+  // mounts cleanly and count badges do not stay in a loading state.
   await mockNexusInboxBackend(page);
 
   await seedAuthSessionCookie(context, baseURL);
@@ -29,19 +24,14 @@ test("global navigation: menu links open target pages without bouncing back to i
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
 
-  // Sidebar — "エージェント別" navigates to the byAgent page bound
-  // to the first owned agent's did. Accept either the bare /agent
-  // route (cold-cache, before the agents query resolves) or
-  // /agent/<did> (warm-cache, after AppShell has rewritten the
-  // href). With the mocked agents response above, the warm path is
-  // the realistic one.
-  await page.getByRole("link", { name: "エージェント別" }).click();
-  await expect(page).toHaveURL(
-    new RegExp(`/agent(/${encodeURIComponent(SEED_AGENT.did)})?$`),
-  );
+  // Sidebar — the mail items (docs/34 §3 step 3).
+  await page.getByRole("link", { name: "確認が必要", exact: true }).click();
+  await expect(page).toHaveURL(/\/pending$/);
+  await page.getByRole("link", { name: "アーカイブ", exact: true }).click();
+  await expect(page).toHaveURL(/\/\?view=archive$/);
 
-  // Sidebar — "エージェント設定" → /settings/agents.
-  await page.getByRole("link", { name: "エージェント設定" }).click();
+  // Sidebar — "エージェント" → /settings/agents.
+  await page.getByRole("link", { name: "エージェント", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/agents$/);
 
   // Topbar icon — `aria-label="ヘルプ"` → /help. /help is public so

@@ -19,9 +19,10 @@
     "pending": "Needs review",
     "contacts": "Contacts",
     "blocks": "Block Settings",
-    "agentSettings": "Agent Settings",
+    "agentSettings": "Agents",
     "createAgent": "Create Agent",
-    "auditLog": "AI activity"
+    "auditLog": "AI activity",
+    "archive": "Archive"
   },
 
   "topbar": {
@@ -70,6 +71,15 @@
     "validationEmpty": "Please enter a display name.",
     "validationTooLong": "Must be 64 characters or fewer.",
     "saveFailed": "Failed to save."
+  },
+
+  "inboxAgents": {
+    "filterLabel": "Filter by agent",
+    "all": "All",
+    "only": " only",
+    "autoReplyLead": "Automatic replies: ",
+    "onComputer": "{names} reply while NexusInbox runs on your computer. ",
+    "inBrowser": "{names} reply only while this page is open in this browser."
   },
 
   "inbox": {
@@ -240,7 +250,9 @@
         "calendar_wrong_protocol": "auto_accept_if_free only applies to scheduling",
         "llm_unavailable": "Leaving it to AI is not available yet"
       }
-    }
+    },
+    "archiveTitle": "Archive",
+    "archiveEmpty": "No archived messages."
   },
 
   "compose": {
@@ -327,6 +339,42 @@
     }
   },
 
+  "agentDrafts": {
+    "title": "Drafts written by AI ({count})",
+    "why": "Cloud AIs cannot send. A draft is sent only when you read it and press \"Send this\".",
+    "empty": "No drafts are waiting.",
+    "loadFailed": "Could not load drafts.",
+    "notSetUp": "This browser is not set up to review AI drafts yet.",
+    "notSetUpWithDrafts": "This browser cannot read drafts yet.",
+    "setUpHow": "Drafts are encrypted; NexusInbox cannot read them. Only browsers you set up can. This creates a key inside this browser (it never leaves). Drafts made before you set up cannot be read here: discard them and ask the AI again.",
+    "setUp": "Use this browser to review",
+    "setUpDone": "This browser can now read drafts.",
+    "setUpFailed": "Could not set up this browser. Private browsing may not keep keys.",
+    "unreadable": "(cannot be read in this browser)",
+    "unreadableBody": "This draft was made before this browser was set up, or for another browser. Discard it and ask the AI again.",
+    "unknownParty": "Unknown sender",
+    "madeBy": "Written by {agent}",
+    "madeByVia": "Written by {via} as \"{agent}\"",
+    "open": "Open",
+    "detailTitle": "Review draft",
+    "back": "← Back",
+    "from": "From",
+    "to": "To",
+    "subject": "Subject",
+    "made": "Written",
+    "send": "Send this",
+    "discard": "Discard",
+    "detailNote": "To change it, ask the AI to write it again (you cannot edit it here). Drafts are deleted after 7 days.",
+    "sent": "Sent.",
+    "sendFailed": "Could not send. Please try again later.",
+    "discarded": "Draft discarded.",
+    "discardFailed": "Could not discard.",
+    "browsers": "Browsers that can read drafts ({count})",
+    "thisBrowser": "this browser",
+    "removeBrowser": "Remove",
+    "removeFailed": "Could not remove."
+  },
+
   "pending": {
     "subjectHidden": "The subject is encrypted (approve to read it in the inbox)",
     "categoryName": {
@@ -339,8 +387,8 @@
     "refresh": "Refresh",
     "selectAgent": "Select Agent",
     "allAgents": "All Agents",
-    "heading": "{count} messages need review",
-    "descSelected": "From senders with very low trust, or flagged as spam. Decide whether to let them in.",
+    "heading": "Messages held for you ({count})",
+    "descSelected": "From senders with very low trust, or that look like spam. You decide whether they go to the inbox.",
     "descUnselected": "Select an agent from the left.",
     "loading": "Loading...",
     "error": "Failed to load messages.",
@@ -350,12 +398,14 @@
     "trustScore": "Trust {n}%",
     "category": " · Category {category}",
     "noSubject": "(No subject)",
-    "approve": "Approve",
-    "reject": "Reject",
-    "approved": "Message approved and moved to inbox.",
+    "approve": "Move to inbox",
+    "reject": "Discard",
+    "approved": "Moved to the inbox.",
     "approveFailed": "Could not approve. Please try again later.",
-    "rejected": "Message rejected and moved to trash.",
-    "rejectFailed": "Could not reject. Please try again later."
+    "rejected": "Moved to the trash.",
+    "rejectFailed": "Could not reject. Please try again later.",
+    "recipient": "To: ",
+    "unknownAgent": "(unknown agent)"
   },
 
   "contacts": {
@@ -1082,7 +1132,7 @@
     "securityBody": "NexusInbox employs multiple layers of security: end-to-end encryption for all message content (X25519 ECDH to wrap a per-message content key plus AES-GCM-256 for the body, implemented via the Web Crypto API), Ed25519 digital signatures for message integrity, DPoP (RFC 9449) sender-constrained token binding, TLS encryption for all data in transit, and at-rest encryption of the Signer Daemon key file (Argon2id passphrase derivation plus XChaCha20-Poly1305). We implement industry-standard security measures, but no system can guarantee absolute security.",
 
     "retentionTitle": "8. Data Retention & Deletion",
-    "retentionBody": "Message bodies and attachments are stored end-to-end encrypted in storage the operator uses (Cloudflare R2). The operator holds no keys to decrypt them and cannot read their content. Messages (encrypted bodies and attachments, and their metadata) are deleted automatically 90 days after they are sent. You can delete individual messages, agents, and agent credentials from the Service UI at any time before that. Audit logs are deleted after 90 days, sessions and tokens within 7 days after they expire, and revoked agent credentials 30 days after revocation. You can delete your entire account yourself at any time from Profile in the settings (for safety, within 10 minutes of signing in with World ID). Deletion removes all associated data (agents, encrypted message bodies and attachments, message metadata, credentials, and audit logs) immediately. Messages in another user's inbox remain as that user's data. Data included in our providers' backups is erased when those backups expire.",
+    "retentionBody": "Message bodies and attachments are stored end-to-end encrypted in storage the operator uses (Cloudflare R2). The operator holds no keys to decrypt them and cannot read their content. Messages (encrypted bodies and attachments, and their metadata) are deleted automatically 90 days after they are sent. You can delete individual messages, agents, and agent credentials from the Service UI at any time before that. Audit logs are deleted after 90 days, sessions and tokens within 7 days after they expire, and revoked agent credentials 30 days after revocation. You can delete your entire account yourself at any time from Profile in the settings (for safety, within 10 minutes of signing in with World ID). Deletion removes all associated data (agents, encrypted message bodies and attachments, message metadata, credentials, and audit logs) immediately. Messages in another user's inbox remain as that user's data. Data included in our providers' backups is erased when those backups expire. Drafts written by a cloud AI (encrypted for the recipient and for the browsers you set up) are deleted when you send or discard them, and at the latest 7 days after they were made.",
 
     "rightsTitle": "9. Your Rights",
     "rightsBody": "You have the right to: access your data through the Service UI and API, delete individual agents, messages, and credentials, delete your entire account, and be informed of significant changes to this policy. Per-item deletion and full account deletion are available directly in the Service UI. Disclosure requests are handled through the contact form (normally within 30 days). If you are in the EU/EEA you may have additional rights under the General Data Protection Regulation (GDPR), including data portability and the right to lodge a complaint with your local data protection authority — those requests are handled through the same contact form within the timeframes that applicable law requires.",

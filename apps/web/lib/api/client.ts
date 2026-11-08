@@ -8,6 +8,9 @@ import {
   BlocksResponse,
   AddContactKeysRequest,
   ContactKeysResponse,
+  AgentDraftsResponse,
+  ReviewKey,
+  ReviewKeysResponse,
   ContactRecord,
   ContactRecordsResponse,
   CreateAgentRequest,
@@ -602,6 +605,36 @@ export class NexusInboxApiClient {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
+  }
+
+  async listReviewKeys(): Promise<ReviewKeysResponse> {
+    return this.request<ReviewKeysResponse>("/review-keys");
+  }
+
+  async createReviewKey(payload: { public_key: string; label: string }): Promise<ReviewKey> {
+    return this.request<ReviewKey>("/review-keys", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteReviewKey(id: string): Promise<void> {
+    await this.requestNoContent("/review-keys/" + encodeURIComponent(id), { method: "DELETE" });
+  }
+
+  async listAgentDrafts(): Promise<AgentDraftsResponse> {
+    return this.request<AgentDraftsResponse>("/agent-drafts");
+  }
+
+  async sendAgentDraft(id: string): Promise<{ message_id: string; status: string }> {
+    return this.request<{ message_id: string; status: string }>(
+      "/agent-drafts/" + encodeURIComponent(id) + "/send",
+      { method: "POST" },
+    );
+  }
+
+  async deleteAgentDraft(id: string): Promise<void> {
+    await this.requestNoContent("/agent-drafts/" + encodeURIComponent(id), { method: "DELETE" });
   }
 
   async listContactKeys(): Promise<ContactKeysResponse> {

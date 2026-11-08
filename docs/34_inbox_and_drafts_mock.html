@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受信箱の整理と AI の下書き（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn: #8a5a00; --warn-soft: #fff6e0;
+    --danger: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 960px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .views { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .views button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .app { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 640px) { .app { grid-template-columns: 1fr; } }
+  nav { display: grid; gap: 2px; align-content: start; }
+  .compose { font: inherit; font-size: 14px; font-weight: 600; border: 0; border-radius: 14px; padding: 10px 16px; background: var(--accent-soft); color: var(--accent); margin-bottom: 8px; text-align: left; cursor: pointer; }
+  nav a { display: flex; justify-content: space-between; padding: 6px 12px; border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 14px; cursor: pointer; }
+  nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  nav a .n { font-size: 12px; font-weight: 700; }
+  nav a.attn .n { color: #fff; background: var(--danger); border-radius: 999px; padding: 0 7px; }
+  nav .sep { border-top: 1px solid var(--line); margin: 8px 0; }
+  nav .small { font-size: 13px; color: var(--muted); }
+
+  .main { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .titlebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .titlebar h2 { margin: 0; font-size: 20px; }
+  .filter { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: inherit; font-size: 12px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+  .note { font-size: 13px; border-radius: 10px; padding: 8px 12px; }
+  .note.ok { background: var(--ok-soft); color: var(--ok); }
+  .note.warn { background: var(--warn-soft); color: var(--warn); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .rows { overflow: hidden; }
+  .msg { display: grid; grid-template-columns: 12em minmax(0, 1fr) auto; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 14px; align-items: center; }
+  .msg:first-child { border-top: 0; }
+  .msg.unread { font-weight: 700; }
+  .msg .who small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .msg .subj { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .subj span { color: var(--muted); font-weight: 400; }
+  .msg time { color: var(--muted); font-size: 12px; font-weight: 400; }
+  @media (max-width: 640px) { .msg { grid-template-columns: 1fr; gap: 0; } }
+  .to { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 0 7px; margin-right: 6px; }
+  .to.a { color: #6d28d9; background: #f1eafe; } .to.b { color: #0e7490; background: #e3f6fa; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 0 7px; margin-left: 6px; color: var(--ok); background: var(--ok-soft); }
+  .unknown { color: var(--warn); }
+
+  .sec h3 { margin: 4px 0 6px; font-size: 15px; }
+  .sec p.why { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; border-top: 1px solid var(--line); align-items: center; font-size: 14px; }
+  .item:first-child { border-top: 0; }
+  .item small { color: var(--muted); display: block; font-size: 12px; }
+  .btn { font: inherit; font-size: 13px; font-weight: 600; border: 0; border-radius: 999px; padding: 6px 14px; background: var(--accent); color: #fff; cursor: pointer; }
+  .ghost { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .draft { padding: 16px 18px; display: grid; gap: 10px; }
+  .meta { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 4px 10px; font-size: 14px; }
+  .meta .k { color: var(--muted); font-size: 13px; }
+  .bodybox { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fbfcfe; white-space: pre-wrap; font-size: 14px; }
+  .orig { border-left: 3px solid var(--line); padding: 4px 12px; color: var(--muted); font-size: 13px; }
+  .who-made { font-size: 13px; color: var(--muted); }
+
+  .setup { padding: 18px; display: grid; gap: 10px; }
+  .setup ol { margin: 0; padding-left: 20px; font-size: 14px; }
+
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>受信箱の整理と AI の下書き（画面案）</h1>
+    <p class="lead">受信箱を 1 つにまとめ、クラウドの AI（Muse など）が作った下書きを「確認が必要」で承認して送る案です（docs/34 §3 の 3、docs/33 §8）。上のボタンで画面を切り替えられます。</p>
+    <div class="views" role="tablist">
+      <button class="on" data-view="inbox">① 受信</button>
+      <button data-view="review">② 確認が必要</button>
+      <button data-view="draft">③ 下書きを開く</button>
+      <button data-view="setup">④ このブラウザで下書きを読めるようにする</button>
+    </div>
+
+    <div class="app">
+      <nav>
+        <button class="compose">✎ 作成</button>
+        <a data-go="inbox" class="on">受信 <span class="n">3</span></a>
+        <a data-go="review" class="attn">確認が必要 <span class="n">2</span></a>
+        <a>送信済み</a>
+        <a>アーカイブ</a>
+        <div class="sep"></div>
+        <a class="small">連絡先</a>
+        <a class="small">エージェント</a>
+        <a class="small">AI の操作履歴</a>
+      </nav>
+
+      <div class="main">
+        <!-- ① Inbox -->
+        <section data-panel="inbox">
+          <div class="titlebar">
+            <h2>受信</h2>
+            <div class="filter">
+              <button class="chip on">すべて</button>
+              <button class="chip"><span class="to a">秘書</span>だけ</button>
+              <button class="chip"><span class="to b">接続テスト</span>だけ</button>
+            </div>
+          </div>
+          <div class="note ok">自動返信: <b>秘書</b> はパソコンで動いています。<b>接続テスト</b> はこのブラウザでこの画面を開いている間だけ動きます。</div>
+          <div class="card rows">
+            <div class="msg unread">
+              <div class="who">佐藤さんの秘書<small>連絡先</small></div>
+              <div class="subj"><span class="to a">秘書</span>来週の打ち合わせ候補 <span>— 火曜か木曜の午後はいかがでしょう</span></div>
+              <time>10:42</time>
+            </div>
+            <div class="msg unread">
+              <div class="who unknown">未登録の相手<small>連絡先に追加</small></div>
+              <div class="subj"><span class="to b">接続テスト</span>資料の確認のお願い <span>— 添付をご確認ください</span></div>
+              <time>9:15</time>
+            </div>
+            <div class="msg">
+              <div class="who">田中さんのアシスタント<small>連絡先</small></div>
+              <div class="subj"><span class="to a">秘書</span>Re: 見積もりの件<span class="badge">自動で返信済み</span></div>
+              <time>昨日</time>
+            </div>
+          </div>
+          <p class="who-made">各行の色付きの札が「どのエージェントに届いたか」。知らない相手は名前の代わりに「未登録の相手」と出し、技術 ID（did:key）は詳細を開いたときだけ見せます。</p>
+        </section>
+
+        <!-- ② Needs review -->
+        <section data-panel="review" hidden>
+          <div class="titlebar"><h2>確認が必要</h2></div>
+          <div class="card sec" style="padding: 12px 0 4px">
+            <div style="padding: 0 14px"><h3>AI が作った下書き（1）</h3>
+              <p class="why">クラウドの AI は送れません。あなたが内容を見て「送る」を押したときだけ送られます。</p></div>
+            <div class="item">
+              <div><b>Re: 来週の打ち合わせ候補</b><small>宛先: 佐藤さんの秘書 ・ 作成: Muse（秘書 経由）・ 12 分前</small></div>
+              <div class="btns"><button class="btn" data-go="draft">開いて確認</button></div>
+            </div>
+          </div>
+          <div class="card sec" style="padding: 12px 0 4px">
+            <div style="padding: 0 14px"><h3>届いたメッセージ（1）</h3>
+              <p class="why">信頼が低い相手や迷惑メールの疑いがあるものです。受信に入れるか、あなたが決めます。</p></div>
+            <div class="item">
+              <div><b>（件名は開くと表示）</b><small>差出人: 未登録の相手 ・ 宛先: 接続テスト ・ 迷惑メールの疑い</small></div>
+              <div class="btns"><button class="ghost">受信に入れる</button><button class="ghost">捨てる</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ③ Draft -->
+        <section data-panel="draft" hidden>
+          <div class="titlebar"><h2>下書きを確認</h2><button class="ghost" data-go="review">← 確認が必要に戻る</button></div>
+          <div class="card draft">
+            <div class="meta">
+              <span class="k">差出人</span><span>秘書</span>
+              <span class="k">宛先</span><span>佐藤さんの秘書</span>
+              <span class="k">件名</span><span>Re: 来週の打ち合わせ候補</span>
+              <span class="k">作成</span><span>Muse（Meta）が「秘書」の権限で作成 ・ 12 分前</span>
+            </div>
+            <div class="bodybox">佐藤様の秘書さま
+
+ご連絡ありがとうございます。木曜の 14 時からでお願いできますでしょうか。
+場所はオンラインを希望します。
+
+よろしくお願いいたします。</div>
+            <div class="orig">返信元: 「来週の打ち合わせ候補 — 火曜か木曜の午後はいかがでしょう」</div>
+            <div class="btns">
+              <button class="btn">この内容で送る</button>
+              <button class="ghost">捨てる</button>
+            </div>
+            <p class="who-made" style="margin:0">直したいときは、AI に頼んで作り直してもらいます（この画面では書き換えません）。下書きは 7 日で消えます。</p>
+          </div>
+        </section>
+
+        <!-- ④ Setup -->
+        <section data-panel="setup" hidden>
+          <div class="titlebar"><h2>下書きを確認</h2></div>
+          <div class="card setup">
+            <div class="note warn">このブラウザでは、まだ下書きを読めません。</div>
+            <p style="margin:0">下書きは暗号化されていて、運営（NexusInbox）には読めません。読めるのは、あらかじめ「確認に使う」と登録したブラウザだけです。</p>
+            <ol>
+              <li>下の「このブラウザを確認に使う」を押す（このブラウザの中に鍵ができます。外には出ません）</li>
+              <li>これから AI が作る下書きを、このブラウザで読めるようになります</li>
+            </ol>
+            <div class="btns"><button class="btn">このブラウザを確認に使う</button></div>
+            <p class="who-made" style="margin:0">登録の前に作られた下書きは、このブラウザでは読めません。そのときは捨てて、AI にもう一度頼んでください。登録したブラウザは「エージェント」の設定から外せます。</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>変えるところ</h3>
+      <ul>
+        <li>左の一覧を 13 項目から <b>受信 / 確認が必要 / 送信済み / アーカイブ</b> と、設定 3 つにする。「スター付き」「下書き」（いつも空）「すべてのメール」「ゴミ箱」「エージェント別」はなくす</li>
+        <li>受信箱は 1 つ。上の札でエージェントごとに絞り込む。各行に、どのエージェントに届いたかを出す</li>
+        <li>自動返信がどこで動いているかを受信の上に出す</li>
+        <li>「確認が必要」に <b>AI の下書き</b> と <b>届いたメッセージ</b> の 2 種類をまとめる</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>下書きの流れ</h3>
+      <ol>
+        <li>Muse に「返信を書いて」と頼む</li>
+        <li>パソコンの NexusInbox が下書きを暗号化して預ける（宛先の鍵と、確認用のブラウザの鍵で包む）</li>
+        <li>「確認が必要」に赤い数字が付く</li>
+        <li>開いて読み、「この内容で送る」で送信</li>
+      </ol>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ul>
+        <li>下書きを画面で直せるようにするか（案: 直さない。直すと AI が署名した内容と変わり、作り直しになるため）</li>
+        <li>下書きの保管期間（案: 7 日）</li>
+        <li>この案は「受信箱の整理」と一緒に作る（別々に作ると「確認が必要」を 2 回作り直すことになる）</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+<script>
+  const show = (v) => {
+    document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== v));
+    document.querySelectorAll(".views button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
+    document.querySelectorAll("nav a[data-go]").forEach((a) => a.classList.toggle("on", a.dataset.go === (v === "draft" || v === "setup" ? "review" : v)));
+  };
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+  document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => show(b.dataset.go)));
+</script>
+</body>
+</html>

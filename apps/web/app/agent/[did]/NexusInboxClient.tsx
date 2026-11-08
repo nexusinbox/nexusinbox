@@ -1,11 +1,11 @@
 "use client";
 
 import { CSSProperties, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../../_components/AppShell";
 import { RefreshIconButton } from "../../_components/RefreshIconButton";
 import { ConversationThread } from "../../_components/ConversationThread";
 import { RetentionNotice } from "../../_components/RetentionNotice";
+import { BrowserAutoReply } from "../../_components/BrowserAutoReply";
 import { groupMessagesByThread } from "../../../lib/inbox/group-by-thread";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { MessageFolderQuery } from "../../../lib/api/types";
@@ -24,7 +24,6 @@ const VISIBLE_FOLDERS: MessageFolderQuery[] = [
 type StatusFilter = "all" | "unread";
 import {
   useAgentsQuery,
-  useAutoReplyPolicyQuery,
   useContactsQuery,
   useMessageContentQuery,
   useMessagesQuery,
@@ -35,13 +34,7 @@ import { hasRecipientPrivateKey } from "../../../lib/crypto/recipient-keyring";
 import { indexContactsByDid, resolveParticipantLabel } from "../../../lib/api/labels";
 import { useTranslation } from "../../../lib/i18n";
 import { formatListTimestamp } from "../../../lib/format/messageTime";
-import { defaultApiClient } from "../../../lib/api/client";
-import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
-import { runAutoReplyExecutor } from "../../../lib/protocol/autoReplyExecutor";
 import { autoReplyBadge } from "../../../lib/inbox/auto-reply-badge";
-import { sendProtocolReply as realSendProtocolReply } from "../../_components/protocol/sendProtocolReply";
-import { getCalendarToken } from "../../../lib/calendar/gcalAuth";
-import { findFirstFreeCandidate } from "../../../lib/calendar/gcalFreebusy";
 
 type NexusInboxClientProps = {
   did: string;
@@ -196,120 +189,6 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
     perPage: 50,
   });
   const updateStatus = useUpdateMessageStatusMutation();
-  const policyQuery = useAutoReplyPolicyQuery(currentAgent?.id ?? null);
-  const queryClient = useQueryClient();
-  // Guards against overlapping executor runs. Without this the
-  // StrictMode double-invocation and every messagesQuery refetch
-  // would kick off a concurrent executor pass — the server column
-  // would still gate double sends, but we'd burn API + crypto work.
-  const executorRunningRef = useRef(false);
-
-  useEffect(() => {
-    const agent = currentAgent;
-    if (!agent) return;
-    if (executorRunningRef.current) return;
-    const messages = messagesQuery.data?.messages ?? [];
-    const hasEligible = messages.some((m) => {
-      if (m.auto_reply_sent_at) return false;
-      if (m.auto_reply_claimed_at) return false;
-      if (
-        m.auto_reply_decision === "auto_accept" ||
-        m.auto_reply_decision === "auto_decline"
-      ) {
-        return true;
-      }
-      // Phase 4.4d: the server stamped queue_for_human because the
-      // server evaluator can't see protocols.*, but the client
-      // evaluator + Calendar check may still resolve it to accept.
-      if (
-        m.auto_reply_decision === "queue_for_human" &&
-        m.auto_reply_reason === "calendar_unavailable"
-      ) {
-        return true;
-      }
-      return false;
-    });
-    if (!hasEligible) return;
-
-    let cancelled = false;
-    executorRunningRef.current = true;
-    (async () => {
-      try {
-        const signingKey = await getSigningPrivateKey(agent.did);
-        if (cancelled) return;
-        const gcalEntry = await getCalendarToken();
-        const gcalToken = gcalEntry?.access_token ?? null;
-        await runAutoReplyExecutor({
-          viewerAgentDid: agent.did,
-          viewerHasSigningKey: !!signingKey,
-          messages,
-          policy: (policyQuery.data?.policy as Record<string, unknown>) ?? null,
-          masterAutoReplyEnabled: agent.auto_reply,
-          isContact: (senderDid) => knownContactDids.has(senderDid),
-          api: {
-            getMessageContent: (id) => defaultApiClient.getMessageContent(id),
-            markAutoReplySent: (id, params) =>
-              defaultApiClient.markAutoReplySent(id, params),
-            claimAutoReply: (id) => defaultApiClient.claimAutoReply(id),
-            releaseAutoReplyClaim: (id) =>
-              defaultApiClient.releaseAutoReplyClaim(id),
-          },
-          sendProtocolReply: (input) =>
-            realSendProtocolReply({
-              protocolType: input.protocolType,
-              reply: input.reply,
-              threadId: input.threadId,
-              originalProtocolId: input.originalProtocolId,
-              subject: input.subject,
-              bodySummary: input.bodySummary,
-              viewerAgentDid: input.viewerAgentDid,
-              proposerDid: input.proposerDid,
-              autoReplyOrigin: input.autoReplyOrigin,
-              sendMessage: (payload) =>
-                defaultApiClient.seedMessage({
-                  senderDid: payload.senderDid,
-                  recipientDid: payload.recipientDid,
-                  subjectEncrypted: payload.subjectEncrypted,
-                  encryptedContent: payload.encryptedContent,
-                  encryptedKey: payload.encryptedKey,
-                  nonce: payload.nonce,
-                  signature: payload.signature,
-                  threadId: payload.threadId,
-                  contentType: payload.contentType,
-                  autoReplyOrigin: payload.autoReplyOrigin,
-                }),
-            }),
-          decrypt: (ciphertext, encryptedKey, recipientDid) =>
-            decryptEnvelopeText(ciphertext, encryptedKey, recipientDid),
-          // Phase 4.4d: wire Google Calendar freebusy when the user
-          // has connected their account. Callback omitted → executor
-          // treats auto_accept_if_free as calendar_unavailable and
-          // escalates to the human queue. Callback present + throws
-          // → treated as transient API error and left for retry.
-          calendarFreebusy: gcalToken
-            ? async (candidates) =>
-                findFirstFreeCandidate(candidates, gcalToken)
-            : undefined,
-        });
-        if (!cancelled) {
-          queryClient.invalidateQueries({ queryKey: ["messages"] });
-        }
-      } finally {
-        executorRunningRef.current = false;
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    currentAgent,
-    knownContactDids,
-    messagesQuery.data,
-    policyQuery.data,
-    queryClient,
-  ]);
-
   const apiThreads = useMemo<ThreadView[]>(() => {
     const messages = messagesQuery.data?.messages ?? [];
     // Collapse messages with the same `thread_id` into one row so the
@@ -549,6 +428,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
       <section className="mail-layout" style={layoutStyle}>
         <aside className="thread-list">
           <RetentionNotice />
+          {currentAgent ? <BrowserAutoReply agent={currentAgent} /> : null}
           <div
             className="thread-list-toolbar"
             data-testid="thread-list-toolbar"

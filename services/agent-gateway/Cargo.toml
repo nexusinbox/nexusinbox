@@ -43,6 +43,9 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 hmac = "0.12"
 async-trait = "0.1"
 
+# Remote MCP endpoint (docs/33 stage 1)
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

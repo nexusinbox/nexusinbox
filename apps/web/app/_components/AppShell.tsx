@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, Suspense, useEffect, useState } from "react";
 import {
+  useAgentDraftsQuery,
   useAgentsQuery,
   useAuthSessionQuery,
   useMessagesQuery,
@@ -62,12 +63,13 @@ const mailItems: MailboxItem[] = [
     )
   },
   {
-    href: "/?view=starred",
-    labelKey: "nav.starred",
-    countKey: null,
+    href: "/pending",
+    labelKey: "nav.pending",
+    countKey: "pending",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
       </svg>
     ),
   },
@@ -83,78 +85,19 @@ const mailItems: MailboxItem[] = [
     ),
   },
   {
-    href: "/?view=drafts",
-    labelKey: "nav.drafts",
+    href: "/?view=archive",
+    labelKey: "nav.archive",
     countKey: null,
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-      </svg>
-    ),
-  },
-  {
-    href: "/?view=all",
-    labelKey: "nav.allMail",
-    countKey: null,
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
-  },
-  {
-    href: "/?view=spam",
-    labelKey: "nav.spam",
-    countKey: null,
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="8" x2="12" y2="12" />
-        <line x1="12" y1="16" x2="12.01" y2="16" />
-      </svg>
-    ),
-  },
-  {
-    href: "/?view=trash",
-    labelKey: "nav.trash",
-    countKey: null,
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-        <path d="M10 11v6" />
-        <path d="M14 11v6" />
+        <polyline points="21 8 21 21 3 21 3 8" />
+        <rect x="1" y="3" width="22" height="5" />
+        <line x1="10" y1="12" x2="14" y2="12" />
       </svg>
     ),
   },
 ];
 
-const workflowItems: MailboxItem[] = [
-  {
-    href: "/agent",
-    labelKey: "nav.byAgent",
-    countKey: "agents",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 16v-4" />
-        <path d="M12 8h.01" />
-      </svg>
-    )
-  },
-  {
-    href: "/pending",
-    labelKey: "nav.pending",
-    countKey: "pending",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-];
 
 const settingsItems: MailboxItem[] = [
   {
@@ -169,17 +112,6 @@ const settingsItems: MailboxItem[] = [
     ),
   },
   {
-    href: "/settings/blocks",
-    labelKey: "nav.blocks",
-    countKey: null,
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-      </svg>
-    ),
-  },
-  {
     href: "/settings/agents",
     labelKey: "nav.agentSettings",
     countKey: null,
@@ -189,18 +121,6 @@ const settingsItems: MailboxItem[] = [
         <circle cx="12" cy="12" r="3" />
       </svg>
     )
-  },
-  {
-    href: "/onboarding",
-    labelKey: "nav.createAgent",
-    countKey: null,
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="8" x2="12" y2="16" />
-        <line x1="8" y1="12" x2="16" y2="12" />
-      </svg>
-    ),
   },
   {
     href: "/settings/audit",
@@ -220,7 +140,6 @@ const settingsItems: MailboxItem[] = [
 
 const mailboxSections: MailboxSection[] = [
   { id: "mail", titleKey: "nav.mail", items: mailItems },
-  { id: "workflow", titleKey: "nav.workflow", items: workflowItems },
   { id: "settings", titleKey: "nav.settings", items: settingsItems },
 ];
 
@@ -272,23 +191,13 @@ export function AppShell({
 
   const inboxUnread = unreadQuery.data?.total ?? null;
   const agentCount = agentsQuery.data?.agents.length ?? null;
-  const pendingCount = pendingQuery.data?.total ?? null;
+  // 確認が必要 covers held messages and AI drafts (docs/33 §9).
+  const draftsQuery = useAgentDraftsQuery();
+  const pendingCount =
+    pendingQuery.data || draftsQuery.data
+      ? (pendingQuery.data?.total ?? 0) + (draftsQuery.data?.drafts?.length ?? 0)
+      : null;
 
-  // Bypass the `/agent` intermediate page when we already know an
-  // agent exists. Clicking "エージェント別" in the sidebar used to
-  // hit `/agent/page.tsx`, which waited for `/agents` to resolve and
-  // then `router.replace`'d to the first agent's inbox — in the
-  // 1-frame gap between the query resolving and the redirect firing
-  // the user saw a "リダイレクト中…" card flash. Rewriting the
-  // sidebar link to the resolved DID sends the user straight to the
-  // target page on warm-cache navigations (the common case), so no
-  // intermediate render happens. Cold-cache first paint still falls
-  // back to `/agent` which is fine — the redirect page handles the
-  // empty-state CTA and 0-agent flow there.
-  const firstAgentDid = agentsQuery.data?.agents?.[0]?.did;
-  const byAgentHref = firstAgentDid
-    ? `/agent/${encodeURIComponent(firstAgentDid)}`
-    : "/agent";
   const counts: Record<"inboxUnread" | "agents" | "pending", number | null> = {
     inboxUnread,
     agents: agentCount,
@@ -390,18 +299,8 @@ export function AppShell({
                 const active = item.href === activeHref;
                 const className = "mailbox-item" + (active ? " active" : "");
                 const liveCount = item.countKey ? counts[item.countKey] : null;
-                // `/agent` is a redirect stub — link straight to the
-                // first agent's inbox when we know one, so the user
-                // doesn't see the "リダイレクト中…" one-frame flash
-                // before `router.replace` kicks in on that page. The
-                // active-match uses `item.href` (= `/agent`) so the
-                // nav highlight still works whether the user ends
-                // up on `/agent/{firstDid}` or switches to another
-                // via the in-page switcher on `/agent/{otherDid}`.
-                const renderedHref =
-                  item.href === "/agent" ? byAgentHref : item.href;
                 return (
-                  <Link key={item.href} href={renderedHref} className={className}>
+                  <Link key={item.href} href={item.href} className={className}>
                     <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                       {item.icon}
                       <span>{t(item.labelKey)}</span>

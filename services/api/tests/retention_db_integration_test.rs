@@ -446,6 +446,7 @@ fn expected_summary() -> RetentionSummary {
         audit_log: 1,
         // The fixture's sends only touch today's counter.
         send_counters: 0,
+        agent_drafts: 0,
         errors: 0,
     }
 }

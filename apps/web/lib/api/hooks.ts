@@ -21,6 +21,7 @@ import {
   UpdateContactRequest,
   UpdateProfileRequest,
 } from "./types";
+import { createReviewKeyMaterial, describeThisBrowser } from "../crypto/review-key";
 
 export const queryKeys = {
   agentCredentials: () => ["agent-credentials"] as const,
@@ -35,6 +36,8 @@ export const queryKeys = {
   auditLog: (query?: AuditLogQuery) => ["audit-log", query] as const,
   autoReplyPolicy: (agentId: string | null) =>
     ["auto-reply-policy", agentId] as const,
+  reviewKeys: () => ["review-keys"] as const,
+  agentDrafts: () => ["agent-drafts"] as const,
 };
 
 export function useStatusQuery() {
@@ -481,5 +484,72 @@ export function useAuditLogQuery(query?: AuditLogQuery, options?: { refetchInter
     staleTime: 15_000,
     retry: 1,
     refetchInterval: options?.refetchInterval,
+  });
+}
+
+// docs/33 §9: drafts a cloud AI made, waiting for the person.
+export function useAgentDraftsQuery() {
+  return useQuery({
+    queryKey: queryKeys.agentDrafts(),
+    queryFn: () => defaultApiClient.listAgentDrafts(),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+}
+
+export function useReviewKeysQuery() {
+  return useQuery({
+    queryKey: queryKeys.reviewKeys(),
+    queryFn: () => defaultApiClient.listReviewKeys(),
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+export function useSendAgentDraftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => defaultApiClient.sendAgentDraft(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentDrafts() });
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+    },
+  });
+}
+
+export function useDeleteAgentDraftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => defaultApiClient.deleteAgentDraft(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentDrafts() });
+    },
+  });
+}
+
+export function useDeleteReviewKeyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => defaultApiClient.deleteReviewKey(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewKeys() });
+    },
+  });
+}
+
+export function useCreateReviewKeyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const publicKey = await createReviewKeyMaterial();
+      return defaultApiClient.createReviewKey({
+        public_key: publicKey,
+        label: describeThisBrowser(),
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewKeys() });
+    },
   });
 }

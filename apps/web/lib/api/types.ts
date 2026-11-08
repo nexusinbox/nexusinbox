@@ -75,6 +75,8 @@ export type Agent = {
   auto_reply: boolean;
   unread_count: number;
   created_at: string;
+  // Every DID the agent answers on (created-with and computer keys).
+  dids?: string[];
 };
 
 export type AgentsResponse = {
@@ -557,4 +559,39 @@ export type PutAutoReplyPolicyRequest = {
    * strip conditional-request headers.
    */
   revision?: number;
+};
+
+// docs/33 §9: browsers set up to read drafts that a cloud AI wrote, and
+// the drafts themselves. The server cannot read either.
+export type ReviewKey = {
+  id: string;
+  public_key: string;
+  label: string;
+  created_at: string;
+};
+
+export type ReviewKeysResponse = {
+  review_keys: ReviewKey[];
+};
+
+export type AgentDraft = {
+  id: string;
+  aid: string;
+  sender_did: string;
+  sender_label: string | null;
+  recipient_did: string;
+  recipient_label: string | null;
+  thread_id: string | null;
+  in_reply_to: string | null;
+  subject_encrypted: string;
+  encrypted_content: string;
+  content_type: string | null;
+  review_wraps: { review_key_id: string; wrapped_key: string }[];
+  via: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
+export type AgentDraftsResponse = {
+  drafts: AgentDraft[];
 };

@@ -513,6 +513,11 @@ struct Agent {
     auto_reply: bool,
     unread_count: i32,
     created_at: String,
+    /// Every DID the agent answers on, oldest first: the one it was created
+    /// with (`did`) and any a connected computer added. The web needs them
+    /// all to tell which agent a message row belongs to. Agent lists only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -2186,6 +2191,7 @@ async fn agent_owned_by_user_in_db(
         auto_reply: row.get("auto_reply"),
         unread_count: row.get("unread_count"),
         created_at: row.get("created_at"),
+        dids: Vec::new(),
     }))
 }
 
@@ -5992,6 +5998,595 @@ async fn contact_keys_pool(state: &AppState) -> Result<PgPool, (StatusCode, Json
         .ok_or_else(database_required_but_unavailable_error)
 }
 
+// ---------------------------------------------------------------------------
+// AI drafts awaiting the person's approval (docs/33 §8, §9)
+//
+// A cloud-hosted AI cannot send. The person's computer builds the envelope
+// (encrypted for the recipient, signed by the agent) and wraps the same
+// content key to each browser the person set up for review. The server
+// stores what it cannot read; the person reads the draft in one of those
+// browsers and approves it, which sends it with their session.
+// ---------------------------------------------------------------------------
+
+const REVIEW_KEYS_MAX_PER_USER: i64 = 10;
+const AGENT_DRAFTS_MAX_PER_USER: i64 = 50;
+const AGENT_DRAFT_TTL_DAYS: i64 = 7;
+const AGENT_DRAFT_MAX_CONTENT_LEN: usize = 256 * 1024;
+const AGENT_DRAFT_MAX_FIELD_LEN: usize = 4096;
+const REVIEW_LABEL_MAX_LEN: usize = 64;
+
+#[derive(Deserialize)]
+struct CreateReviewKeyRequest {
+    public_key: String,
+    label: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ReviewKeyEntry {
+    id: Uuid,
+    public_key: String,
+    label: String,
+    created_at: String,
+}
+
+#[derive(Serialize)]
+struct ReviewKeysResponse {
+    review_keys: Vec<ReviewKeyEntry>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ReviewWrap {
+    review_key_id: Uuid,
+    wrapped_key: String,
+}
+
+#[derive(Deserialize)]
+struct CreateAgentDraftRequest {
+    sender_did: String,
+    recipient_did: String,
+    thread_id: Option<Uuid>,
+    in_reply_to: Option<Uuid>,
+    subject_encrypted: String,
+    encrypted_content: String,
+    encrypted_key: String,
+    nonce: String,
+    signature: String,
+    content_type: Option<String>,
+    review_wraps: Vec<ReviewWrap>,
+    via: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CreateAgentDraftResponse {
+    id: Uuid,
+    expires_at: String,
+}
+
+#[derive(Serialize)]
+struct AgentDraftEntry {
+    id: Uuid,
+    aid: String,
+    sender_did: String,
+    sender_label: Option<String>,
+    recipient_did: String,
+    recipient_label: Option<String>,
+    thread_id: Option<Uuid>,
+    in_reply_to: Option<Uuid>,
+    subject_encrypted: String,
+    encrypted_content: String,
+    content_type: Option<String>,
+    review_wraps: Vec<ReviewWrap>,
+    via: Option<String>,
+    created_at: String,
+    expires_at: String,
+}
+
+#[derive(Serialize)]
+struct AgentDraftsResponse {
+    drafts: Vec<AgentDraftEntry>,
+}
+
+/// A short printable label, or `None` when nothing usable is left.
+fn short_label(raw: Option<&str>) -> Option<String> {
+    let printable: String = raw?.chars().filter(|c| !c.is_control()).collect();
+    let mut out = String::new();
+    for c in printable.trim().chars() {
+        if out.len() + c.len_utf8() > REVIEW_LABEL_MAX_LEN {
+            break;
+        }
+        out.push(c);
+    }
+    let out = out.trim().to_string();
+    (!out.is_empty()).then_some(out)
+}
+
+async fn drafts_pool(state: &AppState) -> Result<PgPool, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .database_pool()
+        .await
+        .map_err(|message| internal_server_error(&message))?
+        .ok_or_else(database_required_but_unavailable_error)
+}
+
+/// POST /review-keys — set up this browser to read drafts. Session only.
+async fn create_review_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<CreateReviewKeyRequest>,
+) -> Result<(StatusCode, Json<ReviewKeyEntry>), (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let public_key = payload.public_key.trim().to_string();
+    if !is_valid_public_key_material(&public_key) {
+        return Err(validation_error(
+            "public_key must be a base64url X25519 public key",
+        ));
+    }
+    let label = short_label(payload.label.as_deref()).unwrap_or_else(|| "browser".into());
+    let pool = drafts_pool(&state).await?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_keys WHERE user_id = $1")
+        .bind(user_uuid)
+        .fetch_one(&pool)
+        .await
+        .map_err(|error| internal_error("failed to count review keys", error))?;
+    if count >= REVIEW_KEYS_MAX_PER_USER {
+        return Err(validation_error(
+            "too many browsers are set up for review; remove one first",
+        ));
+    }
+    let row = sqlx::query(
+        r#"
+        INSERT INTO review_keys (user_id, public_key, label)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, public_key) DO UPDATE SET label = EXCLUDED.label
+        RETURNING id, created_at::text AS created_at
+        "#,
+    )
+    .bind(user_uuid)
+    .bind(&public_key)
+    .bind(&label)
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| internal_error("failed to save review key", error))?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ReviewKeyEntry {
+            id: row.get("id"),
+            public_key,
+            label,
+            created_at: row.get("created_at"),
+        }),
+    ))
+}
+
+/// GET /review-keys — for the person, and for their computer so it can
+/// wrap a draft's content key to every review browser.
+async fn list_review_keys(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Json<ReviewKeysResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    if matches!(ctx, AuthContext::Agent { .. }) {
+        ctx.require_scope("messages.send")?;
+    }
+    let user_uuid = parse_user_uuid(ctx.user_id())?;
+    let pool = drafts_pool(&state).await?;
+    let rows = sqlx::query(
+        "SELECT id, public_key, label, created_at::text AS created_at \
+         FROM review_keys WHERE user_id = $1 ORDER BY created_at ASC",
+    )
+    .bind(user_uuid)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| internal_error("failed to list review keys", error))?;
+    Ok(Json(ReviewKeysResponse {
+        review_keys: rows
+            .into_iter()
+            .map(|row| ReviewKeyEntry {
+                id: row.get("id"),
+                public_key: row.get("public_key"),
+                label: row.get("label"),
+                created_at: row.get("created_at"),
+            })
+            .collect(),
+    }))
+}
+
+/// DELETE /review-keys/:id — stop using a browser for review. Session only.
+async fn delete_review_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = drafts_pool(&state).await?;
+    let deleted = sqlx::query("DELETE FROM review_keys WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_uuid)
+        .execute(&pool)
+        .await
+        .map_err(|error| internal_error("failed to delete review key", error))?
+        .rows_affected();
+    if deleted == 0 {
+        return Err(not_found_error("review key not found"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn bounded_field<'a>(
+    value: &'a str,
+    name: &str,
+    max: usize,
+) -> Result<&'a str, (StatusCode, Json<ErrorResponse>)> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > max {
+        return Err(validation_error(&format!(
+            "{name} is required and at most {max} characters"
+        )));
+    }
+    Ok(value)
+}
+
+/// POST /agent-drafts — the person's computer stores a draft for review.
+/// Agent tokens only. The envelope is checked as a send would check it, so
+/// an approved draft does not fail on its signature later.
+async fn create_agent_draft(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<CreateAgentDraftRequest>,
+) -> Result<(StatusCode, Json<CreateAgentDraftResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    let AuthContext::Agent {
+        credential_id, aid, ..
+    } = &ctx
+    else {
+        return Err(forbidden_error("drafts are created by an agent"));
+    };
+    ctx.require_scope("messages.send")?;
+    let user_uuid = parse_user_uuid(ctx.user_id())?;
+    let pool = drafts_pool(&state).await?;
+
+    let sender_did = bounded_field(&payload.sender_did, "sender_did", 256)?;
+    validate_did(sender_did, "sender_did")?;
+    let recipient_did = bounded_field(&payload.recipient_did, "recipient_did", 256)?;
+    validate_did(recipient_did, "recipient_did")?;
+    let subject_encrypted = bounded_field(
+        &payload.subject_encrypted,
+        "subject_encrypted",
+        AGENT_DRAFT_MAX_FIELD_LEN,
+    )?;
+    let encrypted_content = bounded_field(
+        &payload.encrypted_content,
+        "encrypted_content",
+        AGENT_DRAFT_MAX_CONTENT_LEN,
+    )?;
+    let encrypted_key = bounded_field(&payload.encrypted_key, "encrypted_key", 512)?;
+    let nonce = bounded_field(&payload.nonce, "nonce", 256)?;
+    let signature = bounded_field(&payload.signature, "signature", 512)?;
+    if !is_valid_wrapped_encrypted_key_format(encrypted_key) {
+        return Err(validation_error(
+            "encrypted_key must use x25519v1 wrapped key format",
+        ));
+    }
+    let content_type = match payload.content_type.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(ct) if ct.len() <= 128 && ct.is_ascii() => Some(ct.to_string()),
+        Some(_) => return Err(validation_error("content_type is too long")),
+    };
+
+    // Every wrap must be for one of this person's review keys.
+    if payload.review_wraps.is_empty()
+        || payload.review_wraps.len() as i64 > REVIEW_KEYS_MAX_PER_USER
+    {
+        return Err(validation_error(
+            "review_wraps must hold 1 to 10 entries; set up a browser for review first",
+        ));
+    }
+    let key_ids: Vec<Uuid> = payload
+        .review_wraps
+        .iter()
+        .map(|w| w.review_key_id)
+        .collect();
+    let distinct: std::collections::HashSet<_> = key_ids.iter().collect();
+    if distinct.len() != key_ids.len()
+        || payload
+            .review_wraps
+            .iter()
+            .any(|w| !is_valid_wrapped_encrypted_key_format(w.wrapped_key.trim()))
+    {
+        return Err(validation_error(
+            "review_wraps must name each review key once with an x25519v1 wrapped key",
+        ));
+    }
+    let known: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM review_keys WHERE user_id = $1 AND id = ANY($2)")
+            .bind(user_uuid)
+            .bind(&key_ids)
+            .fetch_one(&pool)
+            .await
+            .map_err(|error| internal_error("failed to check review keys", error))?;
+    if known != key_ids.len() as i64 {
+        return Err(validation_error("review_wraps names an unknown review key"));
+    }
+
+    // The sender must be this credential's agent, and the signature must
+    // verify now.
+    let signing_agent = agent_owned_by_user_in_db(&pool, user_uuid, sender_did)
+        .await
+        .map_err(|message| internal_server_error(&message))?
+        .ok_or_else(|| forbidden_error("sender_did is not owned by the authenticated user"))?;
+    enforce_agent_bound_aid(&ctx, &signing_agent.aid)?;
+    let signing_payload = build_envelope_signing_payload(
+        sender_did,
+        recipient_did,
+        subject_encrypted,
+        encrypted_content,
+        encrypted_key,
+        nonce,
+    );
+    if !verify_envelope_signature(&signing_agent.public_key, signature, &signing_payload) {
+        return Err(unauthorized_error("invalid envelope signature"));
+    }
+
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_drafts WHERE owner_user_id = $1 AND expires_at > NOW()",
+    )
+    .bind(user_uuid)
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| internal_error("failed to count drafts", error))?;
+    if pending >= AGENT_DRAFTS_MAX_PER_USER {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "too_many_drafts".into(),
+                message: "too many drafts are waiting for review".into(),
+            }),
+        ));
+    }
+
+    let wraps = serde_json::to_value(
+        payload
+            .review_wraps
+            .iter()
+            .map(|w| ReviewWrap {
+                review_key_id: w.review_key_id,
+                wrapped_key: w.wrapped_key.trim().to_string(),
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|error| internal_error("failed to encode review wraps", error))?;
+    let row = sqlx::query(
+        r#"
+        INSERT INTO agent_drafts (
+          owner_user_id, aid, sender_did, recipient_did, thread_id, in_reply_to,
+          subject_encrypted, encrypted_content, encrypted_key, nonce, signature,
+          content_type, review_wraps, via, expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                NOW() + ($15::bigint * INTERVAL '1 day'))
+        RETURNING id, expires_at::text AS expires_at
+        "#,
+    )
+    .bind(user_uuid)
+    .bind(&signing_agent.aid)
+    .bind(sender_did)
+    .bind(recipient_did)
+    .bind(payload.thread_id)
+    .bind(payload.in_reply_to)
+    .bind(subject_encrypted)
+    .bind(encrypted_content)
+    .bind(encrypted_key)
+    .bind(nonce)
+    .bind(signature)
+    .bind(&content_type)
+    .bind(&wraps)
+    .bind(short_label(payload.via.as_deref()))
+    .bind(AGENT_DRAFT_TTL_DAYS)
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| internal_error("failed to save draft", error))?;
+    let id: Uuid = row.get("id");
+    record_audit_event(
+        pool,
+        user_uuid,
+        Some(*credential_id),
+        Some(aid.clone()),
+        "agent_draft_created",
+        serde_json::json!({ "draft_id": id, "recipient_did": recipient_did }),
+    );
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateAgentDraftResponse {
+            id,
+            expires_at: row.get("expires_at"),
+        }),
+    ))
+}
+
+/// GET /agent-drafts — drafts waiting for the person. Session only.
+async fn list_agent_drafts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AgentDraftsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = drafts_pool(&state).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT d.id, d.aid, d.sender_did, d.recipient_did, d.thread_id, d.in_reply_to,
+               d.subject_encrypted, d.encrypted_content, d.content_type, d.review_wraps,
+               d.via, d.created_at::text AS created_at, d.expires_at::text AS expires_at,
+               sa.label AS sender_agent_label, su.display_name AS sender_user_name,
+               ra.label AS recipient_agent_label, ru.display_name AS recipient_user_name
+        FROM agent_drafts d
+        LEFT JOIN agents sa ON sa.id = COALESCE(
+          (SELECT i.agent_id FROM agent_identity_keys k
+             JOIN agent_identities i ON i.aid = k.aid
+            WHERE k.did = d.sender_did),
+          (SELECT a.id FROM agents a WHERE a.did = d.sender_did LIMIT 1))
+        LEFT JOIN users  su ON su.id  = sa.user_id
+        LEFT JOIN agents ra ON ra.id = COALESCE(
+          (SELECT i.agent_id FROM agent_identity_keys k
+             JOIN agent_identities i ON i.aid = k.aid
+            WHERE k.did = d.recipient_did),
+          (SELECT a.id FROM agents a WHERE a.did = d.recipient_did LIMIT 1))
+        LEFT JOIN users  ru ON ru.id  = ra.user_id
+        WHERE d.owner_user_id = $1 AND d.expires_at > NOW() AND d.sending_at IS NULL
+        ORDER BY d.created_at DESC
+        "#,
+    )
+    .bind(user_uuid)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| internal_error("failed to list drafts", error))?;
+    let drafts = rows
+        .into_iter()
+        .map(|row| AgentDraftEntry {
+            id: row.get("id"),
+            aid: row.get("aid"),
+            sender_did: row.get("sender_did"),
+            sender_label: compose_party_label(
+                row.get("sender_user_name"),
+                row.get("sender_agent_label"),
+            ),
+            recipient_did: row.get("recipient_did"),
+            recipient_label: compose_party_label(
+                row.get("recipient_user_name"),
+                row.get("recipient_agent_label"),
+            ),
+            thread_id: row.get("thread_id"),
+            in_reply_to: row.get("in_reply_to"),
+            subject_encrypted: row.get("subject_encrypted"),
+            encrypted_content: row.get("encrypted_content"),
+            content_type: row.get("content_type"),
+            review_wraps: serde_json::from_value(row.get("review_wraps")).unwrap_or_default(),
+            via: row.get("via"),
+            created_at: row.get("created_at"),
+            expires_at: row.get("expires_at"),
+        })
+        .collect();
+    Ok(Json(AgentDraftsResponse { drafts }))
+}
+
+/// POST /agent-drafts/:id/send — the person approves a draft. The draft is
+/// claimed first, so two clicks cannot send it twice; a failed send
+/// releases the claim.
+async fn send_agent_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = drafts_pool(&state).await?;
+    let row = sqlx::query(
+        r#"
+        UPDATE agent_drafts SET sending_at = NOW()
+        WHERE id = $1 AND owner_user_id = $2 AND expires_at > NOW()
+          AND (sending_at IS NULL OR sending_at < NOW() - INTERVAL '5 minutes')
+        RETURNING aid, sender_did, recipient_did, thread_id, subject_encrypted,
+                  encrypted_content, encrypted_key, nonce, signature, content_type
+        "#,
+    )
+    .bind(id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| internal_error("failed to claim draft", error))?
+    .ok_or_else(|| not_found_error("draft not found"))?;
+
+    let aid: String = row.get("aid");
+    let request = SendMessageRequest {
+        sender_did: Some(row.get("sender_did")),
+        recipient_did: Some(row.get("recipient_did")),
+        envelope: Some(Envelope {
+            encrypted_content: Some(row.get("encrypted_content")),
+            encrypted_key: Some(row.get("encrypted_key")),
+            nonce: Some(row.get("nonce")),
+            signature: Some(row.get("signature")),
+            metadata: Some(EnvelopeMetadata {
+                subject_encrypted: Some(row.get("subject_encrypted")),
+                thread_id: row.get("thread_id"),
+                content_type: row.get("content_type"),
+                has_attachments: Some(false),
+                auto_reply_origin: None,
+            }),
+        }),
+        attachment_ids: None,
+        attachments: None,
+    };
+    let ctx = AuthContext::Human {
+        user_id: user_id.clone(),
+    };
+    match send_message_as(state, ctx, headers, request).await {
+        Ok(sent) => {
+            sqlx::query("DELETE FROM agent_drafts WHERE id = $1 AND owner_user_id = $2")
+                .bind(id)
+                .bind(user_uuid)
+                .execute(&pool)
+                .await
+                .map_err(|error| internal_error("failed to remove sent draft", error))?;
+            record_audit_event(
+                pool,
+                user_uuid,
+                None,
+                Some(aid),
+                "agent_draft_sent",
+                serde_json::json!({ "draft_id": id, "message_id": sent.1.message_id }),
+            );
+            Ok(sent)
+        }
+        Err(error) => {
+            let _ = sqlx::query(
+                "UPDATE agent_drafts SET sending_at = NULL WHERE id = $1 AND owner_user_id = $2",
+            )
+            .bind(id)
+            .bind(user_uuid)
+            .execute(&pool)
+            .await;
+            Err(error)
+        }
+    }
+}
+
+/// DELETE /agent-drafts/:id — the person discards a draft. Session only.
+async fn delete_agent_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = drafts_pool(&state).await?;
+    let aid: Option<String> = sqlx::query_scalar(
+        "DELETE FROM agent_drafts WHERE id = $1 AND owner_user_id = $2 AND sending_at IS NULL \
+         RETURNING aid",
+    )
+    .bind(id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| internal_error("failed to delete draft", error))?;
+    let Some(aid) = aid else {
+        return Err(not_found_error("draft not found"));
+    };
+    record_audit_event(
+        pool,
+        user_uuid,
+        None,
+        Some(aid),
+        "agent_draft_discarded",
+        serde_json::json!({ "draft_id": id }),
+    );
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// GET /contact-keys — the person's wraps, with each agent's DID so a
 /// device can pick the wrap it holds a key for.
 async fn list_contact_keys(
@@ -6203,7 +6798,11 @@ async fn list_agents(
               a.is_active,
               a.auto_reply,
               a.unread_count,
-              a.created_at::text AS created_at
+              a.created_at::text AS created_at,
+              COALESCE(
+                (SELECT array_agg(k.did ORDER BY k.activated_at)
+                   FROM agent_identity_keys k WHERE k.aid = ai.aid),
+                ARRAY[]::text[]) AS dids
             FROM agents a
             LEFT JOIN agent_identities ai ON ai.agent_id = a.id
             WHERE a.user_id = $1
@@ -6231,6 +6830,7 @@ async fn list_agents(
                 auto_reply: row.get("auto_reply"),
                 unread_count: row.get("unread_count"),
                 created_at: row.get("created_at"),
+                dids: row.get("dids"),
             });
         }
         out
@@ -6383,6 +6983,7 @@ async fn create_agent(
             auto_reply: false,
             unread_count: 0,
             created_at: Utc::now().to_rfc3339(),
+            dids: Vec::new(),
         };
 
         let mut lock = state
@@ -10207,6 +10808,17 @@ async fn send_message(
     JsonBody(payload): JsonBody<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, Json<ErrorResponse>)> {
     let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    send_message_as(state, ctx, headers, payload).await
+}
+
+/// The send path after authentication. Also used to send an AI draft the
+/// person approved (docs/33 §8), with their session as `ctx`.
+async fn send_message_as(
+    state: AppState,
+    ctx: AuthContext,
+    headers: HeaderMap,
+    payload: SendMessageRequest,
+) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, Json<ErrorResponse>)> {
     ctx.require_scope("messages.send")?;
     let user_id = ctx.user_id().to_string();
 
@@ -12712,6 +13324,7 @@ pub struct RetentionSummary {
     pub sessions: u64,
     pub audit_log: u64,
     pub send_counters: u64,
+    pub agent_drafts: u64,
     pub errors: u64,
 }
 
@@ -12750,7 +13363,7 @@ async fn run_retention_pass_with_state(
     // logged and counted, and the remaining steps still run. Message rows
     // go first: deleting them cascades to message_attachments, and the
     // attachment cleanup job then purges the unlinked blobs.
-    let steps: [(&str, &str, &[i64]); 6] = [
+    let steps: [(&str, &str, &[i64]); 7] = [
         (
             "attachment_uploads",
             "purged_at < NOW() - ($1::bigint * INTERVAL '1 day') \
@@ -12791,6 +13404,12 @@ async fn run_retention_pass_with_state(
             "day < (NOW() AT TIME ZONE 'UTC')::date - $1::int",
             &[RETENTION_SEND_COUNTER_DAYS],
         ),
+        // Drafts nobody approved (docs/33 §9). Unreadable once expired.
+        (
+            "agent_drafts",
+            "expires_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+            &[0],
+        ),
     ];
     for (table, predicate, binds) in steps {
         match retention_step(&pool, config.mode, table, predicate, binds).await {
@@ -12800,6 +13419,7 @@ async fn run_retention_pass_with_state(
                 "agent_credentials" => summary.agent_credentials = rows,
                 "sessions" => summary.sessions = rows,
                 "user_send_counters" => summary.send_counters = rows,
+                "agent_drafts" => summary.agent_drafts = rows,
                 _ => summary.audit_log = rows,
             },
             Err(error) => {
@@ -12998,6 +13618,7 @@ pub async fn spawn_retention_job_if_configured() -> bool {
                 sessions = summary.sessions,
                 audit_log = summary.audit_log,
                 send_counters = summary.send_counters,
+                agent_drafts = summary.agent_drafts,
                 errors = summary.errors,
                 "data retention pass completed"
             );
@@ -13264,9 +13885,20 @@ async fn list_messages(
               ru.display_name AS recipient_user_name,
               COUNT(*) OVER () AS total_count
             FROM message_index m
-            LEFT JOIN agents sa ON sa.did = m.sender_did
+            -- An agent is found by any of its DIDs: agents.did keeps the
+            -- one it was created with, and connecting a computer adds a
+            -- new one in agent_identity_keys.
+            LEFT JOIN agents sa ON sa.id = COALESCE(
+              (SELECT i.agent_id FROM agent_identity_keys k
+                 JOIN agent_identities i ON i.aid = k.aid
+                WHERE k.did = m.sender_did),
+              (SELECT a.id FROM agents a WHERE a.did = m.sender_did LIMIT 1))
             LEFT JOIN users  su ON su.id  = sa.user_id
-            LEFT JOIN agents ra ON ra.did = m.recipient_did
+            LEFT JOIN agents ra ON ra.id = COALESCE(
+              (SELECT i.agent_id FROM agent_identity_keys k
+                 JOIN agent_identities i ON i.aid = k.aid
+                WHERE k.did = m.recipient_did),
+              (SELECT a.id FROM agents a WHERE a.did = m.recipient_did LIMIT 1))
             LEFT JOIN users  ru ON ru.id  = ra.user_id
             WHERE m.owner_user_id = $1
               -- Agent scope.
@@ -14943,6 +15575,23 @@ fn app_with_state(state: AppState) -> Router {
         )
         .route("/recipients/resolve", get(resolve_recipient))
         .route("/messages", get(list_messages).post(send_message))
+        .route(
+            "/review-keys",
+            get(list_review_keys).post(create_review_key),
+        )
+        .route(
+            "/review-keys/{id}",
+            axum::routing::delete(delete_review_key),
+        )
+        .route(
+            "/agent-drafts",
+            get(list_agent_drafts).post(create_agent_draft),
+        )
+        .route(
+            "/agent-drafts/{id}",
+            axum::routing::delete(delete_agent_draft),
+        )
+        .route("/agent-drafts/{id}/send", post(send_agent_draft))
         .route("/messages/{id}/content", get(message_content))
         .route(
             "/messages/{id}",
@@ -16021,6 +16670,7 @@ mod internal_tests {
             auto_reply: false,
             unread_count: 0,
             created_at: Utc::now().to_rfc3339(),
+            dids: Vec::new(),
         });
     }
 

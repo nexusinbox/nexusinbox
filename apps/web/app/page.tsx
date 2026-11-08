@@ -29,12 +29,14 @@ import {
 } from "../lib/api/types";
 import { decryptEnvelopeText, ENCRYPTED_PLACEHOLDER } from "../lib/crypto/envelope";
 import { hasRecipientPrivateKey } from "../lib/crypto/recipient-keyring";
+import { InboxAgentBar, agentChipStyle, agentForDid } from "./_components/InboxAgentBar";
 
 type FilterType = "all" | "unread" | "starred";
 type ViewKey =
   | "inbox"
   | "starred"
   | "sent"
+  | "archive"
   | "drafts"
   | "all"
   | "spam"
@@ -72,6 +74,13 @@ function buildViewConfigs(t: (key: string) => string): Record<ViewKey, ViewConfi
       emptyMessage: t("inbox.sentEmpty"),
       activePath: "/?view=sent",
     },
+    archive: {
+      title: t("inbox.archiveTitle"),
+      folder: "archive",
+      filter: "all",
+      emptyMessage: t("inbox.archiveEmpty"),
+      activePath: "/?view=archive",
+    },
     drafts: {
       title: t("inbox.draftsTitle"),
       folder: "drafts",
@@ -103,7 +112,7 @@ function buildViewConfigs(t: (key: string) => string): Record<ViewKey, ViewConfi
   };
 }
 
-const validViewKeys: ReadonlySet<string> = new Set<ViewKey>(["inbox", "starred", "sent", "drafts", "all", "spam", "trash"]);
+const validViewKeys: ReadonlySet<string> = new Set<ViewKey>(["inbox", "starred", "sent", "archive", "drafts", "all", "spam", "trash"]);
 
 function resolveViewKey(raw: string | null): ViewKey {
   if (!raw) return "inbox";
@@ -414,6 +423,9 @@ function DashboardPageInner() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [threadWidth, setThreadWidth] = useState<number>(380);
   const [page, setPage] = useState<number>(1);
+  // "all" or one agent's aid (docs/34 §3 step 3: one inbox, filtered).
+  // The API resolves an aid to all of the agent's DIDs.
+  const [agentFilter, setAgentFilter] = useState<string>("all");
 
   const startResizeThread = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -460,7 +472,7 @@ function DashboardPageInner() {
   }, [viewKey, view.filter]);
 
   const messagesQuery = useMessagesQuery({
-    agentDid: "all",
+    agentDid: agentFilter,
     status: "all",
     folder: view.folder,
     priority: view.priority,
@@ -475,6 +487,7 @@ function DashboardPageInner() {
   // etc) keep their minimal empty-state so they don't nag repeat
   // users.
   const agentsQuery = useAgentsQuery();
+  const agentList = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const agentCount = agentsQuery.data?.agents.length ?? null;
   const firstAgentAid = agentsQuery.data?.agents?.[0]?.aid ?? null;
 
@@ -1246,6 +1259,15 @@ function DashboardPageInner() {
         </div>
       </section>
 
+      <InboxAgentBar
+        agents={agentList}
+        selected={agentFilter}
+        onSelect={(aid) => {
+          setAgentFilter(aid);
+          setPage(1);
+        }}
+      />
+
       <section className={`mail-layout mobile-${mobileView}`} style={layoutStyle}>
         <aside className="thread-list">
           {messagesQuery.isLoading ? (
@@ -1367,7 +1389,24 @@ function DashboardPageInner() {
                     {/* Row 2: subject (or Mode-A pill). Block-level so
                         `text-overflow: ellipsis` kicks in on narrow
                         panes without fighting a flex row above. */}
-                    <span className="thread-subject">{subjectNode}</span>
+                    <span className="thread-subject">
+                      {agentList.length > 1 ? (
+                        <span
+                          style={
+                            agentChipStyle(
+                              agentList,
+                              viewKey === "sent" ? thread.senderDid : thread.recipientDid,
+                            ) ?? undefined
+                          }
+                        >
+                          {agentForDid(
+                            agentList,
+                            viewKey === "sent" ? thread.senderDid : thread.recipientDid,
+                          )?.label ?? ""}
+                        </span>
+                      ) : null}
+                      {subjectNode}
+                    </span>
                     {/* Row 3: body preview on the left, star on the
                         right. Star moved out of the actions column so
                         it sits visually anchored to the preview line,

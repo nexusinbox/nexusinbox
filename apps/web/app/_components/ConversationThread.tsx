@@ -14,6 +14,7 @@ import type { A2ARespondPayload } from "../../lib/protocol/a2aReply";
 import type { A2AProtocolType } from "@nexusinbox/core/a2a";
 import {
   useBlockFromMessageMutation,
+  useAgentsQuery,
   useContactsQuery,
   useMessageAttachmentsQuery,
   useMessageContentQuery,
@@ -124,6 +125,8 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
     perPage: 100,
   });
 
+  const agentsQuery = useAgentsQuery();
+  const ownAgents = agentsQuery.data?.agents;
   const contactsQuery = useContactsQuery();
   const contactsByDid = useMemo(
     () => indexContactsByDid(contactsQuery.data?.contacts),
@@ -390,12 +393,18 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
       savedAt,
       notDecryptedNote: t("inbox.exportNotDecrypted"),
       messages: rendered.map(({ entry, bodyText, subjectText, state, protocol }) => ({
-        senderLabel: resolveParticipantLabel(entry.sender_did, entry.sender_label, contactsByDid),
+        senderLabel: resolveParticipantLabel(
+          entry.sender_did,
+          entry.sender_label,
+          contactsByDid,
+          ownAgents,
+        ),
         senderDid: entry.sender_did,
         recipientLabel: resolveParticipantLabel(
           entry.recipient_did,
           entry.recipient_label,
           contactsByDid,
+          ownAgents,
         ),
         recipientDid: entry.recipient_did,
         createdAt: entry.created_at,
@@ -434,6 +443,7 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
             entry.sender_did,
             entry.sender_label,
             contactsByDid,
+            ownAgents,
           );
           const time = new Date(entry.created_at).toLocaleString("ja-JP", {
             hour: "2-digit",

@@ -199,6 +199,23 @@ export async function mockNexusInboxBackend(page: Page): Promise<void> {
     await route.fallback();
   });
 
+  // docs/33 §9: AI drafts and the browsers set up to read them.
+  await page.route("**/api/agent-drafts*", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill(jsonOk({ drafts: [] }));
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.route("**/api/review-keys*", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill(jsonOk({ review_keys: [] }));
+      return;
+    }
+    await route.fallback();
+  });
+
   await page.route("**/api/agent-audit-log*", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill(jsonOk({ events: [], total: 0 }));

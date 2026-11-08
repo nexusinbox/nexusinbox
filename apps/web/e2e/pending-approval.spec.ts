@@ -174,39 +174,35 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
   await page.goto("/pending");
   await expect(page).toHaveURL(/\/pending$/);
   // Heading text follows the `pending.heading` template
-  // "{count}件のメッセージが確認を待っています". The previous "承認待ち N 件"
-  // copy was removed when the page was rewritten.
-  await expect(page.locator(".reader-subject")).toContainText(
-    "2件のメッセージが確認を待っています",
-  );
+  // "届いたメッセージ（{count}）" (docs/34 §3 step 3).
+  const heading = page.getByTestId("pending-messages").locator("h3");
+  await expect(heading).toContainText("届いたメッセージ（2）");
+  // The AI drafts section sits above it, empty here.
+  await expect(page.getByTestId("agent-drafts")).toContainText("AI が作った下書き（0）");
 
   // Approve the first flagged message. Approve == folder=inbox via
   // PATCH /messages/:id/flags, so the row drops out of the
   // folder=pending_approval query result and the heading count
-  // decreases. The approve button is `pending.approve` ("承認"); the
-  // reject counterpart is `pending.reject` ("拒否", not "却下").
+  // decreases. The approve button is `pending.approve` ("受信に入れる");
+  // the reject counterpart is `pending.reject` ("捨てる").
   // The subject is ciphertext for the recipient agent and is never shown
   // as text; each row is told apart by why it was held.
   await expect(page.getByText("怪しい件名A")).toHaveCount(0);
   await expect(page.getByText("件名は暗号化されています").first()).toBeVisible();
   await page
-    .locator(".panel", { hasText: "短時間に大量の送信" })
-    .getByRole("button", { name: "承認" })
+    .getByTestId("pending-row")
+    .filter({ hasText: "短時間に大量の送信" })
+    .getByRole("button", { name: "受信に入れる" })
     .click();
-  await expect(
-    page.getByText("メッセージを承認し、受信トレイに移動しました。"),
-  ).toBeVisible();
-  await expect(page.locator(".reader-subject")).toContainText(
-    "1件のメッセージが確認を待っています",
-  );
+  await expect(page.getByText("受信に入れました。")).toBeVisible();
+  await expect(heading).toContainText("届いたメッセージ（1）");
 
   // Reject the remaining message → folder=trash → empty state.
   await page
-    .locator(".panel", { hasText: "迷惑な送信者の一覧に一致" })
-    .getByRole("button", { name: "拒否" })
+    .getByTestId("pending-row")
+    .filter({ hasText: "迷惑な送信者の一覧に一致" })
+    .getByRole("button", { name: "捨てる" })
     .click();
-  await expect(
-    page.getByText("メッセージを拒否し、ゴミ箱に移動しました。"),
-  ).toBeVisible();
+  await expect(page.getByText("ゴミ箱に移しました。")).toBeVisible();
   await expect(page.getByText("確認が必要なメッセージはありません。")).toBeVisible();
 });

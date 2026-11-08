@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { AppShell } from "../_components/AppShell";
+import { AgentDrafts } from "./AgentDrafts";
+import { agentForDid } from "../_components/InboxAgentBar";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
 import {
   useAgentsQuery,
@@ -9,7 +11,6 @@ import {
   useMessagesQuery,
   useUpdateMessageFlagsMutation,
 } from "../../lib/api/hooks";
-import { useTwoColumnResize } from "../../lib/ui/useTwoColumnResize";
 import { indexContactsByDid, resolveParticipantLabel } from "../../lib/api/labels";
 import { useTranslation } from "../../lib/i18n";
 import { formatListTimestamp } from "../../lib/format/messageTime";
@@ -22,20 +23,13 @@ export default function PendingApprovalPage() {
     [contactsQuery.data],
   );
   const agentsQuery = useAgentsQuery();
-  const agents = agentsQuery.data?.agents ?? [];
-  const [activeDid, setActiveDid] = useState<string>("all");
+  const agents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const [statusMessage, setStatusMessage] = useState<string>("");
-  const { layoutStyle, startResize } = useTwoColumnResize({
-    storageKey: "nexusinbox.pending.thread_width.v1",
-    initialWidth: 320,
-  });
-
-  const selectedDid = activeDid || "all";
 
   // Server-side folder filter: only messages the AI spam pipeline or
   // low trust routing put into the pending_approval bucket show up here.
   const messagesQuery = useMessagesQuery({
-    agentDid: selectedDid,
+    agentDid: "all",
     folder: "pending_approval",
     perPage: 100,
   });
@@ -77,108 +71,90 @@ export default function PendingApprovalPage() {
         />
       }
     >
-      <section className="mail-layout" style={layoutStyle}>
-        <aside className="thread-list">
-          <div className="panel" style={{ margin: 12 }}>
-            <p className="item-title">{t("pending.selectAgent")}</p>
-            <select
-              className="select"
-              value={selectedDid}
-              onChange={(event) => setActiveDid(event.target.value)}
-              style={{ marginTop: 6, width: "100%" }}
-            >
-              <option value="all">{t("pending.allAgents")}</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.did}>
-                  {agent.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </aside>
+      <section style={{ padding: "8px 16px 32px", maxWidth: 880 }}>
+        <AgentDrafts />
 
-        <div className="mail-resizer" onMouseDown={startResize} />
-
-        <article className="reader-pane" style={{ borderRight: "none" }}>
-          <header className="reader-header">
-            <h2 className="reader-subject">{t("pending.heading", { count: pending.length })}</h2>
-            <p className="reader-meta">
-              {selectedDid
-                ? t("pending.descSelected")
-                : t("pending.descUnselected")}
-            </p>
-          </header>
-
-          <div className="reader-body">
-            {messagesQuery.isLoading ? (
-              <div className="empty-state">{t("pending.loading")}</div>
-            ) : messagesQuery.isError ? (
-              <div className="empty-state" style={{ color: "#ef4444" }}>
-                {t("pending.error")}
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => messagesQuery.refetch()}
-                  style={{ marginTop: 8 }}
-                >
-                  {t("pending.retry")}
-                </button>
-              </div>
-            ) : pending.length === 0 ? (
-              <div className="empty-state">{t("pending.empty")}</div>
-            ) : (
-              pending.map((message) => (
-                <div className="panel" key={message.id} style={{ marginTop: 10 }}>
-                  {/* The subject is encrypted for the recipient agent; it can be
-                      read in the inbox once approved. */}
-                  <p className="item-title">{t("pending.subjectHidden")}</p>
-                  <p className="item-sub">
-                    {t("pending.sender")}
-                    {resolveParticipantLabel(message.sender_did, message.sender_label, contactsByDid)}
-                  </p>
-                  <p className="item-sub">
-                    {t("pending.trustScore", { n: Math.round(message.trust_score * 100) })}
-                    {message.ai_category
-                      ? t("pending.category", {
-                          category: t(
-                            message.ai_category === "spam_denylist" || message.ai_category === "spam_burst"
-                              ? `pending.categoryName.${message.ai_category}`
-                              : "pending.categoryName.other",
-                          ),
-                        })
-                      : ""}
-                  </p>
-                  <p className="item-sub">
-                    {formatListTimestamp(message.created_at, { locale })}
-                  </p>
-                  <div className="row" style={{ marginTop: 8, gap: 8 }}>
-                    <button
-                      className="btn primary"
-                      type="button"
-                      onClick={() => handleApprove(message.id)}
-                      disabled={updateFlags.isPending}
-                    >
-                      {t("pending.approve")}
-                    </button>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => handleReject(message.id)}
-                      disabled={updateFlags.isPending}
-                    >
-                      {t("pending.reject")}
-                    </button>
-                  </div>
+        <section className="panel" style={{ marginTop: 16 }} data-testid="pending-messages">
+          <h3 style={{ margin: "4px 0 2px", fontSize: 16, fontWeight: 700 }}>
+            {t("pending.heading", { count: pending.length })}
+          </h3>
+          <p style={{ margin: "0 0 8px", fontSize: 13, color: "#6b7280" }}>
+            {t("pending.descSelected")}
+          </p>
+          {messagesQuery.isLoading ? (
+            <div className="empty-state">{t("pending.loading")}</div>
+          ) : messagesQuery.isError ? (
+            <div className="empty-state" style={{ color: "#ef4444" }}>
+              {t("pending.error")}
+              <button
+                className="btn"
+                type="button"
+                onClick={() => messagesQuery.refetch()}
+                style={{ marginTop: 8 }}
+              >
+                {t("pending.retry")}
+              </button>
+            </div>
+          ) : pending.length === 0 ? (
+            <p className="item-sub">{t("pending.empty")}</p>
+          ) : (
+            pending.map((message) => (
+              <div
+                key={message.id}
+                data-testid="pending-row"
+                style={{ borderTop: "1px solid #e5e7eb", padding: "10px 0" }}
+              >
+                {/* The subject is encrypted for the recipient agent; it can be
+                    read in the inbox once approved. */}
+                <p className="item-title">{t("pending.subjectHidden")}</p>
+                <p className="item-sub">
+                  {t("pending.sender")}
+                  {resolveParticipantLabel(message.sender_did, message.sender_label, contactsByDid)}
+                  {" · "}
+                  {t("pending.recipient")}
+                  {agentForDid(agents, message.recipient_did)?.label ?? t("pending.unknownAgent")}
+                </p>
+                <p className="item-sub">
+                  {t("pending.trustScore", { n: Math.round(message.trust_score * 100) })}
+                  {message.ai_category
+                    ? t("pending.category", {
+                        category: t(
+                          message.ai_category === "spam_denylist" || message.ai_category === "spam_burst"
+                            ? `pending.categoryName.${message.ai_category}`
+                            : "pending.categoryName.other",
+                        ),
+                      })
+                    : ""}
+                  {" · "}
+                  {formatListTimestamp(message.created_at, { locale })}
+                </p>
+                <div className="row" style={{ marginTop: 8, gap: 8 }}>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    onClick={() => handleApprove(message.id)}
+                    disabled={updateFlags.isPending}
+                  >
+                    {t("pending.approve")}
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => handleReject(message.id)}
+                    disabled={updateFlags.isPending}
+                  >
+                    {t("pending.reject")}
+                  </button>
                 </div>
-              ))
-            )}
-            {statusMessage ? (
-              <p className="item-sub" style={{ marginTop: 12 }}>
-                {statusMessage}
-              </p>
-            ) : null}
-          </div>
-        </article>
+              </div>
+            ))
+          )}
+          {statusMessage ? (
+            <p className="item-sub" style={{ marginTop: 12 }}>
+              {statusMessage}
+            </p>
+          ) : null}
+        </section>
       </section>
     </AppShell>
   );

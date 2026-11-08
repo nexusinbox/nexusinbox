@@ -34,6 +34,7 @@ mod a2a_rust;
 mod auto_reply_executor;
 mod envelope_crypto;
 mod policy_evaluator;
+mod remote_mcp;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -67,6 +68,15 @@ struct Cli {
     /// If set, only connections from this UID (the LLM runtime) are accepted.
     #[arg(long)]
     allowed_uid: Option<u32>,
+
+    /// Serve a read-only remote MCP endpoint on this loopback address
+    /// (e.g. 127.0.0.1:8787) for cloud-hosted agents (docs/33 §7 stage 1).
+    #[arg(long, requires = "mcp_token_file")]
+    mcp_listen: Option<std::net::SocketAddr>,
+
+    /// Bearer token file for --mcp-listen; created (0600) if missing.
+    #[arg(long)]
+    mcp_token_file: Option<std::path::PathBuf>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,6 +1184,20 @@ async fn main() {
         dpop_public_jwk,
     });
 
+    if let (Some(listen), Some(token_file)) = (cli.mcp_listen, cli.mcp_token_file.as_deref()) {
+        let token = remote_mcp::load_or_create_token(token_file).unwrap_or_else(|e| {
+            eprintln!("[ERROR] {e}");
+            std::process::exit(1);
+        });
+        let mcp_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            if let Err(e) = remote_mcp::serve(mcp_state, listen, token).await {
+                eprintln!("[ERROR] {e}");
+                std::process::exit(1);
+            }
+        });
+    }
+
     // Remove stale socket
     let socket_path = std::path::PathBuf::from(&cli.llm_socket);
     if socket_path.exists() {
@@ -1719,6 +1743,25 @@ async fn handle_connection(state: Arc<GatewayState>, stream: tokio::net::UnixStr
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/// Gateway state for unit tests: no signer, an API that is not there.
+#[cfg(test)]
+fn test_gateway_state() -> GatewayState {
+    let dpop_signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+    GatewayState {
+        api_url: "http://127.0.0.1:9/api".into(),
+        agent_ref: None,
+        signer_socket: "/nonexistent/signer.sock".into(),
+        token: Mutex::new(TokenState::new()),
+        policy: Mutex::new(PolicyL2::new(20)),
+        refresh_gate: tokio::sync::Mutex::new(()),
+        http_client: reqwest::Client::new(),
+        start_time: Instant::now(),
+        allowed_uid: None,
+        dpop_signing_key,
+        dpop_public_jwk: serde_json::json!({}),
+    }
+}
 
 #[cfg(test)]
 mod tests {
