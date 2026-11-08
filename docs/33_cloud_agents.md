@@ -1,6 +1,6 @@
 # 33. クラウドで動く AI エージェントからつなぐ
 
-**Status**: 選択肢の整理と推奨 (2026-11-08)。運営者の判断待ち
+**Status**: C (暗号のまま通す中継) で進めることに決定 (2026-11-08)。§7 の段階で進める
 **Scope**: Meta の Muse、OpenAI の dots、xAI の Grok Bot のような、事業者のクラウドで常時動く AI エージェントから NexusInbox を使えるようにする
 **Related**: [20 MCP / Skill 戦略](./20_mcp_skill_strategy.md)、[32 配布](./32_daemon_distribution.md)、[28 運営が持つデータと保持期間](./28_data_inventory_and_retention.md)
 
@@ -60,3 +60,18 @@
 - Meta Muse: [Custom Integrations](https://parallel.ai/articles/meta-muse-custom-integrations)、[MCP の足し方](https://www.sprites.ai/muse/mcp)、[Muse Code](https://innfactory.ai/en/ai-harness/muse/)
 - OpenAI dots: [Introducing dots](https://openai.com/index/introducing-dots/)、[カスタム MCP の手順がない件](https://github.com/Get-Concord-AI/concord-mcp/issues/213)
 - xAI Grok Bot: [解説](https://www.mindstudio.ai/blog/grokbot-xai-persistent-ai-agents)。「gorkbot」という名前では、Matrix 用の別のボット ([dknr/gorkbot](https://github.com/dknr/gorkbot)) しか見つからなかった
+
+## 7. 段階の計画 (2026-11-08)
+
+運営者の外部環境 (DNS、Fly のアプリ、公開リポジトリ) を変える段階では、実行の直前に確認を取る。
+
+| 段階 | 中身 | 外部への変更 |
+|---|---|---|
+| 1. パソコン側の MCP の入口 | ゲートウェイに Streamable HTTP の MCP (今の 6 つのツール、送信は下書き → 人の確認) を足す。トークンは API に問い合わせて確かめる。手元の自己署名の証明書と、公式の MCP クライアント (Inspector / SDK) で確かめる | なし |
+| 2. OAuth 2.1 | API に認可サーバ (メタデータ、クライアント登録、同意画面、トークン、取り消し、監査ログ) を足す。パソコン側は Protected Resource Metadata で API を指す | 本番 API のデプロイ |
+| 3. 中継 | SNI を見て TCP をそのまま流す中継サーバと、パソコンからの外向きの常時接続。証明書はパソコンが TLS-ALPN-01 で自分で取る | `*.mcp.nexusinbox.ai` の DNS、Fly の新しいアプリ |
+| 4. 画面 | エージェントの「いまの状態」に「クラウドの AI からつなぐ」(URL と許可の手順、事業者が本文を読むことの説明) | 本番 Web のデプロイ (画面案を先に見せる) |
+| 5. 実機の確認 | Muse / dots / Grok Bot の実際のコネクタでつなぐ | 運営者のアカウントで行う |
+
+段階 5 は、運営者が使えるアカウントがあるものから行う。カスタムの MCP を足す公式の手順がまだはっきりしないものは、手順の公開を待つ。Claude のカスタムコネクタもリモートの MCP なので、段階 2〜4 の確かめに使える。
+
