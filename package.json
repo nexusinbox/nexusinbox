@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
-    "//": "Security floors for transitive deps flagged by `pnpm audit` / Dependabot (2026-06-12, updated 2026-09-04 and 2026-11-07). Each floor is the advisory's patched version and every range has an upper bound on the major the parents already accept, so a floor never moves a parent onto a new major (express 5 / hono / zod / ajv under @modelcontextprotocol/sdk, sharp under next). Left alone on purpose: extract-zip has no patched release (dev-only, via remotion/puppeteer in apps/promo-video) and esbuild 0.27.x (GHSA-g7r4-m6w7-qqqr is Windows dev-server only; vite 7 pins ^0.27).",
+    "//": "Security floors for transitive deps flagged by `pnpm audit` / Dependabot (2026-06-12, updated 2026-09-04, 2026-11-07 and 2026-11-08). Each floor is the advisory's patched version and every range has an upper bound on the major the parents already accept, so a floor never moves a parent onto a new major (express 5 / hono / zod / ajv under @modelcontextprotocol/sdk, sharp under next). One deliberate exception: minimatch@10 goes to 11, because no 10.x release is patched; its only 10.x consumer, @typescript-eslint/typescript-estree, calls just `minimatch()`, which 11 keeps. Left alone on purpose: esbuild 0.27.x under vite 7 (GHSA-g7r4-m6w7-qqqr is Windows dev-server only; vite 7 pins ^0.27).",
     "overrides": {
       "hono": ">=4.13.11 <5",
       "@hono/node-server": ">=2.1.3 <3",
@@ -21,9 +21,10 @@
       "browserslist": ">=4.28.7 <5",
       "vite@7": ">=7.3.7 <8",
       "js-yaml@4": ">=4.3.1 <5",
-      "brace-expansion@1": ">=1.1.16 <2",
-      "brace-expansion@2": ">=2.1.2 <3",
-      "brace-expansion@5": ">=5.0.7 <6",
+      "brace-expansion@1": ">=1.1.21 <2",
+      "brace-expansion@2": ">=2.1.7 <3",
+      "brace-expansion@5": ">=5.0.12 <6",
+      "minimatch@10": ">=11.0.1 <12",
       "@humanfs/node": ">=0.16.8 <1"
     }
   },
@@ -51,6 +52,6 @@
     "prettier": "^3.5.3",
     "turbo": "^2.9.14",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   }
 }
