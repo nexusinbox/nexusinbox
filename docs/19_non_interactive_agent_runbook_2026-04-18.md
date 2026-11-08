@@ -41,6 +41,8 @@ scripts/run_noninteractive_stack.sh start
 ```
 
 - `start` は鍵のパスフレーズを聞く (入力は画面に出ない)。端末から起動していないときは、標準入力の 1 行目をパスフレーズとして読む
+- パスフレーズが空 (入力前にタブを閉じた等) なら何も起動しない。パスフレーズが違って daemon が起動できなければ、ログの末尾を表示して止まり、Gateway も起動しない
+- 本番では `AGENT_INBOX_API_URL=https://api.nexusinbox.ai`。既存の daemon とソケットやログがぶつからないよう、`AGENT_INBOX_RUNTIME_DIR` と `AGENT_INBOX_SIGNER_SOCKET` / `AGENT_INBOX_GATEWAY_SOCKET` をエージェントごとに分けられる
 - `AGENT_INBOX_ENCRYPTION_KEY_FILE` は、届いたメッセージを開くための受信用の鍵。§3 の `--enroll` で一緒に作られる
 
 状態確認:

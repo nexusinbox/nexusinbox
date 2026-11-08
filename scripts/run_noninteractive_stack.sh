@@ -84,6 +84,12 @@ start() {
   else
     IFS= read -r KEY_PASSPHRASE || KEY_PASSPHRASE=""
   fi
+  # Key files are never encrypted with an empty passphrase; an empty read
+  # means the terminal went away (tab closed, Ctrl-D), so start nothing.
+  if [ -z "$KEY_PASSPHRASE" ]; then
+    echo "No passphrase entered; nothing started." >&2
+    exit 1
+  fi
 
   # `exec` here and cargo's own exec into the binary keep one PID from the
   # subshell to the daemon, so the PID file names the process that `stop`
@@ -100,8 +106,22 @@ start() {
       --api-url "$API_URL"
   ) >"$SIGNER_LOG" 2>&1 &
   echo $! >"$SIGNER_PID_FILE"
+  signer_pid="$(read_pid "$SIGNER_PID_FILE")"
 
-  sleep 1
+  # Start the gateway only once the daemon is listening: with a wrong
+  # passphrase the daemon exits, and a gateway without it would just retry.
+  waited=0
+  while [ ! -S "$SIGNER_SOCKET" ]; do
+    if ! is_running "$signer_pid" || [ "$waited" -ge 120 ]; then
+      echo "signer-daemon did not start. Last lines of $SIGNER_LOG:" >&2
+      tail -n 3 "$SIGNER_LOG" >&2
+      kill "$signer_pid" 2>/dev/null || true
+      rm -f "$SIGNER_PID_FILE"
+      exit 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
 
   echo "Starting agent-gateway..."
   (
