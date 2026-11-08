@@ -5,16 +5,22 @@ import { AppShell } from "../_components/AppShell";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
 import {
   useAgentsQuery,
+  useContactsQuery,
   useMessagesQuery,
   useUpdateMessageFlagsMutation,
 } from "../../lib/api/hooks";
 import { useTwoColumnResize } from "../../lib/ui/useTwoColumnResize";
-import { formatParticipant } from "../../lib/api/client";
+import { indexContactsByDid, resolveParticipantLabel } from "../../lib/api/labels";
 import { useTranslation } from "../../lib/i18n";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 
 export default function PendingApprovalPage() {
   const { t, locale } = useTranslation();
+  const contactsQuery = useContactsQuery();
+  const contactsByDid = useMemo(
+    () => indexContactsByDid(contactsQuery.data?.contacts),
+    [contactsQuery.data],
+  );
   const agentsQuery = useAgentsQuery();
   const agents = agentsQuery.data?.agents ?? [];
   const [activeDid, setActiveDid] = useState<string>("all");
@@ -123,15 +129,24 @@ export default function PendingApprovalPage() {
             ) : (
               pending.map((message) => (
                 <div className="panel" key={message.id} style={{ marginTop: 10 }}>
-                  <p className="item-title">
-                    {message.subject_encrypted || t("pending.noSubject")}
-                  </p>
+                  {/* The subject is encrypted for the recipient agent; it can be
+                      read in the inbox once approved. */}
+                  <p className="item-title">{t("pending.subjectHidden")}</p>
                   <p className="item-sub">
-                    {t("pending.sender")}{formatParticipant(message.sender_label, message.sender_did)}
+                    {t("pending.sender")}
+                    {resolveParticipantLabel(message.sender_did, message.sender_label, contactsByDid)}
                   </p>
                   <p className="item-sub">
                     {t("pending.trustScore", { n: Math.round(message.trust_score * 100) })}
-                    {message.ai_category ? t("pending.category", { category: message.ai_category }) : ""}
+                    {message.ai_category
+                      ? t("pending.category", {
+                          category: t(
+                            message.ai_category === "spam_denylist" || message.ai_category === "spam_burst"
+                              ? `pending.categoryName.${message.ai_category}`
+                              : "pending.categoryName.other",
+                          ),
+                        })
+                      : ""}
                   </p>
                   <p className="item-sub">
                     {formatListTimestamp(message.created_at, { locale })}

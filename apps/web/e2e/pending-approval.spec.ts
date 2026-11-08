@@ -185,8 +185,12 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
   // folder=pending_approval query result and the heading count
   // decreases. The approve button is `pending.approve` ("承認"); the
   // reject counterpart is `pending.reject` ("拒否", not "却下").
+  // The subject is ciphertext for the recipient agent and is never shown
+  // as text; each row is told apart by why it was held.
+  await expect(page.getByText("怪しい件名A")).toHaveCount(0);
+  await expect(page.getByText("件名は暗号化されています").first()).toBeVisible();
   await page
-    .locator(".panel", { hasText: "怪しい件名A" })
+    .locator(".panel", { hasText: "短時間に大量の送信" })
     .getByRole("button", { name: "承認" })
     .click();
   await expect(
@@ -198,7 +202,7 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
 
   // Reject the remaining message → folder=trash → empty state.
   await page
-    .locator(".panel", { hasText: "怪しい件名B" })
+    .locator(".panel", { hasText: "迷惑な送信者の一覧に一致" })
     .getByRole("button", { name: "拒否" })
     .click();
   await expect(

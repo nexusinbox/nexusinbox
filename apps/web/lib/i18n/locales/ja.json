@@ -328,6 +328,12 @@
   },
 
   "pending": {
+    "subjectHidden": "件名は暗号化されています（承認すると受信箱で読めます）",
+    "categoryName": {
+      "spam_denylist": "迷惑な送信者の一覧に一致",
+      "spam_burst": "短時間に大量の送信",
+      "other": "自動判定"
+    },
     "title": "承認待ち",
     "subtitle": "システムが判断できなかったメッセージを確認",
     "refresh": "更新",

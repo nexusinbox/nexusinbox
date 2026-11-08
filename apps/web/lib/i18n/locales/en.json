@@ -328,6 +328,12 @@
   },
 
   "pending": {
+    "subjectHidden": "The subject is encrypted (approve to read it in the inbox)",
+    "categoryName": {
+      "spam_denylist": "matches the spam sender list",
+      "spam_burst": "many messages in a short time",
+      "other": "automatic check"
+    },
     "title": "Pending Approval",
     "subtitle": "Review messages the system was unsure about",
     "refresh": "Refresh",
