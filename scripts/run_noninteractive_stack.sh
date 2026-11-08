@@ -1,7 +1,34 @@
 #!/usr/bin/env sh
 set -eu
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+# Two ways to run (docs/32): installed, as `nexusinbox` with the signer and
+# gateway binaries beside it (a release, Homebrew); or from a checkout of the
+# repository, building them with cargo.
+SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$SELF_DIR/.." && pwd)"
+if [ -x "$SELF_DIR/nexusinbox-signer" ] && [ -x "$SELF_DIR/nexusinbox-gateway" ]; then
+  INSTALLED=1
+  SELF_NAME="$(basename -- "$0")"
+else
+  INSTALLED=0
+  SELF_NAME="$0"
+fi
+
+# Replace the current (sub)shell with the signer or the gateway.
+exec_signer() {
+  if [ "$INSTALLED" = 1 ]; then
+    exec "$SELF_DIR/nexusinbox-signer" "$@"
+  fi
+  cd "$ROOT_DIR"
+  exec cargo run --manifest-path services/signer-daemon/Cargo.toml -- "$@"
+}
+exec_gateway() {
+  if [ "$INSTALLED" = 1 ]; then
+    exec "$SELF_DIR/nexusinbox-gateway" "$@"
+  fi
+  cd "$ROOT_DIR"
+  exec cargo run --manifest-path services/agent-gateway/Cargo.toml -- "$@"
+}
 
 # `start|stop|status <dir>`: the directory `connect` (or `nexusinbox-signer
 # --enroll --dir`) wrote. Its agent.env holds this agent's settings; only
@@ -46,12 +73,12 @@ ENCRYPTION_KEY_FILE="${AGENT_INBOX_ENCRYPTION_KEY_FILE:-}"
 usage() {
   cat <<EOF
 Usage:
-  $0 connect <code> [api_url]
+  $SELF_NAME connect <code> [api_url]
       Connect this machine to an agent with the pairing code the web UI
       shows, then start it. Asks for a new passphrase for the agent's keys.
       api_url defaults to https://api.nexusinbox.ai.
 
-  $0 start|stop|status <dir>
+  $SELF_NAME start|stop|status <dir>
       <dir> is what \`connect\` (or \`nexusinbox-signer --enroll --dir <dir>\`) wrote.
 
   Or with the settings spelled out:
@@ -60,10 +87,10 @@ Usage:
   AGENT_INBOX_KEY_FILE=/path/to/signing.key.enc \\
   [AGENT_INBOX_ENCRYPTION_KEY_FILE=/path/to/encryption.key.enc] \\
   [AGENT_INBOX_MODE_A_EXECUTOR=on] \\
-  $0 start
+  $SELF_NAME start
 
-Enroll the daemon once first (docs/19 §3):
-  cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll ...
+Or enroll the daemon by hand first (docs/19 §3.1):
+  nexusinbox-signer --enroll ...
 
 Commands:
   connect Pair with the web UI, then start
@@ -133,8 +160,7 @@ start() {
   # must kill (it used to name a subshell, and the daemons outlived `stop`).
   echo "Starting signer-daemon..."
   printf '%s\n' "$KEY_PASSPHRASE" | (
-    cd "$ROOT_DIR"
-    exec cargo run --manifest-path services/signer-daemon/Cargo.toml -- \
+    exec_signer \
       --socket "$SIGNER_SOCKET" \
       --key-file "$KEY_FILE" \
       ${ENCRYPTION_KEY_FILE:+--encryption-key-file "$ENCRYPTION_KEY_FILE"} \
@@ -162,8 +188,7 @@ start() {
 
   echo "Starting agent-gateway..."
   (
-    cd "$ROOT_DIR"
-    exec cargo run --manifest-path services/agent-gateway/Cargo.toml -- \
+    exec_gateway \
       --llm-socket "$GATEWAY_SOCKET" \
       --signer-socket "$SIGNER_SOCKET" \
       --api-url "$API_URL"
@@ -210,22 +235,25 @@ connect() {
     exit 1
   fi
 
-  echo "Connecting. The first time, building the programs takes a few minutes..." >&2
+  if [ "$INSTALLED" = 1 ]; then
+    echo "Connecting..." >&2
+  else
+    echo "Connecting. The first time, building the programs takes a few minutes..." >&2
+  fi
   agent_dir="$(printf '%s\n%s\n' "$NEW_PASSPHRASE" "$NEW_PASSPHRASE" | (
-    cd "$ROOT_DIR"
-    exec cargo run --manifest-path services/signer-daemon/Cargo.toml -- \
+    exec_signer \
       --connect "$code" \
       --api-url "$api_url"
   ))" || exit 1
 
   if ! printf '%s\n' "$NEW_PASSPHRASE" | "$0" start "$agent_dir"; then
     echo "Connected, but the agent did not start. Fix the cause above, then run:" >&2
-    echo "  $0 start $agent_dir" >&2
+    echo "  $SELF_NAME start $agent_dir" >&2
     exit 1
   fi
   echo ""
   echo "Connected. Next time, start this agent with:"
-  echo "  $0 start $agent_dir"
+  echo "  $SELF_NAME start $agent_dir"
 }
 
 stop() {

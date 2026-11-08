@@ -27,6 +27,8 @@
 //   - `cargo build` in services/signer-daemon and services/agent-gateway
 //
 // Usage: API=http://localhost:8080 node scripts/e2e_isolated_auto_reply.mjs
+//   Against an unpacked release instead of the checkout:
+//   STACK=<dir>/nexusinbox SIGNER_BIN=<dir>/nexusinbox-signer API=... node scripts/e2e_isolated_auto_reply.mjs
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -177,8 +179,11 @@ function expectStatus(resp, ok, what) {
 
 // --- main -------------------------------------------------------------------
 
-// The stack script, as a person runs it from the repository root.
-const STACK = path.join(REPO, "scripts/run_noninteractive_stack.sh");
+// The stack script, as a person runs it from the repository root, or
+// STACK / SIGNER_BIN pointing at an unpacked release (docs/32).
+const STACK = process.env.STACK ?? path.join(REPO, "scripts/run_noninteractive_stack.sh");
+const SIGNER_BIN =
+  process.env.SIGNER_BIN ?? path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer");
 const PASSPHRASE = "e2e-passphrase";
 let stackDir = null;
 let stackEnv = null;
@@ -294,7 +299,7 @@ async function main() {
     [201], "create credential for C");
   const agentDirC = path.join(WORK, "agent-c");
   try {
-    execFileSync(path.join(REPO, "services/signer-daemon/target/debug/nexusinbox-signer"), [
+    execFileSync(SIGNER_BIN, [
       "--enroll",
       "--credential-id", credC.credential_id,
       "--dir", agentDirC,
