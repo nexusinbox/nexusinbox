@@ -34,12 +34,17 @@ export function daemonEnrollCommand(credentialId: string, dirName: string): stri
   ].join("\n");
 }
 
+/** Installing the computer-side programs (docs/32): Homebrew on a Mac. */
+export const INSTALL_COMMAND = "brew install nexusinbox/tap/nexusinbox";
+/** Release archives, for Linux and anyone without Homebrew. */
+export const RELEASES_URL = "https://github.com/nexusinbox/nexusinbox/releases/latest";
+
 /** Pair this machine with an agent and start it, in one command (docs/31). */
 export function daemonConnectCommand(pairingCode: string): string {
-  const command = `scripts/run_noninteractive_stack.sh connect ${pairingCode}`;
+  const command = `nexusinbox connect ${pairingCode}`;
   return DAEMON_API_URL === PRODUCTION_API_URL ? command : `${command} ${DAEMON_API_URL}`;
 }
 
 export function daemonStartCommand(dirName: string): string {
-  return `scripts/run_noninteractive_stack.sh start ~/.nexusinbox/${dirName}`;
+  return `nexusinbox start ~/.nexusinbox/${dirName}`;
 }

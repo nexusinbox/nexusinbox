@@ -69,20 +69,25 @@ scripts/run_noninteractive_stack.sh stop
 
 ### 3.0 接続コードでつなぐ (`connect`、2026-11-08)
 
-Web の「はじめての設定」(`/onboarding`) で「自分のパソコンでも動かす」を選ぶと、10 文字の接続コード (`XXXXX-XXXXX`、10 分・1 回限り) とコマンドが出る。リポジトリのルートで 1 回実行すれば、登録から起動までが終わる (docs/31)。
+Web の「はじめての設定」(`/onboarding`) で「自分のパソコンでも動かす」を選ぶと、10 文字の接続コード (`XXXXX-XXXXX`、10 分・1 回限り) とコマンドが出る。1 回実行すれば、登録から起動までが終わる (docs/31)。
+
+プログラムは配布物から入れる (docs/32)。Mac は Homebrew、Linux は [Releases](https://github.com/nexusinbox/nexusinbox/releases/latest) のアーカイブを展開し、3 つのファイル (`nexusinbox`、`nexusinbox-signer`、`nexusinbox-gateway`) を同じフォルダに置く。
 
 ```bash
-# from repo root
-scripts/run_noninteractive_stack.sh connect 7KQ4P-ZX9M2               # 本番 (https://api.nexusinbox.ai)
-scripts/run_noninteractive_stack.sh connect 7KQ4P-ZX9M2 http://localhost:8080   # ローカル
+brew install nexusinbox/tap/nexusinbox                  # 初回だけ (Mac)
+nexusinbox connect 7KQ4P-ZX9M2                          # 本番 (https://api.nexusinbox.ai)
+nexusinbox connect 7KQ4P-ZX9M2 http://localhost:8080    # ローカル
+nexusinbox start|stop|status ~/.nexusinbox/<フォルダ>     # 2 回目から
 ```
+
+リポジトリから動かす場合は、`nexusinbox` の代わりに `scripts/run_noninteractive_stack.sh` を使う (初回は cargo でビルドする)。
 
 - 新しいパスフレーズを 2 回聞かれる。スクリプトがそれを daemon の登録と起動の両方に渡す
 - daemon (`nexusinbox-signer --connect <code>`) がコードから credential を引き (`POST /agent-pairing/resolve`、IP ごとに 10 分 10 回まで)、`~/.nexusinbox/<エージェント名>` に鍵 2 つと `agent.env` を作って、コードを登録用シークレットとして activate する。別のエージェントの鍵があるディレクトリは使わず、`-2`、`-3` … を付ける
 - credential の名前は OS 名 (`macOS` など) になる。ホスト名は送らない (利用者の名前が入っていることが多いため)
 - 登録に失敗したら、書いた鍵を消して止まる。Web で新しいコードを出してやり直す
 - コードはコマンドラインに載る。1 回限り・10 分で失効するので、`ens_` シークレットと違って許容している
-- 次回からは `scripts/run_noninteractive_stack.sh start <dir>` で起動する (connect の最後に表示される)
+- 次回からは `nexusinbox start <dir>` で起動する (connect の最後に表示される)
 
 ### 3.1 credential ID とシークレットでつなぐ (`--enroll`)
 

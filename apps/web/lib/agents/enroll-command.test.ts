@@ -23,14 +23,10 @@ describe("enroll command", () => {
     expect(enroll).toContain("--dir ~/.nexusinbox/enroll-test");
     expect(enroll).toContain("--api-url https://api.nexusinbox.ai");
     expect(enroll).not.toMatch(/ens_|secret/i);
-    expect(daemonStartCommand("enroll-test")).toBe(
-      "scripts/run_noninteractive_stack.sh start ~/.nexusinbox/enroll-test",
-    );
+    expect(daemonStartCommand("enroll-test")).toBe("nexusinbox start ~/.nexusinbox/enroll-test");
   });
 
   it("connects with just the pairing code against production", () => {
-    expect(daemonConnectCommand("7KQ4P-ZX9M2")).toBe(
-      "scripts/run_noninteractive_stack.sh connect 7KQ4P-ZX9M2",
-    );
+    expect(daemonConnectCommand("7KQ4P-ZX9M2")).toBe("nexusinbox connect 7KQ4P-ZX9M2");
   });
 });

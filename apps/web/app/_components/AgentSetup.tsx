@@ -7,7 +7,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { presetSettings, type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
-import { daemonConnectCommand } from "../../lib/agents/enroll-command";
+import {
+  daemonConnectCommand,
+  INSTALL_COMMAND,
+  RELEASES_URL,
+} from "../../lib/agents/enroll-command";
 import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useUpdateAgentMutation } from "../../lib/api/hooks";
 import { useTranslation } from "../../lib/i18n";
@@ -242,6 +246,19 @@ export function ConnectComputer({
   }
   return (
     <div style={{ marginTop: 4 }}>
+      <p className="item-sub" style={{ marginTop: 10 }}>
+        {t("firstRun.connect.installStep")}
+      </p>
+      <CommandLine command={INSTALL_COMMAND} testId="connect-install" />
+      <p className="item-sub" style={{ marginTop: 6 }}>
+        {t("firstRun.connect.linuxHint")}{" "}
+        <a href={RELEASES_URL} target="_blank" rel="noreferrer">
+          {t("firstRun.connect.releasesLink")}
+        </a>
+      </p>
+      <p className="item-sub" style={{ marginTop: 12 }}>
+        {t("firstRun.connect.connectStep")}
+      </p>
       <CommandLine command={daemonConnectCommand(pairing.code)} testId="connect-command" />
       <p className="item-sub" style={{ marginTop: 10 }}>
         {t("firstRun.connect.passphrase")}

@@ -1,6 +1,6 @@
 # 32. パソコン側プログラムの配布方法
 
-**Status**: 推奨どおりで進めることに決定 (2026-11-08)。§7 のとおり実装中
+**Status**: 実装済み (2026-11-08)。v0.1.0 を公開し、Homebrew の tap から入れられる
 **Scope**: 利用者のパソコンで動く署名デーモン (`nexusinbox-signer`) とゲートウェイ (`nexusinbox-gateway`)、それを起動する `scripts/run_noninteractive_stack.sh`
 **Related**: [31 使い始めの体験](./31_onboarding_ux.md) §5.6、[19 非対話型アクセス runbook](./19_non_interactive_agent_runbook_2026-04-18.md)
 
@@ -74,9 +74,16 @@ A・B・C のどれでも、CI で OS ごとの実行ファイルを作って Gi
 - `.github/workflows/release.yml`: 公開リポジトリで `vX.Y.Z` のタグを打つと、macOS (Apple Silicon / Intel) と Linux (x86_64 / arm64) 向けに作り、ビルド元の証明 (`gh attestation verify` で確かめられる) を付けて Release に置く。使う action はコミット SHA で固定し、ビルド中のプログラムからトークンが見えないようにしている
 - 手元で作った配布物を展開し、その `nexusinbox` で E2E (接続コードでの接続、従来の登録、自動返信) が通ることを確かめた
 
-### 7.3 残り
+### 7.3 公開 (2026-11-08)
 
-1. 最初のリリース (公開リポジトリに `v0.1.0` のタグ) — 公開の操作なので、実行の直前に運営者に確認する
-2. Homebrew の tap (`nexusinbox/homebrew-tap`) — 公開リポジトリを作るので、同じく直前に確認する
-3. 画面の案内を `nexusinbox connect <コード>` に切り替え、docs/19 と README を直す
+- [v0.1.0](https://github.com/nexusinbox/nexusinbox/releases/tag/v0.1.0) を公開した。4 つの配布物すべてで、SHA-256 とビルド元の証明 (`gh attestation verify`) が一致し、CPU 種別も正しいことを確かめた
+- 1 回目は失敗した。GitHub の `macos-14` の実行環境が提供終了していて Mac のビルドが始まらず、Linux の 2 つだけが下書きに入った。`macos-15` に直し、公開前の下書きとタグを消して `v0.1.0` を打ち直した
+- [nexusinbox/homebrew-tap](https://github.com/nexusinbox/homebrew-tap) を作った。formula は v0.1.0 の配布物を SHA-256 で固定している
+- 運営者の Mac で `brew install nexusinbox/tap/nexusinbox` → `brew test` を通し、入った `nexusinbox` で E2E (接続コードでの接続、起動、自動返信、従来の登録) が通ることを確かめた
+- 画面の案内 (はじめての設定、状態カードの起動コマンド)、ヘルプ、docs/19、README を `nexusinbox …` に切り替えた
 
+### 7.4 新しい版を出すとき
+
+1. 公開リポジトリに `vX.Y.Z` のタグを打つ (リリースが自動でできる)
+2. tap の formula の `version`、4 つの `url`、`sha256` を新しい版に書き換える (`.sha256` ファイルの値)
+3. `brew upgrade nexusinbox` で入れ替わることを確かめる
