@@ -412,6 +412,77 @@ async fn post_message_then_get_and_patch_status() {
     assert_eq!(content_json["encrypted_content"], "base64-content");
     assert_eq!(content_json["encrypted_key"], VALID_WRAPPED_KEY);
     assert_eq!(content_json["nonce"], "base64-nonce");
+    assert!(content_json.get("sender_encrypted_key").is_none());
+}
+
+#[tokio::test]
+async fn sender_key_wrap_round_trips_and_is_checked() {
+    let app = common::test_app();
+    let (sender_did, signing_key) = create_test_agent(&app).await;
+    let recipient_did = create_recipient_agent(&app).await;
+    let sender_wrap = wrapped_key_for("sender-copy");
+    let send = |sender_key: Value, nonce: &str| {
+        let signature = sign_envelope(
+            &signing_key,
+            &sender_did,
+            &recipient_did,
+            "base64-subject",
+            "base64-content",
+            VALID_WRAPPED_KEY,
+            nonce,
+        );
+        json!({
+          "sender_did": sender_did,
+          "recipient_did": recipient_did,
+          "envelope": {
+            "encrypted_content": "base64-content",
+            "encrypted_key": VALID_WRAPPED_KEY,
+            "sender_encrypted_key": sender_key,
+            "nonce": nonce,
+            "signature": signature,
+            "metadata": { "subject_encrypted": "base64-subject", "has_attachments": false }
+          }
+        })
+    };
+    let post = |payload: Value| {
+        app.clone().oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/messages")
+                .header("authorization", auth_header())
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+    };
+
+    // Not a wrapped key: refused.
+    let bad = post(send(json!("not-a-wrapped-key"), "nonce-bad"))
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let ok = post(send(json!(sender_wrap), "nonce-ok")).await.unwrap();
+    assert_eq!(ok.status(), StatusCode::ACCEPTED);
+    let message_id = response_json(ok).await["message_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let content = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/messages/{message_id}/content"))
+                .header("authorization", auth_header())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(content.status(), StatusCode::OK);
+    let content_json = response_json(content).await;
+    assert_eq!(content_json["sender_encrypted_key"], sender_wrap);
+    assert_eq!(content_json["encrypted_key"], VALID_WRAPPED_KEY);
 }
 
 #[tokio::test]

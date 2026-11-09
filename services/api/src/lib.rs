@@ -693,6 +693,11 @@ struct StoredMessageContent {
     // client falls back to legacy plain-text behaviour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     content_type: Option<String>,
+    /// The same content key wrapped for the sender's own encryption key,
+    /// so the sender can read what they sent (docs/35 §5). Absent on
+    /// messages sent before this existed and from clients that omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sender_encrypted_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -772,6 +777,9 @@ struct AttachmentDownloadUrlResponse {
 struct Envelope {
     encrypted_content: Option<String>,
     encrypted_key: Option<String>,
+    /// Optional: the content key wrapped for the sender (docs/35 §5).
+    #[serde(default)]
+    sender_encrypted_key: Option<String>,
     nonce: Option<String>,
     signature: Option<String>,
     metadata: Option<EnvelopeMetadata>,
@@ -945,6 +953,9 @@ struct MessageContentResponse {
     // backward compatible for clients that don't know about it.
     #[serde(skip_serializing_if = "Option::is_none")]
     content_type: Option<String>,
+    /// The content key wrapped for the sender, when the sender kept one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender_encrypted_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -6490,7 +6501,20 @@ async fn send_agent_draft(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
+    body: axum::body::Bytes,
 ) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, Json<ErrorResponse>)> {
+    // Optional `{ "sender_encrypted_key": "x25519v1:..." }`: the reviewing
+    // browser opened the draft, so it can wrap the content key for the
+    // sending agent too, and the sender can read it later (docs/35 §5).
+    let sender_encrypted_key = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<serde_json::Value>(&body)
+            .map_err(|_| validation_error("body must be JSON"))?
+            .get("sender_encrypted_key")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
     let user_id = authenticated_user_id(&state, &headers).await?;
     let user_uuid = parse_user_uuid(&user_id)?;
     let pool = drafts_pool(&state).await?;
@@ -6517,6 +6541,7 @@ async fn send_agent_draft(
         envelope: Some(Envelope {
             encrypted_content: Some(row.get("encrypted_content")),
             encrypted_key: Some(row.get("encrypted_key")),
+            sender_encrypted_key,
             nonce: Some(row.get("nonce")),
             signature: Some(row.get("signature")),
             metadata: Some(EnvelopeMetadata {
@@ -10971,6 +10996,19 @@ async fn send_message_as(
             "envelope.encrypted_key must use x25519v1 wrapped key format",
         ));
     }
+    let sender_encrypted_key = envelope
+        .as_ref()
+        .and_then(|e| e.sender_encrypted_key.as_deref())
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_string);
+    if let Some(k) = &sender_encrypted_key {
+        if k.len() > 512 || !is_valid_wrapped_encrypted_key_format(k) {
+            return Err(validation_error(
+                "envelope.sender_encrypted_key must use x25519v1 wrapped key format",
+            ));
+        }
+    }
 
     let recipient_did = if let Some(pool) = maybe_pool.clone() {
         match resolve_recipient_in_db(&pool, &recipient_ref)
@@ -11242,6 +11280,7 @@ async fn send_message_as(
         encrypted_key: encrypted_key.clone(),
         nonce: nonce.clone(),
         content_type: content_type.clone(),
+        sender_encrypted_key,
     };
     let encoded_payload = serde_json::to_string(&stored_payload).map_err(|_| {
         audit_storage_event(
@@ -14424,6 +14463,7 @@ async fn message_content(
                     subject_encrypted: message.subject_encrypted.clone(),
                     thread_id: message.thread_id,
                     content_type: payload.content_type,
+                    sender_encrypted_key: payload.sender_encrypted_key,
                 }));
             }
             audit_storage_event(

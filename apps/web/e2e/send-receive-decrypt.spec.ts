@@ -351,16 +351,14 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
     page.getByText("メッセージを送信しました。"),
   ).toBeVisible();
 
-  // Bounce back to /, click the inbox row, expect the decrypted
+  // Bounce back to /, open the conversation, expect the decrypted
   // subject + body. Same browser context → recipient's private key
   // is in localStorage → decryption resolves the real plaintext.
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.locator(".thread-item").first()).toBeVisible();
-  await page.locator(".thread-item").first().click();
+  await expect(page.getByTestId("dm-row").first()).toBeVisible();
+  await page.getByTestId("dm-row").first().click();
 
-  await expect(page.locator(".reader-subject")).toContainText(plainSubject);
-  await expect(page.locator(".conversation-message-body").first()).toContainText(
-    plainBody,
-  );
+  await expect(page.locator(".dm-subject").first()).toContainText(plainSubject);
+  await expect(page.locator(".dm-bubble").first()).toContainText(plainBody);
 });

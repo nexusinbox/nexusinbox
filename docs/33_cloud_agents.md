@@ -301,3 +301,38 @@ API は `AGENT_INBOX_MCP_RESOURCE_DOMAIN=mcp.agent-inbox.ai` で URL を割り�
 - 許可のあと、Muse から受信箱を読み、下書きを作れた。Muse は下書きの中身を人に確かめてから作り、下書きは「確認が必要」に入った (送信はされない)
 - 中継の記録 (10 分ごとの件数だけ): 04:42〜04:52 UTC にパソコンへ 12 接続、約 26 KB を転送。同じ時間に、名前の無い・形のおかしい接続を 12 件断った
 - 利用者向けの手順 (help や画面の文言) では、Muse は「設定」ではなく「チャットで頼む」を案内する。dots / Grok Bot は、手順が分かってから確かめる
+
+## 14. 証明書の見張り (Certificate Transparency、2026-11-09)
+
+公開の CA が出した証明書は、すべて公開のログ (CT) に載る。`agent-inbox.ai` の名前で、こちらが頼んでいない証明書が出ていないかを見張る。
+
+### 14.1 ふだん出るもの
+
+- ゾーン全体 (`agent-inbox.ai`、`*.agent-inbox.ai`): Cloudflare の Universal SSL。CA は Sectigo / Let's Encrypt / Google Trust Services / SSL.com
+- `app.agent-inbox.ai`: Vercel (`app.nexusinbox.ai` への転送)。Let's Encrypt
+- `relay.agent-inbox.ai`: 中継。Let's Encrypt
+- `<10 文字>.mcp.agent-inbox.ai`: パソコンごとに 1 枚、Let's Encrypt。更新はおよそ 60 日ごと
+
+### 14.2 しくみ
+
+- `scripts/ct_watch.mjs`: Cert Spotter (SSLMate の公開 API、鍵なし) から `agent-inbox.ai` の発行を取り、直近 3 日のものを調べる。次のどれかなら「想定外」
+  - 上の一覧にない名前、または決まった CA 以外 (`*.mcp.agent-inbox.ai` のような wildcard、2 つ以上の名前を持つものも含む)
+  - 同じパソコンの名前に、30 日以内に 2 枚目
+  - パソコンの証明書が 1 日に 20 枚を超える
+- `.github/workflows/ct-watch.yml`: 非公開リポジトリだけで 6 時間ごとに動き、想定外 1 件ごとに Issue を開く (同じ証明書では 2 度開かない)。Issue が開くと GitHub からメールが届く。ルールのテストは `node --test scripts/ct_watch.test.mjs`
+- 運営は鍵もトークンも使わない。読むのは公開のデータだけ
+
+### 14.3 Issue が開いたら
+
+1. crt.sh で証明書を開き、名前・CA・発行時刻を見る。自分たちの作業 (パソコンの付け直し、鍵の作り直し) で説明がつくなら閉じる
+2. 説明がつかないとき
+   - Cloudflare の DNS に知らないレコードや変更がないか (`*.mcp` と `relay` が中継の IP を指しているか)、Cloudflare の監査ログ
+   - 中継 (Fly `nexusinbox-mcp-relay`) のマシンと設定、入場券の鍵 (`AGENT_INBOX_RELAY_TICKET_KEY`) が漏れていないか。疑わしければ鍵を作り直す (中継の `RELAY_TICKET_PUBLIC_KEY` も入れ替える)
+   - パソコンの証明書なら、その人の「クラウドの AI」を止め、つながっている AI を切る (「使うのをやめる」)
+   - Let's Encrypt の証明書は、ドメインを持っていることを示せば失効させられる
+3. 何をしたかを、この節か docs/18 に書き残す
+
+### 14.4 見つけたこと (初回、2026-11-09)
+
+- 直近 120 日で想定外は `api.agent-inbox.ai` の 4 枚だけ。古い Fly アプリ `agent-inbox-api` (止めたまま) にこの名前の証明書が設定されたまま残り、Fly が 10 月にも更新していた。DNS は消してあるので、この先の更新は通らない。アプリから証明書を外すか、アプリごと消すのが安全
+- `agent-inbox.ai` の頂点と `relay` には CAA が無い (`mcp` にだけ Let's Encrypt の CAA がある)。頂点にも CAA を置くと、`relay` などに他の CA が証明書を出せなくなる。Cloudflare は Universal SSL の CA の CAA を自動で足す

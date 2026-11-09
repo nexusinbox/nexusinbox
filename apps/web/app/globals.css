@@ -1,21 +1,46 @@
 :root {
-  /* Material Design 3 Like Palette */
-  --bg: #f4f7fc;
+  /* docs/35 §3: the design foundation. Component styles read these. */
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --radius: 16px;
+
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-alt: #f8fafd;
-  --surface-hover: #f0f4f9;
-  --surface-active: #c2e7ff;
-  --line: #e1e5ea;
-  --text: #1f1f1f;
-  --text-muted: #5f6368;
-  --primary: #0b57d0;
-  --primary-soft: #d3e3fd;
-  --primary-hover: #0842a0;
-  --danger: #b3261e;
-  --ok: #146c2e;
-  --warn: #8c4a00;
-  --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.1), 0 1px 3px 1px rgba(60, 64, 67, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(60, 64, 67, 0.1), 0 2px 4px -1px rgba(60, 64, 67, 0.06);
+  --surface-alt: #f7f9f9;
+  --surface-hover: #f2f4f5;
+  --surface-active: #e8eeff;
+  --line: #eff3f4;
+  --line-strong: #cfd9de;
+  --text: #0f1419;
+  --text-muted: #536471;
+  --primary: #2f5bea;
+  --primary-soft: #e8eeff;
+  --primary-hover: #2449c8;
+  --danger: #d0193f;
+  --ok: #00875a;
+  --warn: #9a5b00;
+  --shadow-sm: 0 1px 3px rgba(15, 20, 25, 0.08);
+  --shadow-md: 0 4px 16px rgba(15, 20, 25, 0.12);
+}
+
+/* Dark colours (docs/35 §2). Switched on with data-theme="dark" on <html>
+   once every screen reads only these tokens (docs/35 §4). */
+:root[data-theme="dark"] {
+  --bg: #15202b;
+  --surface: #15202b;
+  --surface-alt: #1b2733;
+  --surface-hover: #1e2c39;
+  --surface-active: #1d2f5c;
+  --line: #2f3b47;
+  --line-strong: #425364;
+  --text: #f7f9f9;
+  --text-muted: #8b98a5;
+  --primary-soft: #1d2f5c;
 }
 
 * {
@@ -42,7 +67,9 @@ html, body {
   min-height: 100%;
   color: var(--text);
   background: var(--surface);
-  font-family: "Google Sans", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: 1.5;
   overflow: hidden;
 }
 
@@ -56,518 +83,202 @@ button, input, textarea, select {
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* Base Shell */
-.gmail-shell {
+/* App shell (docs/35): left navigation on wide screens; on phones a
+   header, a tab bar at the bottom and a button for a new conversation. */
+.x-shell {
   display: grid;
-  grid-template-columns: 256px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
   background: var(--bg);
-  /* Contain the ambient bg's stacking context to this shell so modals,
-     dropdowns, and popovers rendered elsewhere in the DOM are never stuck
-     behind it. */
   position: relative;
   isolation: isolate;
 }
 
-/* =================================================================
-   Post-login animated backdrop.
-   Mounted by <AppBackdrop /> inside .gmail-shell. All classes are
-   namespaced under `.ai-app-*` / `.ai-*` so they never touch any
-   existing shell / component styles. The shell is `position: relative;
-   isolation: isolate;` so the fixed/absolute layers below stay scoped.
-   ================================================================= */
-
-/* ---------- root layer ---------- */
-.ai-app-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-/* Panels always paint above the backdrop. Explicit z-index guards
-   against z-index-collapse when the grid layout reflows at breakpoints. */
-.gmail-sidebar,
-.gmail-main {
-  position: relative;
-  z-index: 1;
-}
-
-/* ---------- radial wash ---------- */
-.ai-app-bg-wash {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 70% 60% at 20% 10%, rgba(80, 150, 255, 0.25) 0%, transparent 60%),
-    radial-gradient(ellipse 70% 60% at 80% 90%, rgba(170, 100, 255, 0.20) 0%, transparent 60%);
-}
-
-/* ---------- drifting blurred orbs ---------- */
-.ai-app-orb {
-  position: absolute;
-  width: 520px;
-  height: 520px;
-  border-radius: 50%;
-  filter: blur(72px);
-  opacity: 0.45;
-}
-.ai-app-orb-a {
-  background: #7dd7ff;
-  top: -100px;
-  left: -120px;
-  animation: ai-app-orb-a 28s ease-in-out infinite alternate;
-}
-.ai-app-orb-b {
-  background: #d49eff;
-  bottom: -160px;
-  right: -140px;
-  animation: ai-app-orb-b 38s ease-in-out infinite alternate;
-}
-@keyframes ai-app-orb-a {
-  to { transform: translate(320px, 140px); }
-}
-@keyframes ai-app-orb-b {
-  to { transform: translate(-280px, -120px); }
-}
-
-/* ---------- dot grid w/ radial mask ---------- */
-.ai-app-bg-grid {
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(90, 100, 140, 0.13) 1px, transparent 1px);
-  background-size: 30px 30px;
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
-          mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
-  opacity: 0.9;
-}
-
-/* ---------- agent orbits (2 rigs + relay pulse line) ---------- */
-.ai-app-orbits {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 1;
-}
-.ai-orbit-a {
-  transform-origin: 0 0;
-  animation: ai-orbit-a 24s linear infinite;
-}
-.ai-orbit-b {
-  transform-origin: 0 0;
-  animation: ai-orbit-b 32s linear infinite reverse;
-}
-.ai-orbit-c {
-  transform-origin: 0 0;
-  animation: ai-orbit-c 44s linear infinite;
-}
-@keyframes ai-orbit-a { to { transform: rotate(360deg); } }
-@keyframes ai-orbit-b { to { transform: rotate(360deg); } }
-@keyframes ai-orbit-c { to { transform: rotate(360deg); } }
-.ai-relay-pulse {
-  filter: drop-shadow(0 0 6px currentColor);
-}
-
-/* ---------- rotating agent mesh (triangle + radar sweep) ---------- */
-.ai-app-mesh {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1100px;
-  height: 1100px;
-  transform: translate(-50%, -54%);
-  opacity: 1;
-  pointer-events: none;
-}
-.ai-app-mesh-rot {
-  transform-origin: center;
-  animation: ai-app-mesh-rot 70s linear infinite;
-}
-.ai-app-mesh-sweep {
-  transform-origin: 0 0;
-  animation: ai-app-mesh-sweep 5s linear infinite;
-}
-@keyframes ai-app-mesh-rot { to { transform: rotate(360deg); } }
-@keyframes ai-app-mesh-sweep { to { transform: rotate(360deg); } }
-
-/* ---------- conic rings (3 drifting rings) ---------- */
-.ai-app-conics {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.ai-conic {
-  position: absolute;
-  display: block;
-  border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, transparent calc(50% - 2.5px), #000 calc(50% - 2.5px) 50%, transparent 50%);
-          mask: radial-gradient(circle, transparent calc(50% - 2.5px), #000 calc(50% - 2.5px) 50%, transparent 50%);
-  opacity: 1;
-  filter: drop-shadow(0 0 10px rgba(125, 215, 255, 0.35));
-}
-.ai-conic-a {
-  width: 460px;
-  height: 460px;
-  top: 4%;
-  right: 5%;
-  background: conic-gradient(from 0deg, transparent 0deg, rgba(125, 215, 255, 1) 70deg, rgba(169, 184, 255, 0.85) 160deg, transparent 260deg, transparent 360deg);
-  animation: ai-conic-rot-a 42s linear infinite;
-}
-.ai-conic-b {
-  width: 680px;
-  height: 680px;
-  bottom: -10%;
-  left: 2%;
-  background: conic-gradient(from 180deg, transparent 0deg, rgba(212, 158, 255, 0.95) 60deg, rgba(169, 184, 255, 0.8) 140deg, transparent 240deg, transparent 360deg);
-  animation: ai-conic-rot-b 66s linear infinite reverse;
-  filter: drop-shadow(0 0 12px rgba(212, 158, 255, 0.4));
-}
-.ai-conic-c {
-  width: 320px;
-  height: 320px;
-  top: 44%;
-  left: 36%;
-  background: conic-gradient(from 90deg, transparent 0deg, rgba(125, 215, 255, 0.85) 40deg, transparent 120deg, rgba(212, 158, 255, 0.8) 200deg, transparent 280deg);
-  animation: ai-conic-rot-c 54s linear infinite;
-}
-@keyframes ai-conic-rot-a { to { transform: rotate(360deg); } }
-@keyframes ai-conic-rot-b { to { transform: rotate(-360deg); } }
-@keyframes ai-conic-rot-c { to { transform: rotate(360deg); } }
-
-/* ---------- constellation ---------- */
-.ai-app-constellation {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 1;
-  pointer-events: none;
-}
-.ai-constell-edges {
-  animation: ai-constell-drift 11s ease-in-out infinite alternate;
-}
-@keyframes ai-constell-drift {
-  to   { opacity: 0.45; }
-  from { opacity: 0.95; }
-}
-.ai-constell-nodes circle {
-  animation: ai-constell-twinkle 4s ease-in-out infinite;
-}
-@keyframes ai-constell-twinkle {
-  0%, 100% { opacity: 0.35; }
-  50%      { opacity: 1; }
-}
-
-/* ---------- horizontal scan beam ---------- */
-.ai-app-scanbeam {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 3px;
-  top: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(125, 215, 255, 0) 6%, rgba(125, 215, 255, 1) 50%, rgba(169, 184, 255, 0) 94%, transparent 100%);
-  box-shadow:
-    0 0 28px rgba(125, 215, 255, 0.95),
-    0 0 60px rgba(169, 184, 255, 0.55),
-    0 0 120px rgba(125, 215, 255, 0.3);
-  animation: ai-app-scanbeam 7s ease-in-out infinite;
-  pointer-events: none;
-  opacity: 1;
-}
-@keyframes ai-app-scanbeam {
-  0%   { top: -2%;  opacity: 0; }
-  10%  { opacity: 0.8; }
-  50%  { top: 52%;  opacity: 0.8; }
-  90%  { opacity: 0.8; }
-  100% { top: 102%; opacity: 0; }
-}
-
-/* ---------- calm mode (add .is-calm on the backdrop root) ---------- */
-.ai-app-bg.is-calm .ai-app-orb,
-.ai-app-bg.is-calm .ai-orbit-a,
-.ai-app-bg.is-calm .ai-orbit-b,
-.ai-app-bg.is-calm .ai-orbit-c,
-.ai-app-bg.is-calm .ai-app-mesh-rot,
-.ai-app-bg.is-calm .ai-app-mesh-sweep,
-.ai-app-bg.is-calm .ai-conic-a,
-.ai-app-bg.is-calm .ai-conic-b,
-.ai-app-bg.is-calm .ai-conic-c,
-.ai-app-bg.is-calm .ai-constell-edges,
-.ai-app-bg.is-calm .ai-constell-nodes circle,
-.ai-app-bg.is-calm .ai-app-scanbeam {
-  animation: none;
-}
-.ai-app-bg.is-calm .ai-relay-pulse,
-.ai-app-bg.is-calm .ai-app-scanbeam {
-  display: none;
-}
-.ai-app-bg.is-calm .ai-app-mesh,
-.ai-app-bg.is-calm .ai-conic {
-  opacity: 0.25;
-}
-
-/* ---------- motion preference ---------- */
-@media (prefers-reduced-motion: reduce) {
-  .ai-app-bg *,
-  .ai-app-bg *::before,
-  .ai-app-bg *::after {
-    animation-duration: 0.001s !important;
-    animation-iteration-count: 1 !important;
-  }
-}
-
-/* Sidebar — Now completely transparent to allow the background animations
-   to blend seamlessly with the topbar and the main content boundary.
-   Scroll behaviour:
-     - `.gmail-sidebar` itself fills the grid row (100vh) and hides overflow
-       so the brand + compose pill stay pinned at the top.
-     - `.mailbox-nav` below claims the remaining vertical space (flex: 1)
-       and scrolls independently. `min-height: 0` is required for flex
-       children to shrink below content size, which is what enables the
-       inner scrollbar. Without it the nav would blow past the viewport
-       and the last entries (Create Agent / Audit Log / ...) become
-       unreachable. */
-.gmail-sidebar {
-  padding: 12px 16px;
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* Fallback logic not strictly needed if background is transparent */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .gmail-sidebar {
-    background: transparent;
-  }
-}
-
-/* Horizontal brand logotype: icon + stylized "NexusInbox" wordmark.
-   Mirrors the login screen's neon-gradient brand for continuity. */
-.gmail-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 4px 0 20px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  /* Brand reads as a link → home/inbox. The default `a` color
-     would shift the wordmark off its gradient, so we keep it
-     untouched here and let `.gmail-brand-text` win. The hover
-     wash is the affordance. */
-  color: inherit;
-  text-decoration: none;
-  transition: background 0.12s;
-}
-.gmail-brand:hover {
-  background: var(--surface-hover);
-}
-.gmail-brand:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--primary);
-}
-.gmail-brand-text {
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: -0.005em;
-  line-height: 1.1;
-  white-space: nowrap;
-  background: linear-gradient(135deg, #0b57d0 0%, #7c4dff 55%, #b06ab3 100%);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
-          color: transparent;
-}
-
-.compose-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 0 24px 0 16px;
-  min-height: 56px;
-  border-radius: 16px;
-  background: #c2e7ff;
-  color: #001d35;
-  font-weight: 500;
-  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
-  transition: box-shadow 0.2s, background 0.2s;
-  align-self: flex-start;
-}
-
-.compose-pill:hover {
-  box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
-  background: #b1ddf7;
-}
-
-.mailbox-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  /* Pin the brand + compose-pill at the top while this inner list scrolls. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* Slim custom scrollbar so it doesn't compete with the frosted chrome. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(120, 140, 200, 0.35) transparent;
-  padding-right: 2px;
-}
-.mailbox-nav::-webkit-scrollbar {
-  width: 6px;
-}
-.mailbox-nav::-webkit-scrollbar-thumb {
-  background: rgba(120, 140, 200, 0.35);
-  border-radius: 3px;
-}
-.mailbox-nav::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 140, 200, 0.55);
-}
-.mailbox-nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.mailbox-section {
+.x-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 8px 12px 12px;
+  border-right: 1px solid var(--line);
+  min-height: 0;
+  background: var(--bg);
 }
 
-.mailbox-section + .mailbox-section {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.mailbox-section-title {
-  margin: 0 0 4px 0;
-  padding: 0 16px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #80868b;
-}
-
-.mailbox-item {
+.x-brand {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  min-height: 32px;
-  border-radius: 16px;
-  padding: 0 16px;
-  font-size: 0.88rem;
-  color: #444746;
-  font-weight: 500;
-  gap: 12px;
+  gap: 10px;
+  padding: 10px 12px 14px;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.x-brand b {
+  color: var(--primary);
 }
 
-.mailbox-item.active {
-  background: var(--surface-active);
-  color: #001d35;
-  font-weight: 600;
-}
-
-.mailbox-item:hover:not(.active) {
-  background: var(--surface-hover);
-}
-
-.mailbox-count {
-  font-size: 0.8rem;
-  color: inherit;
-  font-weight: 600;
-}
-
-/* Main Content Area */
-.gmail-main {
+.x-nav-list {
   display: flex;
   flex-direction: column;
-  /* top=0 so .gmail-topbar's chrome gradient reaches the very top of the
-     viewport and meets the sidebar's top gradient with no exposed gap.
-     Right=16px / bottom=16px preserve breathing room around the list
-     and detail cards below the top bar. */
-  padding: 0 16px 16px 0;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.x-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: var(--fs-lg);
+  color: var(--text);
+}
+.x-nav-item:hover {
+  background: var(--surface-hover);
+}
+.x-nav-item.active {
+  font-weight: 700;
+}
+.x-nav-item.active svg {
+  stroke-width: 2.6;
+}
+.x-nav-label {
+  flex: 1;
+}
+
+.x-count {
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  min-width: 20px;
+  padding: 1px 6px;
+  text-align: center;
+  line-height: 18px;
+}
+
+.x-compose {
+  margin: 14px 4px 0;
+  min-height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+.x-compose:hover {
+  background: var(--primary-hover);
+}
+
+.x-me {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px 0;
+  border-top: 1px solid var(--line);
+}
+.x-me-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+
+.x-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  border: 0;
+  flex: none;
+  cursor: pointer;
+  font-size: var(--fs-md);
+}
+
+.x-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   height: 100vh;
   height: 100dvh;
 }
 
-/* Top bar — Now completely transparent to match the sidebar and allow
-   the continuous background animation to seamlessly connect. */
-.gmail-topbar {
+.x-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 16px 16px 0;
-  background: transparent;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
 }
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .gmail-topbar {
-    background: transparent;
-  }
+.x-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.search-container {
-  position: relative;
-  width: min(720px, 100%);
-}
-
-.search-icon {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-}
-
-.search-input {
-  border: none;
-  border-radius: 24px;
-  background: #eaf1fb;
-  min-height: 48px;
-  width: 100%;
-  padding: 0 20px 0 52px;
-  color: var(--text);
-  font-size: 1rem;
-}
-
-.search-input:focus {
-  outline: none;
-  background: #fff;
-  box-shadow: var(--shadow-sm);
-}
-
-.topbar-actions {
+.x-search {
+  flex: 1;
+  max-width: 420px;
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
+  background: var(--surface-alt);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 14px;
+  color: var(--text-muted);
 }
-
-/* Per-page action slot hosted inside the topbar (used for Refresh
-   buttons etc). Adds a subtle trailing separator so the page-
-   specific control is visually distinct from the global icons that
-   follow it, without needing a divider element in the DOM. */
-.topbar-page-action {
+.x-search:focus-within {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+.x-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-md);
+  outline: none;
+}
+.x-head-action {
   display: flex;
   align-items: center;
-  padding-right: 4px;
-  margin-right: 4px;
-  border-right: 1px solid rgba(68, 71, 70, 0.12);
+  gap: 8px;
+  margin-left: auto;
+}
+.x-search + .x-head-action {
+  margin-left: 0;
+}
+.x-head-action .btn {
+  min-height: 36px;
+  font-size: var(--fs-sm);
 }
 
-/* Most pages pass a `<button class="btn">Refresh</button>` as the
-   action. Scale those down here so they don't tower over the 40×40
-   icon buttons that follow. Icon-only buttons (`.icon-btn`) keep
-   their own sizing; this only targets the text-label `.btn` variant. */
-.topbar-page-action .btn {
-  height: 32px;
-  padding: 4px 12px;
-  font-size: 0.85rem;
-  line-height: 1.2;
+.x-drawer-toggle,
+.x-tabbar,
+.x-fab,
+.x-drawer-backdrop {
+  display: none;
 }
 
 .icon-btn {
@@ -578,26 +289,708 @@ button, input, textarea, select {
   height: 40px;
   display: grid;
   place-items: center;
-  color: #444746;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .icon-btn:hover {
-  background: rgba(68, 71, 70, 0.08);
+  background: var(--surface-hover);
 }
 
-.avatar-btn {
-  background: var(--primary);
-  color: #fff;
+@media (max-width: 980px) {
+  .x-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .x-main {
+    height: auto;
+    min-height: 0;
+  }
+
+  /* The navigation becomes a drawer opened from the avatar. */
+  .x-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(300px, 82vw);
+    height: 100vh;
+    height: 100dvh;
+    z-index: 1100;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease-out;
+    box-shadow: var(--shadow-md);
+  }
+  .x-shell[data-mobile-nav="open"] .x-nav {
+    transform: translateX(0);
+  }
+  .x-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    border: 0;
+    padding: 0;
+    background: rgba(15, 20, 25, 0.4);
+    cursor: pointer;
+  }
+  .x-drawer-toggle {
+    display: grid;
+  }
+  .x-head {
+    padding: 6px 12px;
+    flex-wrap: wrap;
+  }
+  .x-title {
+    font-size: var(--fs-lg);
+  }
+  .x-search {
+    order: 10;
+    flex: 1 1 100%;
+    max-width: none;
+    margin: 2px 0 4px;
+  }
+
+  .x-tabbar {
+    display: flex;
+    justify-content: space-around;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+  }
+  .x-tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 64px;
+    min-height: 44px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .x-tab.active {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .x-tab .x-count {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    margin-left: 6px;
+    font-size: 11px;
+    min-width: 18px;
+    line-height: 16px;
+  }
+  .x-fab {
+    display: grid;
+    place-items: center;
+    position: fixed;
+    right: 16px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(47, 91, 234, 0.4);
+    z-index: 900;
+  }
+}
+
+/* ============================================================
+ * Messages (docs/35 step 2): the conversation list and the
+ * conversation as chat bubbles. Two panes on wide screens; on
+ * phones the list and the conversation take turns.
+ * ============================================================ */
+.page-content:has(.dm-layout) {
+  overflow: hidden;
+}
+
+.dm-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+}
+
+.dm-list {
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.dm-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dm-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.dm-chips {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dm-chips::-webkit-scrollbar {
+  display: none;
+}
+.dm-chip {
+  position: relative;
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+/* A 44px tap target around the smaller chip. */
+.dm-chip::after {
+  content: "";
+  position: absolute;
+  inset: -5px 0;
+}
+.dm-chip.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+.dm-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dm-row:hover {
+  background: var(--surface-hover);
+}
+.dm-row.active {
+  background: var(--surface-active);
+}
+.dm-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dm-line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.dm-name {
+  min-width: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dm-to {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.dm-time {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.dm-preview {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dm-row.unread .dm-preview {
+  color: var(--text);
+  font-weight: 700;
+}
+.dm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.dm-tag {
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.dm-tag.sched {
+  border-color: transparent;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.dm-tag.auto {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+}
+.dm-dot {
+  flex: none;
+  align-self: center;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  background: var(--primary);
+}
+
+/* Round face: initial on a colour from the DID, small 🤖 badge. */
+.dm-av {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  font-weight: 600;
-  border: none;
-  margin-left: 8px;
+  color: #fff;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+.dm-av.sm {
+  width: 36px;
+  height: 36px;
+  font-size: var(--fs-md);
+}
+.dm-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 11px; /* an icon, not text */
+}
+/* Avatar palette (same in light and dark). */
+.dm-c0 { background: #e8590c; }
+.dm-c1 { background: #0c8599; }
+.dm-c2 { background: #7048e8; }
+.dm-c3 { background: #2f9e44; }
+.dm-c4 { background: #c2255c; }
+.dm-c5 { background: #1971c2; }
+
+/* Conversation */
+.dm-conv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dm-conv-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.dm-conv-who {
+  flex: 1;
+  min-width: 0;
+}
+.dm-conv-who h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dm-sub {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.dm-icon-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
+}
+.dm-icon-btn:hover {
+  background: var(--surface-hover);
+}
+.dm-back {
+  display: none;
+}
+.dm-menu-wrap {
+  position: relative;
+}
+.dm-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.dm-menu {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  z-index: 20;
+  min-width: 220px;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-md);
+}
+.dm-menu > a,
+.dm-menu > button {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+.dm-menu > a:hover,
+.dm-menu > button:hover {
+  background: var(--surface-hover);
+}
+
+.dm-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dm-sys {
+  margin: 6px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.dm-status {
+  margin: 4px 0;
+  text-align: center;
+  color: var(--ok);
+  font-size: var(--fs-sm);
+}
+.dm-status.error {
+  color: var(--danger);
+}
+.dm-item {
+  display: flex;
+  flex-direction: column;
+}
+.dm-msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 82%;
+}
+.dm-msg.mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.dm-msg-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.dm-msg.mine .dm-msg-body {
+  align-items: flex-end;
+}
+.dm-bubble {
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 20px 20px 20px 6px;
+  background: var(--line);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dm-msg.mine .dm-bubble {
+  border-radius: 20px 20px 6px 20px;
+  background: var(--primary);
+  color: #fff;
+}
+.dm-bubble.muted,
+.dm-msg.mine .dm-bubble.muted {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+.dm-subject {
+  margin: 0 4px 2px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.dm-meta {
+  margin: 2px 4px 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.dm-card {
+  min-width: min(260px, 100%);
+}
+/* Request cards (日程調整 / タスク依頼) inside the conversation. */
+.dm-card .ai-protocol-card {
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.dm-card .ai-protocol-kind,
+.dm-card .ai-protocol-meta {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.dm-card .ai-protocol-title {
+  margin: 2px 0 6px;
+  font-size: var(--fs-md);
+}
+.dm-card .ai-protocol-body {
+  margin: 0 0 8px;
+}
+.dm-card .ai-protocol-candidates {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.dm-card .ai-protocol-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  font-size: var(--fs-sm);
+}
+.dm-card .ai-protocol-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dm-card .ai-protocol-btn {
+  flex: none;
+  min-height: 36px;
+  white-space: nowrap;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dm-card .ai-protocol-btn--accept {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+.dm-card .ai-protocol-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dm-draft {
+  padding: 14px;
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+}
+.dm-draft h4 {
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+}
+.dm-draft p {
+  margin: 0 0 6px;
+}
+.dm-draft-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dm-muted {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.dm-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+.dm-btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dm-btn.accent {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.dm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dm-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--primary);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.dm-composer {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px 0;
+  background: var(--bg);
+}
+.dm-composer.note p {
+  margin: 0;
+  padding: 6px 4px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.dm-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.dm-composer textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+}
+.dm-composer textarea:focus {
+  border-color: var(--primary);
+  background: var(--bg);
+}
+.dm-send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+.dm-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dm-composer-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.dm-error {
+  margin-right: auto;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 980px) {
+  .dm-layout {
+    grid-template-columns: 1fr;
+  }
+  .dm-list {
+    border-right: 0;
+  }
+  .dm-layout.mobile-list .dm-pane,
+  .dm-layout.mobile-detail .dm-list {
+    display: none;
+  }
+  .dm-back {
+    display: grid;
+    margin-left: -8px;
+  }
+  .dm-conv-head {
+    padding-left: 8px;
+  }
+  .dm-msg {
+    max-width: 90%;
+  }
+  /* The new-conversation button would sit on the composer. */
+  .x-shell:has(.dm-layout.mobile-detail) .x-fab {
+    display: none;
+  }
+  /* An open conversation has its own header (back, name); the page
+     header would only take room. */
+  .x-shell:has(.dm-layout.mobile-detail) .x-head {
+    display: none;
+  }
 }
 
 /* Action Buttons */
@@ -710,9 +1103,7 @@ button, input, textarea, select {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.1);
+  background: var(--bg);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -721,137 +1112,6 @@ button, input, textarea, select {
    parent page-content should clip rather than scroll. */
 .page-content:has(.mail-layout) {
   overflow: hidden;
-}
-
-/* Toolbar */
-.mail-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  gap: 12px;
-  min-height: 52px;
-}
-
-.toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: nowrap;
-}
-
-/* Gmail-style compact icon button for mail actions */
-.toolbar-icon-btn {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  flex-shrink: 0;
-  padding: 0;
-}
-.toolbar-icon-btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-.toolbar-icon-btn:active:not(:disabled) {
-  background: var(--surface-active);
-}
-.toolbar-icon-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--primary);
-}
-.toolbar-icon-btn:disabled {
-  color: #c4c7c5;
-  cursor: default;
-}
-/* Destructive variant for permanent-delete style actions. Idle state
-   stays neutral so the toolbar reads consistently; the danger-colour
-   only flashes on hover so the user gets a "you're about to do
-   something irreversible" cue right before they click. */
-.toolbar-icon-btn.is-danger:hover:not(:disabled) {
-  background: rgba(179, 38, 30, 0.1);
-  color: var(--danger);
-}
-.toolbar-icon-btn.is-danger:focus-visible {
-  box-shadow: 0 0 0 2px var(--danger);
-}
-
-.toolbar-divider {
-  width: 1px;
-  height: 22px;
-  background: var(--line);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
-.toolbar-selection-count {
-  margin-left: 6px;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.toolbar-pagination-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  margin-right: 4px;
-}
-
-/* Select-all checkbox wrapper in the toolbar */
-.check-wrap {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  cursor: pointer;
-  border-radius: 50%;
-  transition: background 0.12s;
-}
-.check-wrap:hover {
-  background: var(--surface-hover);
-}
-.check-wrap input[type="checkbox"] {
-  margin: 0;
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-}
-
-.filter-tabs {
-  display: flex;
-  background: var(--surface-hover);
-  padding: 2px;
-  border-radius: 8px;
-  margin-left: 12px;
-}
-
-.filter-tab {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 6px;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.filter-tab.active {
-  background: #fff;
-  color: var(--primary);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 /* Layout for Inbox (2-column: thread list + reader) */
@@ -928,42 +1188,6 @@ button, input, textarea, select {
   color: var(--text);
 }
 
-.thread-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  /* Nudge the checkbox down so it sits on the sender-row baseline
-     instead of hugging the top of the card. Matches Gmail's visual
-     alignment. */
-  padding-top: 2px;
-}
-
-.thread-body {
-  /* Three-line stack: sender+time / subject / preview+star. `min-width: 0`
-     is what lets the child ellipses kick in on narrow list panes. */
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.thread-row-top,
-.thread-row-bottom {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-/* The star sits below the time on its own baseline rather than the
-   sender's — align-items:center here so the icon doesn't drift. */
-.thread-row-bottom {
-  align-items: center;
-}
-
 .thread-sender {
   flex: 1;
   min-width: 0;
@@ -1002,34 +1226,6 @@ button, input, textarea, select {
   color: var(--text-muted);
   font-weight: 500;
   font-size: 0.78rem;
-}
-
-/* Stars / Checkboxes */
-.star-btn {
-  border: none;
-  background: transparent;
-  color: #dadce0;
-  cursor: pointer;
-  padding: 4px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-}
-
-.star-btn:hover {
-  background: rgba(68, 71, 70, 0.08);
-}
-
-.star-btn.starred {
-  color: #f4b400;
-}
-
-.thread-check {
-  margin: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--primary);
-  cursor: pointer;
 }
 
 /* ============================================================
@@ -1360,10 +1556,6 @@ button, input, textarea, select {
   flex-direction: column;
   overflow-y: auto;
   border-right: 1px solid var(--line);
-}
-
-.mobile-reader-header {
-  display: none;
 }
 
 .reader-header {
@@ -2377,122 +2569,8 @@ details[open] .help-accordion-chevron {
   color: var(--ok);
 }
 
-/* ==================================================================
- * Mobile drawer + responsive shell (≤ 980px).
- *
- * Desktop puts the sidebar in a static grid column. On phones we
- * hide it by default and slide it in as an overlay drawer when the
- * topbar hamburger is clicked. The drawer is the SAME `.gmail-sidebar`
- * element — no DOM changes, only CSS transforms — so the nav links
- * keep their existing keyboard / a11y wiring.
- *
- * Tap targets follow the 44×44 px guideline, and `.mobile-nav-toggle`
- * stays hidden on desktop (where the sidebar is permanently visible).
- * ================================================================== */
-
-/* Hamburger button: hidden on desktop, shown only ≤ 980px. */
-.mobile-nav-toggle {
-  display: none;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  border-radius: 999px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s;
-}
-.mobile-nav-toggle:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-/* Drawer backdrop: only painted while the drawer is open on mobile. */
-.mobile-nav-backdrop {
-  display: none;
-}
-
+/* Phones (≤ 980px): list and message take turns (docs/35 §4 replaces this). */
 @media (max-width: 980px) {
-  /* Single-column shell on mobile; the sidebar is now position:fixed
-     rather than a grid column. */
-  .gmail-shell {
-    grid-template-columns: 1fr;
-  }
-
-  /* Sidebar becomes a slide-in drawer, hidden off-screen by default. */
-  .gmail-sidebar {
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: min(280px, 80vw);
-    height: 100vh;
-    height: 100dvh;
-    z-index: 1100;
-    background: var(--bg);
-    transform: translateX(-100%);
-    transition: transform 0.22s ease-out;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
-  }
-  .gmail-shell[data-mobile-nav="open"] .gmail-sidebar {
-    transform: translateX(0);
-  }
-
-  /* Backdrop: full-viewport dim layer. As a <button> it absorbs taps
-     and dismisses the drawer; CSS just paints + sizes it. */
-  .mobile-nav-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 1050;
-    border: 0;
-    padding: 0;
-    background: rgba(4, 6, 14, 0.55);
-    backdrop-filter: blur(2px);
-    cursor: pointer;
-    /* Reset button defaults so the dim layer reads as "background". */
-    appearance: none;
-    -webkit-appearance: none;
-  }
-
-  /* Show the hamburger and tighten the topbar. */
-  .mobile-nav-toggle {
-    display: inline-flex;
-  }
-  .gmail-topbar {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    gap: 8px !important;
-  }
-
-  /* Search box must be allowed to shrink — desktop's min-width
-     prevents the topbar from fitting on a 360px-wide screen. */
-  .search-container {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  /* Trim non-essential icons from the topbar to keep it usable on
-     narrow screens. The same actions are reachable via the sidebar
-     drawer (Help, Settings, Apps) and via /settings/profile so we're
-     not removing functionality, just collapsing redundant entry
-     points. The avatar + logout + language + the per-page action
-     stay because they're not in the sidebar. */
-  .topbar-actions [aria-label="Help"],
-  .topbar-actions [aria-label="ヘルプ"],
-  .topbar-actions [aria-label="Settings"],
-  .topbar-actions [aria-label="設定"],
-  .topbar-actions [aria-label="Apps"],
-  .topbar-actions [aria-label="アプリ"] {
-    display: none;
-  }
-
-  .gmail-main {
-    padding: 0;
-  }
 
   /* List/Detail split UX for mobile. */
   .mail-layout {
@@ -2505,9 +2583,6 @@ details[open] .help-accordion-chevron {
   .mail-layout.mobile-detail .thread-list {
     display: none !important;
   }
-  .mail-toolbar.mobile-detail {
-    display: none !important;
-  }
   .mail-resizer {
     display: none !important;
   }
@@ -2516,37 +2591,14 @@ details[open] .help-accordion-chevron {
     border-bottom: 0;
     max-height: none;
   }
-  .mobile-reader-header {
-    display: flex;
-    align-items: center;
-    padding: 12px 24px 0 24px;
-    background: transparent;
-  }
-  .mobile-back-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    cursor: pointer;
-    margin-left: -8px;
-  }
-  .mobile-back-btn:hover {
-    background: var(--surface-hover);
-  }
-
   /* Cards / panels typically max out at 600–960 px on desktop. On
      mobile they should fill the viewport so content doesn't sit in
      a narrow strip. Targets only the AppShell's children, so login /
      concept screens (which have their own layout systems) are
      untouched. */
-  .gmail-main .panel,
-  .gmail-main .card-item,
-  .gmail-main .reader-pane,
+  .x-main .panel,
+  .x-main .card-item,
+  .x-main .reader-pane,
   .compose-frame {
     max-width: 100% !important;
   }
@@ -2561,10 +2613,6 @@ details[open] .help-accordion-chevron {
 
 /* Very narrow phones (≤ 480px): tighten further. */
 @media (max-width: 480px) {
-  .gmail-topbar {
-    padding-left: 4px !important;
-    padding-right: 4px !important;
-  }
   /* Reader pane chrome is roomy on desktop; tighten on tiny screens
      so the message body has more horizontal real estate. */
   .reader-pane {

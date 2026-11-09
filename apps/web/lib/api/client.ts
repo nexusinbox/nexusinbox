@@ -342,37 +342,6 @@ export class NexusInboxApiClient {
   }
 
   /**
-   * Permanently delete a message. The server handler removes this
-   * owner's `message_index` row, then GC's the underlying encrypted
-   * blob iff no peer row still references the same `storage_ref`
-   * (cross-user sender/recipient duplication is handled correctly).
-   * Returns 204 No Content on success — we don't go through
-   * {@link request} because that helper unconditionally calls
-   * `response.json()` which throws on an empty body.
-   */
-  async deleteMessage(id: string): Promise<void> {
-    const headers = new Headers();
-    const token = this.bearerToken.trim();
-    if (token) headers.set("Authorization", "Bearer " + token);
-    const response = await fetch(this.baseUrl + "/messages/" + encodeURIComponent(id), {
-      method: "DELETE",
-      headers,
-      cache: "no-store",
-      credentials: "include",
-    });
-    if (!response.ok) {
-      let message = response.statusText;
-      try {
-        const payload = (await response.json()) as { message?: string };
-        message = payload.message ?? message;
-      } catch {
-        // body may be empty on some error paths; fall back to status text
-      }
-      throw new ApiError(message || "delete failed", response.status);
-    }
-  }
-
-  /**
    * Phase 4.4c executor idempotency flip. Called by the browser auto-
    * reply executor after it has dispatched the outgoing reply via
    * {@link seedMessage}. See docs/25c §5.2.
@@ -460,6 +429,11 @@ export class NexusInboxApiClient {
      * (docs/25c §3.1).
      */
     autoReplyOrigin?: string;
+    /**
+     * The content key wrapped for the sender's own encryption key, so the
+     * sender can read the message later (docs/35 §5). Not signed.
+     */
+    senderEncryptedKey?: string;
   }) {
     const attachments = params.attachments ?? [];
     const metadata: Record<string, unknown> = {
@@ -473,16 +447,20 @@ export class NexusInboxApiClient {
     if (params.autoReplyOrigin) {
       metadata.auto_reply_origin = params.autoReplyOrigin;
     }
+    const envelope: Record<string, unknown> = {
+      encrypted_content: params.encryptedContent,
+      encrypted_key: params.encryptedKey,
+      nonce: params.nonce,
+      signature: params.signature,
+      metadata,
+    };
+    if (params.senderEncryptedKey) {
+      envelope.sender_encrypted_key = params.senderEncryptedKey;
+    }
     const body: Record<string, unknown> = {
       sender_did: params.senderDid,
       recipient_did: params.recipientDid,
-      envelope: {
-        encrypted_content: params.encryptedContent,
-        encrypted_key: params.encryptedKey,
-        nonce: params.nonce,
-        signature: params.signature,
-        metadata,
-      },
+      envelope,
     };
     if (attachments.length > 0) {
       body.attachment_ids = attachments.map((a) => a.attachment_id);
@@ -660,10 +638,22 @@ export class NexusInboxApiClient {
     return this.request<AgentDraftsResponse>("/agent-drafts");
   }
 
-  async sendAgentDraft(id: string): Promise<{ message_id: string; status: string }> {
+  /**
+   * `senderEncryptedKey` is the draft's content key wrapped for the sending
+   * agent, so the agent's owner can read the sent message (docs/35 §5).
+   */
+  async sendAgentDraft(
+    id: string,
+    senderEncryptedKey?: string,
+  ): Promise<{ message_id: string; status: string }> {
     return this.request<{ message_id: string; status: string }>(
       "/agent-drafts/" + encodeURIComponent(id) + "/send",
-      { method: "POST" },
+      senderEncryptedKey
+        ? {
+            method: "POST",
+            body: JSON.stringify({ sender_encrypted_key: senderEncryptedKey }),
+          }
+        : { method: "POST" },
     );
   }
 

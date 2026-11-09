@@ -199,6 +199,9 @@ export default function ProposePage() {
           signingPrivateKey,
           recipientDid: recipientAddress,
           recipientEncryptionKey: recipientEncKey,
+          senderEncryptionKey: agentsQuery.data?.agents.find(
+            (a) => a.did === senderDid || a.dids?.includes(senderDid),
+          )?.encryption_key,
           subject: eventTitle.trim(),
           body: note.trim() || eventTitle.trim(),
           payload: proposePayload,

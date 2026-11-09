@@ -356,6 +356,8 @@ export function useSendMessageMutation() {
        * omitted, preserving pre-A2A behaviour.
        */
       contentType?: string;
+      /** The content key wrapped for the sender (docs/35 §5). */
+      senderEncryptedKey?: string;
     }) => defaultApiClient.seedMessage(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -389,20 +391,6 @@ export function useUpdateMessageFlagsMutation() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages"] });
-    },
-  });
-}
-
-export function useDeleteMessageMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => defaultApiClient.deleteMessage(id),
-    onSuccess: () => {
-      // The deleted row is gone from message_index AND the blob may
-      // be GC'd from storage. Invalidate both the list and any
-      // per-message content cache that might still hold stale plaintext.
-      queryClient.invalidateQueries({ queryKey: ["messages"] });
-      queryClient.invalidateQueries({ queryKey: ["message-content"] });
     },
   });
 }
@@ -511,7 +499,8 @@ export function useReviewKeysQuery() {
 export function useSendAgentDraftMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => defaultApiClient.sendAgentDraft(id),
+    mutationFn: (input: { id: string; senderEncryptedKey?: string }) =>
+      defaultApiClient.sendAgentDraft(input.id, input.senderEncryptedKey),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agentDrafts() });
       queryClient.invalidateQueries({ queryKey: ["messages"] });

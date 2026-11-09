@@ -87,3 +87,5 @@ A・B・C のどれでも、CI で OS ごとの実行ファイルを作って Gi
 1. 公開リポジトリに `vX.Y.Z` のタグを打つ (リリースが自動でできる)
 2. tap の formula の `version`、4 つの `url`、`sha256` を新しい版に書き換える (`.sha256` ファイルの値)
 3. `brew upgrade nexusinbox` で入れ替わることを確かめる
+
+v0.2.0 (2026-11-09、公開 `7353fe8`): クラウドの AI (中継、docs/33 §12)。4 つの配布物のハッシュと来歴の証明を確かめ、tap を `c82186d` に上げ、運営者の Mac で `brew upgrade` → `brew test` が通った。入れた `nexusinbox` は中継の指定を渡し、`nexusinbox-gateway` に `--mcp-relay` がある

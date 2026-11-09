@@ -32,7 +32,10 @@ import {
   encryptEnvelopeText,
   generateContentKey,
 } from "../../../lib/crypto/envelope";
-import { wrapContentKeyForRecipient } from "../../../lib/crypto/keywrap";
+import {
+  wrapContentKeyForRecipient,
+  wrapContentKeyForSender,
+} from "../../../lib/crypto/keywrap";
 import { signEnvelopePayload } from "../../../lib/crypto/signature";
 import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
 import {
@@ -51,6 +54,7 @@ type SendMessageFn = (payload: {
   threadId?: string | null;
   contentType?: string;
   autoReplyOrigin?: string;
+  senderEncryptedKey?: string;
 }) => Promise<unknown>;
 
 export type SendProtocolReplyInput = {
@@ -101,6 +105,11 @@ export type SendProtocolReplyInput = {
    * this delivery (no second auto-reply). See docs/25c §3.1.
    */
   autoReplyOrigin?: string;
+  /**
+   * The sending agent's X25519 public key. When given, the content key is
+   * also wrapped for it so the sender can read the reply later (docs/35 §5).
+   */
+  senderEncryptionKey?: string;
 };
 
 export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<void> {
@@ -138,6 +147,10 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
   const encryptedSubject = await encryptEnvelopeText(input.subject, { contentKey });
   const encryptedBody = await encryptEnvelopeText(serialised, { contentKey });
   const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncryptionKey);
+  const senderEncryptedKey = await wrapContentKeyForSender(
+    contentKey,
+    input.senderEncryptionKey,
+  );
   const signature = await signEnvelopePayload({
     signingPrivateKey,
     senderDid: input.viewerAgentDid,
@@ -159,6 +172,7 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
     threadId: input.threadId,
     contentType: A2A_CONTENT_TYPE,
     autoReplyOrigin: input.autoReplyOrigin,
+    senderEncryptedKey,
   });
 }
 

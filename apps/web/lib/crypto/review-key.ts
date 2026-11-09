@@ -7,10 +7,10 @@
 // drafts with it. The public half is remembered in localStorage so the page
 // can tell which server-side review key is this browser's.
 
-import type { AgentDraft, ReviewKey } from "../api/types";
+import type { Agent, AgentDraft, ReviewKey } from "../api/types";
 import { decryptEnvelopeTextWithContentKey } from "./envelope";
 import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
-import { unwrapContentKeyWithRecipientPrivateKey } from "./keywrap";
+import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForSender } from "./keywrap";
 import { generateX25519KeyPairMaterial } from "./recipient-keyring";
 
 const PRIVATE_KEY_ID = "nexusinbox.review-key.v1";
@@ -82,7 +82,12 @@ export function describeThisBrowser(): string {
   return os ? `${browser} (${os})` : browser;
 }
 
-export type OpenedDraft = { subject: string; body: string };
+export type OpenedDraft = {
+  subject: string;
+  body: string;
+  /** Kept so the sender's copy can be made when the draft is sent. */
+  contentKey: string;
+};
 
 /** Decrypt a draft with this browser's review key, or null if it cannot. */
 export async function openDraft(
@@ -103,8 +108,26 @@ export async function openDraft(
       decryptEnvelopeTextWithContentKey(draft.encrypted_content, contentKey),
     ]);
     if (subject.state === "error" || body.state === "error") return null;
-    return { subject: subject.text, body: body.text };
+    return { subject: subject.text, body: body.text, contentKey };
   } catch {
     return null;
   }
+}
+
+/**
+ * The draft's content key wrapped for the agent that sends it, so the
+ * person can read the sent message later (docs/35 §5). Undefined when the
+ * draft is not open here or the agent has no encryption key.
+ */
+export async function senderCopyForDraft(
+  draft: AgentDraft,
+  opened: OpenedDraft | null | undefined,
+  agents: Agent[],
+): Promise<string | undefined> {
+  if (!opened) return undefined;
+  const agent = agents.find(
+    (a) =>
+      a.aid === draft.aid || a.did === draft.sender_did || a.dids?.includes(draft.sender_did),
+  );
+  return wrapContentKeyForSender(opened.contentKey, agent?.encryption_key);
 }

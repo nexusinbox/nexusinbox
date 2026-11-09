@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useAgentDraftsQuery,
+  useAgentsQuery,
   useCreateReviewKeyMutation,
   useDeleteAgentDraftMutation,
   useDeleteReviewKeyMutation,
@@ -18,6 +19,7 @@ import {
   findThisBrowsersReviewKey,
   forgetReviewKey,
   openDraft,
+  senderCopyForDraft,
   type OpenedDraft,
 } from "../../lib/crypto/review-key";
 import { formatListTimestamp } from "../../lib/format/messageTime";
@@ -51,6 +53,7 @@ export function AgentDrafts() {
   const deleteKey = useDeleteReviewKeyMutation();
   const sendDraft = useSendAgentDraftMutation();
   const deleteDraft = useDeleteAgentDraftMutation();
+  const agentsQuery = useAgentsQuery();
 
   const drafts = useMemo(() => draftsQuery.data?.drafts ?? [], [draftsQuery.data]);
   const keys = useMemo(() => keysQuery.data?.review_keys ?? [], [keysQuery.data]);
@@ -104,7 +107,12 @@ export function AgentDrafts() {
   const handleSend = async (draft: AgentDraft) => {
     setStatus("");
     try {
-      await sendDraft.mutateAsync(draft.id);
+      const senderEncryptedKey = await senderCopyForDraft(
+        draft,
+        opened[draft.id],
+        agentsQuery.data?.agents ?? [],
+      );
+      await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey });
       setSelectedId(null);
       setStatus(t("agentDrafts.sent"));
     } catch {

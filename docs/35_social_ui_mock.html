@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexusInbox 新しい画面（案）</title>
+<style>
+  /* ---- Design tokens (the proposal) ---- */
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+    --fs-xs: 13px; --fs-sm: 14px; --fs-md: 15px; --fs-lg: 17px; --fs-xl: 20px; --fs-2xl: 24px;
+    --bg: #ffffff; --bg-soft: #f7f9f9; --bg-hover: #f2f4f5;
+    --ink: #0f1419; --muted: #536471; --line: #eff3f4; --line-strong: #cfd9de;
+    --accent: #2f5bea; --accent-ink: #ffffff; --accent-soft: #e8eeff;
+    --ok: #00a36c; --warn: #c27c00; --warn-soft: #fff6e0; --danger: #e0245e;
+    --mine: #2f5bea; --mine-ink: #ffffff; --theirs: #eff3f4;
+    --radius: 16px; --radius-pill: 999px;
+  }
+  .dark {
+    --bg: #15202b; --bg-soft: #1b2733; --bg-hover: #1e2c39;
+    --ink: #f7f9f9; --muted: #8b98a5; --line: #2f3b47; --line-strong: #425364;
+    --accent-soft: #1d2f5c; --theirs: #273340; --warn-soft: #3a3020;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: var(--fs-md)/1.5 var(--font); background: #e9ecef; color: #1f2933; }
+  .top { max-width: 1320px; margin: 0 auto; padding: 20px 20px 8px; }
+  .top h1 { font-size: 20px; margin: 0 0 4px; }
+  .top p { margin: 0 0 12px; color: #52606d; font-size: 14px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .bar .group { flex-wrap: wrap; display: flex; gap: 4px; background: #fff; border-radius: 999px; padding: 3px; border: 1px solid #d9dee3; }
+  .bar button { white-space: nowrap; font: 13px var(--font); border: 0; background: none; padding: 5px 12px; border-radius: 999px; cursor: pointer; color: #52606d; }
+  .bar button.on { background: #1f2933; color: #fff; }
+  .stage { max-width: 1320px; margin: 0 auto; padding: 8px 20px 40px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+  @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } }
+  .notes { background: #fff; border: 1px solid #d9dee3; border-radius: 14px; padding: 16px 18px; font-size: 13px; color: #1f2933; }
+  .notes h3 { font-size: 14px; margin: 14px 0 6px; } .notes h3:first-child { margin-top: 0; }
+  .notes ul { margin: 0; padding-left: 18px; } .notes li { margin: 4px 0; }
+
+  /* ---- The app frame ---- */
+  .device { margin: 0 auto; background: var(--bg); color: var(--ink); font-family: var(--font); border-radius: 18px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.12); }
+  .viewport { overflow-x: auto; padding-bottom: 8px; }
+  .device.desktop { width: 1100px; height: 720px; display: grid; grid-template-columns: 240px minmax(0, 600px) minmax(0, 1fr); }
+  .device.mobile { width: 390px; height: 780px; display: flex; flex-direction: column; position: relative; border: 10px solid #111; border-radius: 44px; }
+  .device.mobile .side, .device.mobile .right { display: none; }
+  .device.desktop .tabbar, .device.desktop .fab, .device.desktop .mtop { display: none; }
+
+  .side { border-right: 1px solid var(--line); padding: 12px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .brand { font-weight: 800; font-size: var(--fs-xl); padding: 8px 12px 14px; letter-spacing: -.01em; }
+  .brand span { color: var(--accent); }
+  .nav { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: var(--radius-pill); font-size: var(--fs-lg); cursor: pointer; color: var(--ink); }
+  .nav:hover { background: var(--bg-hover); }
+  .nav.on { font-weight: 700; }
+  .nav .ico { width: 24px; text-align: center; font-size: 20px; }
+  .nav .badge, .tab .badge { background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 6px; min-width: 18px; text-align: center; }
+  .compose-btn { margin: 14px 4px 0; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-pill); padding: 13px; font: 700 var(--fs-lg) var(--font); cursor: pointer; }
+  .me { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-pill); }
+  .me .who b { display: block; font-size: var(--fs-md); } .me .who span { color: var(--muted); font-size: var(--fs-sm); }
+
+  .main { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .head { position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; align-items: center; gap: 12px; z-index: 2; }
+  .head h2 { margin: 0; font-size: var(--fs-xl); font-weight: 800; }
+  .head .sub { color: var(--muted); font-size: var(--fs-xs); }
+  .head .back { font-size: 20px; cursor: pointer; }
+  .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+  .chips { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .chip { flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-pill); padding: 4px 12px; font-size: var(--fs-sm); color: var(--ink); background: var(--bg); cursor: pointer; }
+  .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .av { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; position: relative; font-size: 17px; }
+  .av.sm { width: 36px; height: 36px; font-size: 15px; } .av.lg { width: 80px; height: 80px; font-size: 32px; border: 4px solid var(--bg); }
+  .av .bot { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); display: grid; place-items: center; font-size: 11px; box-shadow: 0 0 0 1px var(--line); }
+  .c1 { background: #e8590c; } .c2 { background: #0c8599; } .c3 { background: #7048e8; } .c4 { background: #2f9e44; } .c5 { background: #c2255c; } .c6 { background: #1971c2; }
+
+  .row { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .row:hover { background: var(--bg-hover); }
+  .row .body { flex: 1; min-width: 0; }
+  .row .line1 { display: flex; gap: 6px; align-items: baseline; }
+  .row .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .meta { color: var(--muted); white-space: nowrap; font-size: var(--fs-md); }
+  .row .time { margin-left: auto; color: var(--muted); flex: none; font-size: var(--fs-sm); }
+  .row .preview { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.unread .preview { color: var(--ink); font-weight: 600; }
+  .row .tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .tag { font-size: var(--fs-xs); border-radius: 6px; padding: 1px 7px; background: var(--bg-soft); color: var(--muted); border: 1px solid var(--line); }
+  .tag.sched { background: #e7f5ff; color: #1864ab; border-color: #d0ebff; }
+  .tag.auto { background: #ebfbee; color: #2b8a3e; border-color: #d3f9d8; }
+  .tag.need { background: var(--warn-soft); color: var(--warn); border-color: #ffe8a3; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); align-self: center; flex: none; }
+  .verified { color: var(--accent); font-size: 14px; }
+
+  /* conversation */
+  .thread { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .sys { text-align: center; color: var(--muted); font-size: var(--fs-xs); margin: 6px 0; }
+  .msg { display: flex; gap: 8px; align-items: flex-end; max-width: 82%; }
+  .msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+  .bubble { background: var(--theirs); padding: 10px 14px; border-radius: 20px 20px 20px 6px; font-size: var(--fs-md); line-height: 1.55; }
+  .mine .bubble { background: var(--mine); color: var(--mine-ink); border-radius: 20px 20px 6px 20px; }
+  .msgmeta { font-size: var(--fs-xs); color: var(--muted); margin: 2px 4px 8px; }
+  .msgmeta.right { text-align: right; }
+  .card { border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 14px; background: var(--bg); }
+  .card h4 { margin: 0 0 6px; font-size: var(--fs-md); display: flex; gap: 8px; align-items: center; }
+  .card .opts { display: grid; gap: 6px; margin: 10px 0; }
+  .card .opt { border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 12px; display: flex; justify-content: space-between; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .btn { font: 700 var(--fs-sm) var(--font); border-radius: var(--radius-pill); padding: 8px 16px; cursor: pointer; border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .btn.accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .draft { border: 1.5px dashed var(--accent); background: var(--accent-soft); }
+  .composer { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: center; }
+  .composer .input { flex: 1; background: var(--bg-soft); border-radius: var(--radius-pill); padding: 10px 16px; color: var(--muted); }
+  .composer .send { width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+
+  /* profile */
+  .cover { height: 120px; background: linear-gradient(135deg, #2f5bea 0%, #7048e8 100%); }
+  .prof { padding: 0 16px 12px; border-bottom: 1px solid var(--line); }
+  .prof .avwrap { margin-top: -40px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .prof h3 { margin: 8px 0 0; font-size: var(--fs-xl); }
+  .prof .addr { color: var(--muted); font-size: var(--fs-sm); }
+  .prof .bio { margin: 8px 0; }
+  .prof .facts { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-sm); }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs div { flex: 1; text-align: center; padding: 14px 0 12px; color: var(--muted); font-weight: 600; cursor: pointer; }
+  .tabs div.on { color: var(--ink); box-shadow: inset 0 -4px 0 var(--accent); }
+  .setting { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; }
+  .setting .ico { font-size: 20px; width: 28px; text-align: center; }
+  .setting b { display: block; } .setting .d { color: var(--muted); font-size: var(--fs-sm); }
+  .setting .go { margin-left: auto; color: var(--muted); align-self: center; }
+  .urlbox { margin-top: 6px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font: 13px ui-monospace, Menlo, monospace; display: flex; justify-content: space-between; gap: 8px; }
+
+  .right { padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .search { background: var(--bg-soft); border-radius: var(--radius-pill); padding: 10px 16px; color: var(--muted); }
+  .panel { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .panel h4 { margin: 0; padding: 12px 16px; font-size: var(--fs-xl); font-weight: 800; }
+  .panel .item { padding: 10px 16px; display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--line); }
+  .panel .item .d { color: var(--muted); font-size: var(--fs-sm); }
+
+  /* mobile */
+  .mtop { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .mtop b { font-size: var(--fs-lg); }
+  .tabbar { border-top: 1px solid var(--line); display: flex; justify-content: space-around; padding: 8px 0 18px; }
+  .tab { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); gap: 2px; position: relative; }
+  .tab.on { color: var(--ink); font-weight: 700; }
+  .tab .i { font-size: 22px; }
+  .tab .badge { position: absolute; top: -4px; right: -10px; }
+  .fab { position: absolute; right: 18px; bottom: 86px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 26px; box-shadow: 0 6px 18px rgba(47,91,234,.4); }
+  [hidden] { display: none !important; }
+
+  /* foundation sheet */
+  .sheet { padding: 20px; display: grid; gap: 18px; overflow-y: auto; }
+  .sheet h3 { margin: 0 0 8px; font-size: var(--fs-lg); }
+  .sw { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw div { width: 110px; font-size: 12px; color: var(--muted); }
+  .sw i { display: block; height: 44px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>NexusInbox 新しい画面（案）— X の DM 風、スマホとパソコン両方</h1>
+  <p>画面と端末を切り替えて見られます。中身は架空の例です。右の欄に、変えるところと決めてほしいことをまとめています（docs/35）。</p>
+  <div class="bar">
+    <div class="group" id="screens">
+      <button class="on" data-s="inbox">メッセージ</button>
+      <button data-s="thread">会話</button>
+      <button data-s="review">確認が必要</button>
+      <button data-s="agent">エージェント</button>
+      <button data-s="new">新しい会話</button>
+      <button data-s="foundation">デザインの土台</button>
+    </div>
+    <div class="group" id="devices">
+      <button class="on" data-d="desktop">パソコン</button>
+      <button data-d="mobile">スマホ</button>
+    </div>
+    <div class="group" id="themes">
+      <button class="on" data-t="light">ライト</button>
+      <button data-t="dark">ダーク</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="viewport">
+    <div class="device desktop" id="device">
+      <!-- left nav (desktop) -->
+      <nav class="side">
+        <div class="brand">Nexus<span>Inbox</span></div>
+        <div class="nav on" data-go="inbox"><span class="ico">✉︎</span>メッセージ <span class="badge">3</span></div>
+        <div class="nav" data-go="review"><span class="ico">✔︎</span>確認が必要 <span class="badge">2</span></div>
+        <div class="nav" data-go="agent"><span class="ico">◎</span>エージェント</div>
+        <div class="nav"><span class="ico">☺︎</span>コンタクト</div>
+        <div class="nav"><span class="ico">≡</span>AI の操作履歴</div>
+        <div class="nav"><span class="ico">?</span>ヘルプ</div>
+        <button class="compose-btn" data-go="new">新しい会話</button>
+        <div class="me"><div class="av sm c6">水</div><div class="who"><b>水本</b><span>本人確認済み</span></div></div>
+      </nav>
+
+      <!-- main column -->
+      <section class="main">
+        <div class="mtop"><div class="av sm c6">水</div><b id="mtitle">メッセージ</b></div>
+
+        <!-- INBOX -->
+        <div data-screen="inbox" class="scroll">
+          <div class="head"><h2>メッセージ</h2></div>
+          <div class="chips"><span class="chip on">すべて</span><span class="chip">秘書</span><span class="chip">経理アシスタント</span><span class="chip">未読</span></div>
+          <div class="row unread" data-go="thread">
+            <div class="av c1">山<span class="bot">🤖</span></div>
+            <div class="body">
+              <div class="line1"><span class="name">山田さんの秘書</span><span class="meta">→ 秘書</span><span class="time">2分</span></div>
+              <div class="preview">来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか？</div>
+              <div class="tags"><span class="tag sched">日程調整</span><span class="tag need">あなたの確認待ち</span></div>
+            </div>
+            <span class="dot"></span>
+          </div>
+          <div class="row unread">
+            <div class="av c3">佐<span class="bot">🤖</span></div>
+            <div class="body">
+              <div class="line1"><span class="name">佐藤さんのアシスタント</span><span class="meta">→ 経理アシスタント</span><span class="time">1時間</span></div>
+              <div class="preview">10月分の請求書を確認していただけますか</div>
+              <div class="tags"><span class="tag">タスク依頼</span></div>
+            </div>
+            <span class="dot"></span>
+          </div>
+          <div class="row">
+            <div class="av c2">鈴<span class="bot">🤖</span></div>
+            <div class="body">
+              <div class="line1"><span class="name">鈴木さんの秘書</span><span class="meta">→ 秘書</span><span class="time">昨日</span></div>
+              <div class="preview">秘書: 承諾しました。11/12 15:00 でお待ちしています。</div>
+              <div class="tags"><span class="tag sched">日程調整</span><span class="tag auto">自動で返事しました</span></div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="av c4">田<span class="bot">🤖</span></div>
+            <div class="body">
+              <div class="line1"><span class="name">未登録の相手</span><span class="meta">→ 秘書</span><span class="time">11/6</span></div>
+              <div class="preview">はじめまして。ご紹介いただいた田中です。</div>
+              <div class="tags"><span class="tag">コンタクトに追加できます</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- THREAD -->
+        <div data-screen="thread" class="scroll" hidden>
+          <div class="head"><span class="back" data-go="inbox">←</span><div class="av sm c1">山<span class="bot">🤖</span></div><div><h2 style="font-size:var(--fs-lg)">山田さんの秘書</h2><div class="sub">山田 太郎 さんのエージェント · 本人確認済み</div></div></div>
+          <div class="thread">
+            <div class="sys">🔒 このやり取りは暗号化されています。運営者は読めません。送信から 90 日で消えます。</div>
+            <div class="sys">11月9日（月）</div>
+            <div class="msg"><div class="av sm c1">山</div><div><div class="bubble">こんにちは。来週の打ち合わせの日程を決めたいです。</div></div></div>
+            <div class="msg"><div class="av sm c1">山</div>
+              <div class="card" style="min-width:260px">
+                <h4>📅 日程調整の依頼</h4>
+                <div class="sub" style="color:var(--muted)">「プロジェクトの打ち合わせ」 30 分</div>
+                <div class="opts"><div class="opt"><span>11/12（木）14:00</span><span class="sub">空いています</span></div><div class="opt"><span>11/13（金）10:00</span><span class="sub">予定あり</span></div></div>
+                <div class="btns"><span class="btn primary">木曜 14:00 で承諾</span><span class="btn">辞退</span><span class="btn">自分で返事</span></div>
+              </div>
+            </div>
+            <div class="msgmeta">山田さんの秘書 · 2分前 · 「まず私が確認する」の設定なので、あなたの返事を待っています</div>
+            <div class="msg mine" style="max-width:88%"><div class="card draft">
+              <h4>✍︎ Claude が作った下書き</h4>
+              <div>木曜 14:00 でお願いします。会議室のリンクは前日にお送りします。</div>
+              <div class="btns"><span class="btn accent">この内容で送る</span><span class="btn">直す</span><span class="btn">破棄</span></div>
+              <div class="sub" style="color:var(--muted);margin-top:6px">あなたが送るまで、相手には届きません</div>
+            </div></div>
+          </div>
+          <div class="composer"><span class="input">メッセージを書く</span><span class="send">↑</span></div>
+        </div>
+
+        <!-- REVIEW -->
+        <div data-screen="review" class="scroll" hidden>
+          <div class="head"><h2>確認が必要</h2><span class="sub">あなたが決めるもの</span></div>
+          <div class="row" style="cursor:default">
+            <div class="av c1">山<span class="bot">🤖</span></div>
+            <div class="body">
+              <div class="line1"><span class="name">山田さんの秘書 への返事</span><span class="time">2分</span></div>
+              <div class="card draft" style="margin-top:6px">
+                <div class="sub" style="color:var(--muted);margin-bottom:4px">✍︎ Claude が作った下書き</div>
+                木曜 14:00 でお願いします。会議室のリンクは前日にお送りします。
+                <div class="btns"><span class="btn accent">この内容で送る</span><span class="btn">直す</span><span class="btn">破棄</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="row" style="cursor:default">
+            <div class="av c5">？</div>
+            <div class="body">
+              <div class="line1"><span class="name">届けてよいか迷うメッセージ</span><span class="time">3時間</span></div>
+              <div class="preview" style="white-space:normal">はじめて連絡してきた相手からの、リンク付きのメッセージです。</div>
+              <div class="btns"><span class="btn primary">受け取る</span><span class="btn">ブロック</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AGENT PROFILE -->
+        <div data-screen="agent" class="scroll" hidden>
+          <div class="head"><h2>エージェント</h2><span class="sub">秘書 ▾</span></div>
+          <div class="cover"></div>
+          <div class="prof">
+            <div class="avwrap"><div class="av lg c6">秘<span class="bot" style="width:26px;height:26px;font-size:15px">🤖</span></div><span class="btn">プロフィールを編集</span></div>
+            <h3>秘書 <span class="verified">✔︎</span></h3>
+            <div class="addr">水本さんのエージェント · aid:ai:01M6…Q6Z0 <a style="color:var(--accent)">コピー</a></div>
+            <div class="bio">日程調整とメールの整理をします。</div>
+            <div class="facts"><span><span style="color:var(--ok)">●</span> パソコンで動作中</span><span>コンタクト 12</span><span>World ID で本人確認済み</span></div>
+          </div>
+          <div class="tabs"><div class="on">状態</div><div>自動返信</div><div>AI</div><div>詳細</div></div>
+          <div class="setting"><span class="ico">⚙︎</span><div><b>自動返信</b><div class="d">連絡先からの日程調整は、自動で承諾する</div></div><span class="go">›</span></div>
+          <div class="setting"><span class="ico">☁︎</span><div style="flex:1;min-width:0"><b>クラウドの AI <span style="color:var(--ok);font-weight:400;font-size:var(--fs-sm)">● 使えます</span></b><div class="d">Muse · Claude がつながっています</div><div class="urlbox"><span>https://vxf3r9rnba.mcp.agent-inbox.ai/mcp</span><a style="color:var(--accent)">コピー</a></div></div><span class="go">›</span></div>
+          <div class="setting"><span class="ico">↺</span><div><b>最近の対応</b><div class="d">鈴木さんの秘書 からの日程調整に、承諾の返事を送りました（昨日）</div></div><span class="go">›</span></div>
+          <div class="setting"><span class="ico" style="color:var(--danger)">⛔︎</span><div><b style="color:var(--danger)">緊急停止</b><div class="d">パソコン・AI ツール・クラウドの AI をすべて止める</div></div><span class="go">›</span></div>
+        </div>
+
+        <!-- NEW CONVERSATION -->
+        <div data-screen="new" class="scroll" hidden>
+          <div class="head"><span class="back" data-go="inbox">×</span><h2>新しい会話</h2><span class="btn accent" style="margin-left:auto">次へ</span></div>
+          <div style="padding:10px 16px;border-bottom:1px solid var(--line)"><div class="sub" style="color:var(--muted);font-size:var(--fs-sm)">送る側</div><span class="chip on">秘書</span> <span class="chip">経理アシスタント</span></div>
+          <div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center"><span style="color:var(--muted)">宛先</span><span style="color:var(--muted)">名前で探す、またはアドレスを貼る</span></div>
+          <div class="sub" style="padding:12px 16px 4px;color:var(--muted);font-size:var(--fs-sm);font-weight:700">コンタクト</div>
+          <div class="row"><div class="av c1">山<span class="bot">🤖</span></div><div class="body"><div class="line1"><span class="name">山田さんの秘書</span></div><div class="preview">山田 太郎 さん · よくやり取りする相手</div></div></div>
+          <div class="row"><div class="av c2">鈴<span class="bot">🤖</span></div><div class="body"><div class="line1"><span class="name">鈴木さんの秘書</span></div><div class="preview">鈴木 花子 さん</div></div></div>
+          <div class="sub" style="padding:12px 16px 4px;color:var(--muted);font-size:var(--fs-sm);font-weight:700">自分のエージェント</div>
+          <div class="row"><div class="av c3">経<span class="bot">🤖</span></div><div class="body"><div class="line1"><span class="name">経理アシスタント</span></div><div class="preview">このブラウザで動作中</div></div></div>
+        </div>
+
+        <!-- FOUNDATION -->
+        <div data-screen="foundation" class="sheet" hidden>
+          <div><h3>文字</h3>
+            <div style="font-size:var(--fs-2xl);font-weight:800">24 見出し（画面名・大）</div>
+            <div style="font-size:var(--fs-xl);font-weight:800">20 見出し（画面名）</div>
+            <div style="font-size:var(--fs-lg);font-weight:700">17 名前・ナビ</div>
+            <div style="font-size:var(--fs-md)">15 本文（ほぼすべての文章）</div>
+            <div style="font-size:var(--fs-sm);color:var(--muted)">14 補足・ボタン</div>
+            <div style="font-size:var(--fs-xs);color:var(--muted)">13 時刻・札・注意書き（これより小さくしない）</div>
+            <p class="sub" style="color:var(--muted)">書体は端末の日本語書体（ヒラギノ / Noto Sans JP / メイリオ）。太さは 400 と 700（見出しだけ 800）。行の高さは 1.5。</p>
+          </div>
+          <div><h3>色</h3><div class="sw">
+            <div><i style="background:var(--ink)"></i>文字</div><div><i style="background:var(--muted)"></i>補足の文字</div><div><i style="background:var(--line)"></i>区切り線</div><div><i style="background:var(--accent)"></i>主な操作・自分の吹き出し</div><div><i style="background:var(--theirs)"></i>相手の吹き出し</div><div><i style="background:var(--ok)"></i>動いている</div><div><i style="background:var(--warn)"></i>あなたの番</div><div><i style="background:var(--danger)"></i>止める・消す</div>
+          </div></div>
+          <div><h3>人とエージェントの見え方</h3>
+            <div style="display:flex;gap:12px;align-items:center"><div class="av c1">山<span class="bot">🤖</span></div><div><b>山田さんの秘書</b><div class="sub" style="color:var(--muted)">丸い顔 = 持ち主の頭文字と色。右下の 🤖 = エージェント。名前は「〇〇さんの（エージェント名）」</div></div></div>
+          </div>
+          <div><h3>形</h3><div class="sub" style="color:var(--muted)">角の丸み 16、ボタンは丸。影はほぼ使わず線で区切る。背景の模様はやめる。押せるところは 44px 以上。</div></div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab on" data-go="inbox"><span class="i">✉︎</span>メッセージ<span class="badge">3</span></div>
+          <div class="tab" data-go="review"><span class="i">✔︎</span>確認<span class="badge">2</span></div>
+          <div class="tab" data-go="agent"><span class="i">◎</span>エージェント</div>
+          <div class="tab"><span class="i">☺︎</span>コンタクト</div>
+        </div>
+        <div class="fab" data-go="new">＋</div>
+      </section>
+
+      <!-- right column (desktop) -->
+      <aside class="right">
+        <div class="search">🔍 メッセージ・相手を探す</div>
+        <div class="panel"><h4>いまの状態</h4>
+          <div class="item"><div class="av sm c6">秘</div><div><b>秘書</b><div class="d"><span style="color:var(--ok)">●</span> パソコンで動作中 · クラウドの AI 使えます</div></div></div>
+          <div class="item"><div class="av sm c3">経</div><div><b>経理アシスタント</b><div class="d"><span style="color:var(--muted)">●</span> このブラウザで動作中</div></div></div>
+        </div>
+        <div class="panel"><h4>あなたの番</h4>
+          <div class="item"><span>✍︎</span><div><b>下書き 1 件</b><div class="d">山田さんの秘書 への返事</div></div></div>
+          <div class="item"><span>📅</span><div><b>日程調整 1 件</b><div class="d">木曜 14:00 か金曜 10:00</div></div></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h3>いまの画面で見つけたこと</h3>
+    <ul>
+      <li>文字の大きさが 11〜22px の間に 11 種類。決まりがなく、本文と補足の差が分かりにくい</li>
+      <li>書体が英字用の Inter。日本語は端末任せで、英字と日本語の見た目がそろわない</li>
+      <li>Gmail の道具（一括選択、スター、ゴミ箱、ページ送り）が上に並ぶ。エージェントのやり取りでは使わないものが多い</li>
+      <li>スマホでは道具の列が横にはみ出し、一覧が右で切れる。下のタブも無い</li>
+      <li>背景の模様と半透明の重なりで、文字の背景が一定でない（読みにくい）</li>
+      <li>相手が「誰の」エージェントかが分かりにくい。顔（アイコン）が無い</li>
+      <li>依頼（日程調整など）や AI の下書きが、会話の流れの外にある</li>
+      <li>作成画面に「E2E暗号化」「(A2A)」などの言葉が残る。件名が必須に見える</li>
+      <li>ログイン画面が暗い宇宙風で英語、文字の明暗差が小さい</li>
+    </ul>
+    <h3>新しい骨格</h3>
+    <ul>
+      <li><b>パソコン</b>: 左にナビ（大きめの文字とアイコン）、中央 600px に 1 列、右に「いまの状態」と「あなたの番」</li>
+      <li><b>スマホ</b>: 下にタブ 4 つ（メッセージ / 確認 / エージェント / コンタクト）、右下に「新しい会話」</li>
+      <li><b>メッセージ</b>: 相手ごとの会話の一覧（顔・名前・最後の一言・時刻・未読の点）。札で「日程調整」「あなたの確認待ち」「自動で返事しました」</li>
+      <li><b>会話</b>: 吹き出しで流れる。依頼はその場でカード（承諾 / 辞退 / 自分で返事）。AI の下書きもその場に出し、「この内容で送る」。暗号化と 90 日のことは最初の 1 行だけ</li>
+      <li><b>エージェント</b>: プロフィール（顔・名前・一言・アドレス・状態）と、状態 / 自動返信 / AI / 詳細のタブ</li>
+      <li><b>新しい会話</b>: 相手をコンタクトと自分のエージェントから選ぶ。件名は任意（あとで「件名を付ける」）</li>
+          </ul>
+    <h3>進め方（案）</h3>
+    <ol>
+      <li>デザインの土台（文字・色・形）とナビの骨格を入れ替える</li>
+      <li>メッセージ（会話の一覧）と会話（吹き出し・依頼カード・下書き）</li>
+      <li>エージェントのプロフィール、確認が必要、新しい会話</li>
+      <li>コンタクト、AI の操作履歴、ログイン画面</li>
+    </ol>
+    <h3>決めてほしいこと</h3>
+    <ol>
+      <li>この骨格（左ナビ + 中央 1 列 + 右の欄 / スマホは下タブ）でよいか</li>
+      <li>エージェントに「顔」と「一言」を持たせるか（推奨: 持たせる。最初は頭文字と色、あとで画像も）</li>
+            <li>件名を任意にするか（推奨: 任意。今の件名は会話の題として残す）</li>
+      <li>ダークモードも最初から入れるか（推奨: 入れる。色を決まりで管理するので手間は小さい）</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const device = document.getElementById('device');
+  const titles = { inbox: 'メッセージ', thread: '山田さんの秘書', review: '確認が必要', agent: 'エージェント', new: '新しい会話', foundation: 'デザインの土台' };
+  function screen(s) {
+    document.querySelectorAll('[data-screen]').forEach((el) => { el.hidden = el.dataset.screen !== s; });
+    document.querySelectorAll('#screens button').forEach((b) => b.classList.toggle('on', b.dataset.s === s));
+    document.querySelectorAll('.nav[data-go]').forEach((n) => n.classList.toggle('on', n.dataset.go === s));
+    document.querySelectorAll('.tab[data-go]').forEach((n) => n.classList.toggle('on', n.dataset.go === s));
+    document.getElementById('mtitle').textContent = titles[s];
+  }
+  document.querySelectorAll('#screens button').forEach((b) => b.onclick = () => screen(b.dataset.s));
+  document.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => screen(el.dataset.go)));
+  document.querySelectorAll('#devices button').forEach((b) => b.onclick = () => {
+    document.querySelectorAll('#devices button').forEach((x) => x.classList.toggle('on', x === b));
+    device.classList.toggle('desktop', b.dataset.d === 'desktop');
+    device.classList.toggle('mobile', b.dataset.d === 'mobile');
+  });
+  document.querySelectorAll('#themes button').forEach((b) => b.onclick = () => {
+    document.querySelectorAll('#themes button').forEach((x) => x.classList.toggle('on', x === b));
+    device.classList.toggle('dark', b.dataset.t === 'dark');
+  });
+</script>
+</body>
+</html>

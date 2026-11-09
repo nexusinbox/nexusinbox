@@ -11,7 +11,7 @@ import {
   type ScheduleProposePayload,
 } from "@nexusinbox/core/a2a";
 import { encryptEnvelopeText, generateContentKey } from "../crypto/envelope";
-import { wrapContentKeyForRecipient } from "../crypto/keywrap";
+import { wrapContentKeyForRecipient, wrapContentKeyForSender } from "../crypto/keywrap";
 import { signEnvelopePayload } from "../crypto/signature";
 
 export type SendEncryptedMessage = (payload: {
@@ -24,6 +24,7 @@ export type SendEncryptedMessage = (payload: {
   signature: string;
   threadId: string | null;
   contentType: string;
+  senderEncryptedKey?: string;
 }) => Promise<{ message_id: string }>;
 
 export async function sendScheduleProposal(
@@ -33,6 +34,8 @@ export async function sendScheduleProposal(
     /** The recipient as resolved by the server, and its receiving key. */
     recipientDid: string;
     recipientEncryptionKey: string;
+    /** The sender's own encryption key, so it can read the message later (docs/35 §5). */
+    senderEncryptionKey?: string;
     subject: string;
     body: string;
     payload: ScheduleProposePayload;
@@ -58,6 +61,7 @@ export async function sendScheduleProposal(
   const encSubject = await encryptEnvelopeText(input.subject, { contentKey });
   const encBody = await encryptEnvelopeText(JSON.stringify(a2aPayload), { contentKey });
   const wrapped = await wrapContentKeyForRecipient(contentKey, input.recipientEncryptionKey);
+  const senderEncryptedKey = await wrapContentKeyForSender(contentKey, input.senderEncryptionKey);
   const signature = await signEnvelopePayload({
     signingPrivateKey: input.signingPrivateKey,
     senderDid: input.senderDid,
@@ -80,6 +84,7 @@ export async function sendScheduleProposal(
     // New thread — the server assigns the id.
     threadId: null,
     contentType: A2A_CONTENT_TYPE,
+    senderEncryptedKey,
   });
   return { messageId: sent.message_id, proposeId: protocolBlock.id };
 }

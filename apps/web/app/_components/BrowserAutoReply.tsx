@@ -104,6 +104,7 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
               viewerAgentDid: input.viewerAgentDid,
               proposerDid: input.proposerDid,
               autoReplyOrigin: input.autoReplyOrigin,
+              senderEncryptionKey: agent.encryption_key,
               sendMessage: (payload) =>
                 defaultApiClient.seedMessage({
                   senderDid: payload.senderDid,
@@ -116,6 +117,7 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
                   threadId: payload.threadId,
                   contentType: payload.contentType,
                   autoReplyOrigin: payload.autoReplyOrigin,
+                  senderEncryptedKey: payload.senderEncryptedKey,
                 }),
             }),
           decrypt: (ciphertext, encryptedKey, recipientDid) =>

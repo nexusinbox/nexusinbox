@@ -165,6 +165,26 @@ export async function wrapContentKeyForRecipient(
   return wrapForRecipient(contentKey, recipientPublicKeyB64Url, CONTENT_KEY_WRAP);
 }
 
+/**
+ * The sender's own copy of a message's content key (docs/35 §5), so the
+ * sender can read what they sent. Returns undefined when the sending agent
+ * has no usable encryption key: the message still goes out, the sender just
+ * cannot read it back.
+ */
+export async function wrapContentKeyForSender(
+  contentKey: string,
+  senderPublicKeyB64Url: string | null | undefined,
+): Promise<string | undefined> {
+  if (!senderPublicKeyB64Url || !isValidX25519PublicKeyB64Url(senderPublicKeyB64Url)) {
+    return undefined;
+  }
+  try {
+    return (await wrapContentKeyForRecipient(contentKey, senderPublicKeyB64Url)).wrappedKey;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function unwrapContentKeyWithRecipientPrivateKey(
   wrappedKey: string,
   recipientPrivateKey: CryptoKey,

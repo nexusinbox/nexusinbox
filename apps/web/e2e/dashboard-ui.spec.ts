@@ -2,11 +2,8 @@ import { expect, test } from "@playwright/test";
 import { seedAuthSessionCookie } from "./_helpers/auth";
 import { mockNexusInboxBackend, SEED_AGENT } from "./_helpers/mocks";
 
-// Two-message seed shaped to exercise: free-text search across
-// sender_label + subject_encrypted (the inbox passes through the
-// "encrypted" field as plaintext when parseEncryptedPayload returns
-// null, see lib/crypto/envelope.ts), the starred filter tab, the
-// bulk-star toolbar, and localStorage-backed search persistence.
+// Two-message seed shaped to exercise the conversation list: free-text
+// search on the counterpart name and the 未読 chip.
 type SeedMessage = {
   id: string;
   sender_did: string;
@@ -25,13 +22,13 @@ type SeedMessage = {
   starred: boolean;
 };
 
-test("dashboard UI: search, filter, bulk star and persisted query", async ({
+test("dashboard UI: search and the unread chip", async ({
   page,
   context,
   baseURL,
 }) => {
-  // Force JA locale before any navigation so the rendered tab /
-  // toolbar labels ("スター付き", "すべて選択", "スター解除") match.
+  // Force JA locale before any navigation so the chip labels
+  // ("すべて", "未読") match.
   await page.addInitScript(() => {
     window.localStorage.setItem("nexusinbox-locale", "ja");
   });
@@ -79,9 +76,7 @@ test("dashboard UI: search, filter, bulk star and persisted query", async ({
   await seedAuthSessionCookie(context, baseURL);
 
   // Layered after the helper so this more-specific /messages handler
-  // wins. We need it to (a) return our two-row dataset on GET and
-  // (b) mutate `starred` on PATCH /:id/flags so the bulk
-  // unstar-then-tab-switch flow works.
+  // wins. It returns our two-row dataset on GET.
   await page.route("**/api/messages**", async (route) => {
     const request = route.request();
     const method = request.method();
@@ -105,82 +100,28 @@ test("dashboard UI: search, filter, bulk star and persisted query", async ({
       return;
     }
 
-    const flagsMatch = url.pathname.match(
-      /^\/api\/messages\/([^/]+)\/flags$/,
-    );
-    if (flagsMatch && method === "PATCH") {
-      const id = flagsMatch[1];
-      const payload = request.postDataJSON() as {
-        starred?: boolean;
-        folder?: SeedMessage["folder"];
-      };
-      const target = messages.find((m) => m.id === id);
-      if (!target) {
-        await route.fulfill({
-          status: 404,
-          contentType: "application/json",
-          body: JSON.stringify({ error: "not_found" }),
-        });
-        return;
-      }
-      if (typeof payload.starred === "boolean") {
-        target.starred = payload.starred;
-      }
-      if (payload.folder) {
-        target.folder = payload.folder;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ id, starred: target.starred, folder: target.folder }),
-      });
-      return;
-    }
-
     await route.fallback();
   });
 
   await page.goto("/");
-  await expect(page.locator(".thread-item")).toHaveCount(2);
+  const rows = page.getByTestId("dm-row");
+  await expect(rows).toHaveCount(2);
 
-  // searchLabel = "メッセージを検索" (the older "メッセージ検索" copy is gone).
-  // We search on sender_label rather than subject because subject_encrypted
-  // is rendered as a localized "decrypting…" placeholder until the row is
-  // opened — so subject text doesn't enter the search haystack for closed
-  // rows even when the cipher is passthrough. sender_label is rendered
-  // verbatim from the API response, which is a stable surface for the
-  // search filter test.
+  // The search box filters on the counterpart's name (and the decrypted
+  // preview, which these passthrough rows don't have).
   const searchInput = page.getByLabel("メッセージを検索");
   await searchInput.fill("技術");
-  await expect(page.locator(".thread-item")).toHaveCount(1);
-  await expect(page.locator(".thread-item").first()).toContainText(
-    "技術エージェント",
-  );
-
-  // filterStarred tab label is "スター付き" (renamed from the old
-  // "スター"). The starred-only view + the lingering "技術" search
-  // intersects to nothing — the OpenAPI message isn't starred and the
-  // starred Q1 message's sender ("社内エージェント") doesn't contain
-  // "技術". Assert via row count so we don't depend on a specific
-  // empty-state copy.
-  await page.getByRole("tab", { name: "スター付き" }).click();
-  await expect(page.locator(".thread-item")).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("技術エージェント");
 
   await searchInput.fill("");
-  await expect(page.locator(".thread-item")).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
 
-  // selectAll checkbox aria-label is "すべて選択" (was "全選択").
-  // Bulk unstar empties the starred-only view.
-  await page.getByLabel("すべて選択").check();
-  await page.getByRole("button", { name: "スター解除" }).click();
-  await expect(page.locator(".thread-item")).toHaveCount(0);
+  // Only the second message is unread.
+  await page.getByRole("tab", { name: "未読" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("技術エージェント");
 
   await page.getByRole("tab", { name: "すべて" }).click();
-  await expect(page.locator(".thread-item")).toHaveCount(2);
-
-  // Search query is persisted in localStorage; reload should restore it.
-  await searchInput.fill("技術");
-  await page.reload();
-  await expect(searchInput).toHaveValue("技術");
-  await expect(page.locator(".thread-item")).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
 });

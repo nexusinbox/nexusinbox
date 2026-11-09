@@ -16,7 +16,7 @@ test("MVP flow: login screen shown, then direct route to inbox -> detail -> comp
   // Wire up the deterministic backend BEFORE navigating: AppShell
   // hits `/agents`, `/messages`, `/contacts`, etc. on every boot,
   // and an unmocked endpoint will leave the page in a loading
-  // skeleton (no `.thread-item` rows, no sidebar links). See
+  // skeleton (no conversation rows, no sidebar links). See
   // `e2e/_helpers/mocks.ts` for the seed shape.
   await mockNexusInboxBackend(page);
 
@@ -40,25 +40,19 @@ test("MVP flow: login screen shown, then direct route to inbox -> detail -> comp
 
   await expect(page).toHaveURL(/\/$/);
 
-  // Inbox row from the seeded /api/messages response.
-  const firstThread = page.locator(".thread-item").first();
+  // Conversation row from the seeded /api/messages response.
+  const firstThread = page.getByTestId("dm-row").first();
   await expect(firstThread).toBeVisible();
   await firstThread.click();
 
-  // Detail pane is rendered by ConversationThread. The seeded
-  // envelope is intentionally undecryptable on this device so the
-  // component falls back to its passthrough / unavailable branch —
-  // which still mounts the `.conversation-thread` container and
-  // at least one `.conversation-message-body` panel. We assert on
-  // those two markers instead of `.reader-subject`, because the
-  // subject `<h2>` legitimately renders empty when the encrypted
-  // value can't decrypt and Playwright reports an empty heading
-  // as `hidden`.
-  await expect(page.locator(".conversation-thread")).toBeVisible();
-  await expect(page.locator(".conversation-message-body").first()).toBeVisible();
+  // The conversation view. The seeded envelope is intentionally
+  // undecryptable on this device, so the message shows its
+  // unavailable branch — still one message in the conversation.
+  await expect(page.locator(".dm-conv")).toBeVisible();
+  await expect(page.getByTestId("dm-message").first()).toBeVisible();
 
   // Compose pill in the topbar / sidebar takes the user to /compose.
-  await page.getByRole("link", { name: "作成" }).first().click();
+  await page.getByRole("link", { name: "新しい会話" }).first().click();
 
   await expect(page).toHaveURL(/\/compose$/);
   await expect(page.getByText("新規メッセージ")).toBeVisible();

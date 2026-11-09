@@ -66,7 +66,7 @@ type ConversationThreadProps = {
   rootMessageId: string;
 };
 
-function summariseReply(
+export function summariseReply(
   reply: A2ARespondPayload,
   t: (key: string, params?: Record<string, string | number>) => string,
 ): string {
@@ -163,56 +163,18 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
       bodySummary,
       viewerAgentDid: entry.recipient_did,
       proposerDid: entry.sender_did,
+      senderEncryptionKey: ownAgents?.find(
+        (a) => a.did === entry.recipient_did || a.dids?.includes(entry.recipient_did),
+      )?.encryption_key,
       sendMessage: sendMessageMutation.mutateAsync,
     });
   }
 
   // Per-message "Block this sender" panel — closed by default. We
   // key the open-state by message_id so only one panel is expanded
-  // at a time across the whole thread. The mutation hook
-  // invalidates `/blocks` on success so /settings/blocks reflects
-  // the new row immediately.
+  // at a time across the whole thread.
   const [blockOpenFor, setBlockOpenFor] = useState<string | null>(null);
-  const [blockStatus, setBlockStatus] = useState<
-    { kind: "success" | "error"; text: string } | null
-  >(null);
-  const blockMutation = useBlockFromMessageMutation();
-
-  async function confirmAndBlock(messageId: string, level: BlockLevel) {
-    const confirmKey =
-      level === "l1_did"
-        ? "inbox.blockConfirmL1"
-        : level === "l2_identity"
-          ? "inbox.blockConfirmL2"
-          : "inbox.blockConfirmL3";
-    if (typeof window !== "undefined" && !window.confirm(t(confirmKey))) {
-      return;
-    }
-    try {
-      await blockMutation.mutateAsync({ messageId, payload: { level } });
-      const successKey =
-        level === "l1_did"
-          ? "inbox.blockSuccessL1"
-          : level === "l2_identity"
-            ? "inbox.blockSuccessL2"
-            : "inbox.blockSuccessL3";
-      setBlockStatus({ kind: "success", text: t(successKey) });
-      setBlockOpenFor(null);
-    } catch (err) {
-      // 422 is the documented "sender not registered" case — only
-      // possible at L2/L3, and means the sender has no row in our
-      // users table so world_id_hash can't be resolved. Surface the
-      // L1-fallback hint directly instead of a generic error.
-      if (err instanceof ApiError && err.status === 422) {
-        setBlockStatus({
-          kind: "error",
-          text: t("inbox.blockFailSenderNotRegistered"),
-        });
-      } else {
-        setBlockStatus({ kind: "error", text: t("inbox.blockFailGeneric") });
-      }
-    }
-  }
+  const [blockStatus, setBlockStatus] = useState<BlockStatus | null>(null);
   // DIDs that already have a contact entry, so we can hide the
   // "add to contacts" button for them and prevent duplicate work.
   const knownContactDids = useMemo(() => {
@@ -539,84 +501,11 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
                 ) : null}
               </header>
               {blockOpenFor === entry.id ? (
-                <div
-                  className="conversation-block-panel"
-                  role="dialog"
-                  aria-label={t("inbox.blockPanelTitle")}
-                >
-                  <div>
-                    <p
-                      className="item-title"
-                      style={{ margin: 0, fontSize: 13, fontWeight: 700 }}
-                    >
-                      {t("inbox.blockPanelTitle")}
-                    </p>
-                    <p
-                      className="item-sub"
-                      style={{ margin: "4px 0 0 0", fontSize: 12 }}
-                    >
-                      {t("inbox.blockPanelDesc")}
-                    </p>
-                  </div>
-                  {(
-                    [
-                      ["l1_did", "blockLevelL1", "blockLevelL1Desc"],
-                      ["l2_identity", "blockLevelL2", "blockLevelL2Desc"],
-                      ["l3_stealth", "blockLevelL3", "blockLevelL3Desc"],
-                    ] as const
-                  ).map(([lvl, labelKey, descKey]) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      className="btn-premium secondary"
-                      onClick={() => void confirmAndBlock(entry.id, lvl)}
-                      disabled={blockMutation.isPending}
-                      style={{
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: 2,
-                        padding: "10px 12px",
-                        textAlign: "left",
-                        borderColor: "rgba(220, 38, 38, 0.2)",
-                        color: "#b91c1c",
-                      }}
-                    >
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>
-                        {t("inbox." + labelKey)}
-                      </span>
-                      <span
-                        className="item-sub"
-                        style={{ margin: 0, fontSize: 11, color: "inherit", opacity: 0.8 }}
-                      >
-                        {t("inbox." + descKey)}
-                      </span>
-                    </button>
-                  ))}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 4,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn-premium outline"
-                      onClick={() => setBlockOpenFor(null)}
-                      disabled={blockMutation.isPending}
-                      style={{ fontSize: 12, padding: "6px 12px" }}
-                    >
-                      {t("inbox.blockCancel")}
-                    </button>
-                    {blockMutation.isPending ? (
-                      <span className="item-sub" style={{ fontSize: 11 }}>
-                        {t("inbox.blockBusy")}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
+                <BlockSenderPanel
+                  messageId={entry.id}
+                  onClose={() => setBlockOpenFor(null)}
+                  onResult={setBlockStatus}
+                />
               ) : null}
               {blockStatus && blockOpenFor === null ? (
                 // Surface the last status only briefly after the
@@ -704,6 +593,142 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
   );
 }
 
+export type BlockStatus = { kind: "success" | "error"; text: string };
+
+// ---------------------------------------------------------------------------
+// BlockSenderPanel: pick a block level for the sender of one received
+// message. The server resolves the target from the message, so nobody types
+// an id. The mutation hook invalidates `/blocks` on success so
+// /settings/blocks reflects the new row immediately.
+// ---------------------------------------------------------------------------
+
+export function BlockSenderPanel({
+  messageId,
+  onClose,
+  onResult,
+}: {
+  messageId: string;
+  onClose: () => void;
+  onResult: (status: BlockStatus) => void;
+}) {
+  const { t } = useTranslation();
+  const blockMutation = useBlockFromMessageMutation();
+
+  async function confirmAndBlock(level: BlockLevel) {
+    const confirmKey =
+      level === "l1_did"
+        ? "inbox.blockConfirmL1"
+        : level === "l2_identity"
+          ? "inbox.blockConfirmL2"
+          : "inbox.blockConfirmL3";
+    if (typeof window !== "undefined" && !window.confirm(t(confirmKey))) {
+      return;
+    }
+    try {
+      await blockMutation.mutateAsync({ messageId, payload: { level } });
+      const successKey =
+        level === "l1_did"
+          ? "inbox.blockSuccessL1"
+          : level === "l2_identity"
+            ? "inbox.blockSuccessL2"
+            : "inbox.blockSuccessL3";
+      onResult({ kind: "success", text: t(successKey) });
+      onClose();
+    } catch (err) {
+      // 422 is the documented "sender not registered" case — only
+      // possible at L2/L3, and means the sender has no row in our
+      // users table so world_id_hash can't be resolved. Surface the
+      // L1-fallback hint directly instead of a generic error.
+      if (err instanceof ApiError && err.status === 422) {
+        onResult({ kind: "error", text: t("inbox.blockFailSenderNotRegistered") });
+      } else {
+        onResult({ kind: "error", text: t("inbox.blockFailGeneric") });
+      }
+    }
+  }
+
+  return (
+    <div
+      className="conversation-block-panel"
+      role="dialog"
+      aria-label={t("inbox.blockPanelTitle")}
+    >
+      <div>
+        <p
+          className="item-title"
+          style={{ margin: 0, fontSize: 13, fontWeight: 700 }}
+        >
+          {t("inbox.blockPanelTitle")}
+        </p>
+        <p
+          className="item-sub"
+          style={{ margin: "4px 0 0 0", fontSize: 12 }}
+        >
+          {t("inbox.blockPanelDesc")}
+        </p>
+      </div>
+      {(
+        [
+          ["l1_did", "blockLevelL1", "blockLevelL1Desc"],
+          ["l2_identity", "blockLevelL2", "blockLevelL2Desc"],
+          ["l3_stealth", "blockLevelL3", "blockLevelL3Desc"],
+        ] as const
+      ).map(([lvl, labelKey, descKey]) => (
+        <button
+          key={lvl}
+          type="button"
+          className="btn-premium secondary"
+          onClick={() => void confirmAndBlock(lvl)}
+          disabled={blockMutation.isPending}
+          style={{
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 2,
+            padding: "10px 12px",
+            textAlign: "left",
+            borderColor: "rgba(220, 38, 38, 0.2)",
+            color: "#b91c1c",
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700 }}>
+            {t("inbox." + labelKey)}
+          </span>
+          <span
+            className="item-sub"
+            style={{ margin: 0, fontSize: 11, color: "inherit", opacity: 0.8 }}
+          >
+            {t("inbox." + descKey)}
+          </span>
+        </button>
+      ))}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          marginTop: 4,
+        }}
+      >
+        <button
+          type="button"
+          className="btn-premium outline"
+          onClick={onClose}
+          disabled={blockMutation.isPending}
+          style={{ fontSize: 12, padding: "6px 12px" }}
+        >
+          {t("inbox.blockCancel")}
+        </button>
+        {blockMutation.isPending ? (
+          <span className="item-sub" style={{ fontSize: 11 }}>
+            {t("inbox.blockBusy")}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // MessageUnavailableCard: shown for `unavailable_on_this_device` and
 // `decrypt_failed` states instead of an infinite "decrypting" line.
@@ -714,7 +739,7 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
 // the browser's selection.
 // ---------------------------------------------------------------------------
 
-function MessageUnavailableCard({
+export function MessageUnavailableCard({
   state,
   messageId,
   recipientDid,
@@ -1170,7 +1195,7 @@ type DecryptedAttachment = {
   error?: string;
 };
 
-function AttachmentList({
+export function AttachmentList({
   messageId,
   recipientDid,
   encryptedKey,

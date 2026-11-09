@@ -18,7 +18,11 @@ import {
   ENCRYPTED_PLACEHOLDER,
 } from "../../lib/crypto/envelope";
 import { isValidEd25519PublicKeyB64Url, signEnvelopePayload } from "../../lib/crypto/signature";
-import { isValidX25519PublicKeyB64Url, wrapContentKeyForRecipient } from "../../lib/crypto/keywrap";
+import {
+  isValidX25519PublicKeyB64Url,
+  wrapContentKeyForRecipient,
+  wrapContentKeyForSender,
+} from "../../lib/crypto/keywrap";
 import {
   encryptAttachment,
   generateAttachmentKey,
@@ -559,6 +563,8 @@ function ComposePageInner() {
       const encryptedBody = await encryptEnvelopeText(body, { contentKey });
       const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncryptionKey);
       const encryptedKey = wrapped.wrappedKey;
+      // The sender's own copy, so this message can be read back (docs/35 §5).
+      const senderEncryptedKey = await wrapContentKeyForSender(contentKey, senderEncryptionKey);
 
       // Attachment upload pipeline (E2E per docs/17):
       //   encrypt locally → presigned PUT to R2 → complete → build encrypted
@@ -689,6 +695,7 @@ function ComposePageInner() {
         signature,
         threadId,
         attachments: outboundAttachments,
+        senderEncryptedKey,
       });
       setStatus({ kind: "success", message: t("compose.statusSent") });
       // Only wipe the body/attachments so the user can tweak &

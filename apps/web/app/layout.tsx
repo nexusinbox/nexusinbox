@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
@@ -13,12 +12,6 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
 
 // Canonical product tagline — keep in lockstep with README h1 quote and
 // docs/26 §1. Long-form description is reserved for og:description / SEO.
@@ -63,7 +56,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body>
         <I18nProvider>
           <QueryProvider>{children}</QueryProvider>
         </I18nProvider>

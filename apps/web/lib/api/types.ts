@@ -265,6 +265,9 @@ export type MessageContentResponse = {
   // or render it as plain text/markdown. Optional for forward-compat
   // with older API builds and legacy stored messages.
   content_type?: string | null;
+  // The content key wrapped for the sender's own encryption key, when the
+  // sender kept one, so the sender can read what they sent (docs/35 §5).
+  sender_encrypted_key?: string | null;
 };
 
 // --- Attachment upload types (docs/17_attachment_upload_r2_spec.md) -------

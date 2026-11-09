@@ -16,7 +16,7 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::time::Duration;
 use tower::util::ServiceExt;
 use uuid::Uuid;
@@ -322,31 +322,23 @@ async fn put_update_increments_revision_and_logs_prev_next() {
 
     // Audit: both created + updated rows exist, and the latest
     // `updated` carries prev + next policy in detail.
-    let row = sqlx::query(
-        "SELECT detail FROM agent_audit_log \
-         WHERE event = 'auto_reply_policy_updated' AND user_id = $1 \
-         ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await
-    .expect("audit fetch");
-    // fire-and-forget → brief poll to avoid flake
-    let detail: Option<Value> = match row {
-        Some(r) => Some(r.get("detail")),
-        None => {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            sqlx::query_scalar::<_, Value>(
-                "SELECT detail FROM agent_audit_log \
-                 WHERE event = 'auto_reply_policy_updated' AND user_id = $1 \
-                 ORDER BY created_at DESC LIMIT 1",
-            )
-            .bind(user_id)
-            .fetch_optional(&pool)
-            .await
-            .unwrap()
+    // The audit row is written fire-and-forget; poll for up to 2 s.
+    let mut detail: Option<Value> = None;
+    for _ in 0..40 {
+        detail = sqlx::query_scalar::<_, Value>(
+            "SELECT detail FROM agent_audit_log \
+             WHERE event = 'auto_reply_policy_updated' AND user_id = $1 \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await
+        .expect("audit fetch");
+        if detail.is_some() {
+            break;
         }
-    };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     let detail = detail.expect("audit event expected");
     assert_eq!(detail["revision_before"], 1);
     assert_eq!(detail["revision_after"], 2);
