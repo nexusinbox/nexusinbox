@@ -20,7 +20,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation, type Locale } from "../../lib/i18n";
 import { sanitiseNextPath } from "../../lib/url/next-path";
-import { Logo } from "../_components/Logo";
 
 // Message contract between the iframe (`/login/idkit`) and this
 // page. Keep the keys flat and serialisable — postMessage cannot
@@ -159,16 +158,33 @@ export default function LoginPage() {
       : "idle";
 
   return (
-    <main className="lg-root" data-testid="login-root">
+    <main
+      className="ai-login-root ai-concept-page lgx-page"
+      data-testid="login-root"
+      style={{ background: "#0a0c18", color: "#e8ecff" }}
+    >
+      {/* The concept page's backdrop: grid floor, stars, corner marks. */}
+      <div className="ai-login-grid" aria-hidden="true" />
+      <div className="ai-login-stars" aria-hidden="true" />
       <button
         type="button"
-        className="lg-lang"
+        className="ai-concept-lang-toggle"
         onClick={toggleLocale}
         aria-label={locale === "en" ? "日本語に切り替え" : "Switch to English"}
         data-testid="login-lang-toggle"
       >
-        {locale === "en" ? "日本語" : "English"}
+        {locale === "en" ? "JP" : "EN"}
       </button>
+      <div className="ai-login-hud" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+        <span className="tag">
+          <span className="marker" />
+          {t("auth.hudTag")}
+        </span>
+      </div>
 
       {iframeVisible ? (
         <div
@@ -218,91 +234,108 @@ export default function LoginPage() {
         </div>
       ) : null}
 
-      <section className="lg-card" aria-labelledby="lg-title">
-        <h1 id="lg-title" className="lg-brand">
-          <Logo size={40} variant="light" />
-          <span>
-            Nexus<b>Inbox</b>
-          </span>
-        </h1>
-        <p className="lg-hero">{t("auth.hero")}</p>
-        <p className="lg-sub">{t("auth.sub")}</p>
+      <div className="ai-concept-scroll">
+        <section className="ai-concept-hero" aria-labelledby="lg-title">
+          <div className="ai-login-brand">
+            <span className="dot" />
+            <span>{t("auth.kicker")}</span>
+          </div>
+          <h1 id="lg-title" className="ai-login-title">
+            <span className="glitch" data-text={t("concept.heroTitle1")}>
+              {t("concept.heroTitle1")}
+            </span>
+            <br />
+            <span className="glitch" data-text={t("concept.heroTitle2")}>
+              {t("concept.heroTitle2")}
+            </span>
+          </h1>
+          <p className="ai-concept-hero-slogan lgx-slogan">{t("auth.hero")}</p>
+          <p className="ai-concept-hero-sub">{t("auth.sub")}</p>
+        </section>
 
         {/* docs/36: a two-line scene of what using it looks like. */}
-        <div className="lg-scene" aria-hidden="true">
-          <span className="lg-scene-who">{t("auth.sceneThemWho")}</span>
-          <span className="lg-bubble">{t("auth.sceneThem")}</span>
-          <span className="lg-scene-who mine">{t("auth.sceneYouWho")}</span>
-          <span className="lg-bubble mine">{t("auth.sceneYou")}</span>
+        <div className="lgx-scene" aria-hidden="true">
+          <span className="lgx-who">{t("auth.sceneThemWho")}</span>
+          <span className="lgx-bubble">{t("auth.sceneThem")}</span>
+          <span className="lgx-who mine">{t("auth.sceneYouWho")}</span>
+          <span className="lgx-bubble mine">{t("auth.sceneYou")}</span>
         </div>
 
-        <button
-          className="lg-cta"
-          type="button"
-          onClick={handleOpenWidget}
-          disabled={iframeVisible}
-          data-testid="login-cta"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        <section className="ai-concept-cta-section lgx-cta">
+          <button
+            className="ai-login-cta ai-concept-cta-link"
+            type="button"
+            onClick={handleOpenWidget}
+            disabled={iframeVisible}
+            data-testid="login-cta"
           >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-            <path d="M2 12h20" />
-          </svg>
-          <span>{iframeVisible ? t("auth.verifying") : t("auth.start")}</span>
-        </button>
-        <p className="lg-cta-note">{t("auth.ctaNote")}</p>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+              <path d="M2 12h20" />
+            </svg>
+            <span>{iframeVisible ? t("auth.verifying") : t("auth.start")}</span>
+          </button>
+          <p className="lgx-note">{t("auth.ctaNote")}</p>
+          <p
+            className="lgx-status"
+            data-kind={statusKind}
+            data-testid="login-status"
+            role="status"
+            aria-live="polite"
+          >
+            {statusText || "\u00A0"}
+          </p>
+        </section>
 
-        <p
-          className="lg-status"
-          data-kind={statusKind}
-          data-testid="login-status"
-          role="status"
-          aria-live="polite"
-        >
-          {statusText || "\u00A0"}
-        </p>
-
-        <ul className="lg-points">
+        <ul className="lgx-points">
           <li>
-            <span className="lg-point-icon" aria-hidden="true">🔒</span>
-            <span>
-              <b>{t("auth.pointPrivateTitle")}</b>
-              <span>{t("auth.pointPrivateDesc")}</span>
-            </span>
+            <span className="marker" />
+            <b>{t("auth.pointPrivateTitle")}</b>
+            <span>{t("auth.pointPrivateDesc")}</span>
           </li>
           <li>
-            <span className="lg-point-icon" aria-hidden="true">🙋</span>
-            <span>
-              <b>{t("auth.pointHumanTitle")}</b>
-              <span>{t("auth.pointHumanDesc")}</span>
-            </span>
+            <span className="marker" style={{ background: "#7dffb0", boxShadow: "0 0 8px #7dffb0" }} />
+            <b>{t("auth.pointHumanTitle")}</b>
+            <span>{t("auth.pointHumanDesc")}</span>
           </li>
           <li>
-            <span className="lg-point-icon" aria-hidden="true">🤖</span>
-            <span>
-              <b>{t("auth.pointAiTitle")}</b>
-              <span>{t("auth.pointAiDesc")}</span>
-            </span>
+            <span className="marker" style={{ background: "#ff9ee0", boxShadow: "0 0 8px #ff9ee0" }} />
+            <b>{t("auth.pointAiTitle")}</b>
+            <span>{t("auth.pointAiDesc")}</span>
           </li>
         </ul>
 
-        <nav className="lg-links" aria-label={t("auth.linksLabel")}>
-          <Link href="/concept">{t("auth.conceptLink")}</Link>
-          <Link href="/help">{t("legal.helpLink")}</Link>
-          <Link href="/terms">{t("legal.termsLink")}</Link>
-          <Link href="/privacy">{t("legal.privacyLink")}</Link>
-        </nav>
-      </section>
+        <footer className="ai-concept-footer">
+          <nav className="ai-concept-footer-links" aria-label={t("auth.linksLabel")}>
+            <Link href="/concept" className="ai-concept-footer-link">
+              {t("auth.conceptLink")}
+            </Link>
+            <span className="ai-concept-footer-sep">|</span>
+            <Link href="/help" className="ai-concept-footer-link">
+              {t("legal.helpLink")}
+            </Link>
+            <span className="ai-concept-footer-sep">|</span>
+            <Link href="/terms" className="ai-concept-footer-link">
+              {t("legal.termsLink")}
+            </Link>
+            <span className="ai-concept-footer-sep">|</span>
+            <Link href="/privacy" className="ai-concept-footer-link">
+              {t("legal.privacyLink")}
+            </Link>
+          </nav>
+        </footer>
+      </div>
     </main>
   );
 }

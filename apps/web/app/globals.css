@@ -1586,19 +1586,6 @@ button, input, textarea, select {
   background: var(--surface-alt);
   color: var(--text);
 }
-.lg-lang {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
 .lg-card {
   width: 100%;
   max-width: 440px;
@@ -1617,95 +1604,6 @@ button, input, textarea, select {
   letter-spacing: -0.01em;
 }
 .lg-brand b {
-  color: var(--primary);
-}
-.lg-points {
-  display: grid;
-  gap: 14px;
-  margin: 0 0 24px;
-  padding: 0;
-  list-style: none;
-}
-.lg-points li {
-  display: flex;
-  gap: 12px;
-}
-.lg-points b {
-  display: block;
-  font-size: var(--fs-md);
-}
-.lg-points li > span:last-child > span {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-.lg-point-icon {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--primary-soft);
-  font-size: 17px; /* an icon, not text */
-}
-.lg-cta {
-  width: 100%;
-  min-height: 48px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--text);
-  color: var(--bg);
-  font-size: var(--fs-md);
-  font-weight: 700;
-  cursor: pointer;
-}
-.lg-cta:hover:not(:disabled) {
-  opacity: 0.88;
-}
-.lg-cta:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-.lg-cta-note {
-  margin: 8px 0 0;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  text-align: center;
-}
-.lg-status {
-  min-height: 20px;
-  margin: 8px 0 0;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-.lg-status[data-kind="error"] {
-  color: var(--danger);
-}
-.lg-status[data-kind="ok"] {
-  color: var(--ok);
-}
-.lg-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0 16px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-.lg-links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-.lg-links a:hover {
   color: var(--primary);
 }
 @media (max-width: 480px) {
@@ -4471,54 +4369,6 @@ details[open] .help-accordion-chevron {
  * public intro page /to/<aid>.
  * ============================================================ */
 
-/* Sign-in: headline, sub and a two-bubble scene */
-.lg-hero {
-  margin: 18px 0 8px;
-  font-size: var(--fs-2xl);
-  font-weight: 800;
-  line-height: 1.4;
-  letter-spacing: -0.01em;
-  white-space: pre-line;
-  /* Japanese wraps at the spaces, not mid-word ("話そ/う。"). */
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-}
-.lg-sub {
-  margin: 0 0 16px;
-  color: var(--text-muted);
-  font-size: var(--fs-md);
-}
-.lg-scene {
-  display: grid;
-  gap: 6px;
-  margin: 0 0 18px;
-  padding: 12px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-  font-size: var(--fs-xs);
-}
-.lg-scene-who {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-}
-.lg-bubble {
-  max-width: 82%;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px 14px 14px 4px;
-  background: var(--bg);
-  justify-self: start;
-}
-.lg-scene-who.mine,
-.lg-bubble.mine {
-  justify-self: end;
-}
-.lg-bubble.mine {
-  border-color: var(--primary);
-  border-radius: 14px 14px 4px 14px;
-  background: var(--primary);
-  color: #fff;
-}
 
 /* 紹介する (agent profile) */
 .ap-actions {
@@ -4661,4 +4511,201 @@ details[open] .help-accordion-chevron {
 }
 .pa-cta:hover {
   background: var(--primary-hover);
+}
+
+/* Sign-in in the concept page's look (dark backdrop, glass, glow). */
+.lgx-scene {
+  display: grid;
+  gap: 6px;
+  max-width: 440px;
+  margin: 0 auto 8px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.72), rgba(6, 8, 18, 0.72));
+  border: 1px solid rgba(140, 160, 255, 0.14);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lgx-who {
+  color: #8f9bcc;
+  font-size: 13px;
+}
+.lgx-bubble {
+  max-width: 84%;
+  justify-self: start;
+  padding: 8px 13px;
+  border-radius: 16px 16px 16px 4px;
+  background: rgba(140, 160, 255, 0.12);
+  border: 1px solid rgba(140, 160, 255, 0.2);
+  color: #e8ecff;
+}
+.lgx-who.mine,
+.lgx-bubble.mine {
+  justify-self: end;
+}
+.lgx-bubble.mine {
+  border-radius: 16px 16px 4px 16px;
+  background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 60%, #d49eff 100%);
+  border-color: transparent;
+  color: #04060e;
+}
+.lgx-cta {
+  margin: 28px 0 32px;
+}
+.lgx-cta .ai-login-cta {
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 15px;
+}
+.lgx-note {
+  margin: 12px 0 0;
+  color: #9aa7d9;
+  font-size: 13px;
+}
+.lgx-status {
+  min-height: 1.6em;
+  margin: 8px 0 0;
+  color: #9aa7d9;
+  font-size: 13px;
+}
+.lgx-status[data-kind="error"] {
+  color: #ff9ea8;
+}
+.lgx-status[data-kind="ok"] {
+  color: #7dffb0;
+}
+.lgx-points {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  max-width: 480px;
+  margin: 0 auto 40px;
+  padding: 0;
+}
+.lgx-points li {
+  display: grid;
+  grid-template-columns: 12px auto;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(120, 140, 255, 0.06);
+  border: 1px solid rgba(140, 160, 255, 0.14);
+  color: #c0c8e8;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.lgx-points .marker {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7dd7ff;
+  box-shadow: 0 0 8px #7dd7ff;
+  align-self: center;
+}
+.lgx-points b {
+  color: #e8ecff;
+}
+.lgx-points li > span:last-child {
+  grid-column: 2;
+  color: #9aa7d9;
+  font-size: 13px;
+}
+.lgx-slogan {
+  white-space: pre-line;
+  /* Japanese wraps at the spaces, not mid-word. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* /to/<aid> in the concept page's look: dark backdrop, glass card. */
+.lg-root.pa-dark {
+  overflow-x: hidden;
+  background: #0a0c18;
+  color: #e8ecff;
+}
+.pa-dark .lg-card {
+  position: relative;
+  z-index: 2;
+  border: 1px solid rgba(140, 160, 255, 0.16);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.78), rgba(6, 8, 18, 0.78));
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+.pa-dark .lg-brand {
+  color: #e8ecff;
+}
+.pa-dark .lg-brand b {
+  background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.pa-dark .pa-name {
+  background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 50%, #7dd7ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.pa-dark .pa-bio {
+  color: #c0c8e8;
+}
+.pa-dark .pa-note {
+  color: #9aa7d9;
+}
+.pa-dark .pa-cta {
+  color: #04060e;
+  background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%);
+  box-shadow: 0 10px 30px rgba(120, 140, 255, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+}
+.pa-dark .pa-cta:hover {
+  background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%);
+  box-shadow: 0 14px 40px rgba(120, 140, 255, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+}
+.pa-dark .dm-av.lg {
+  border-color: #0c1020;
+  box-shadow: 0 0 24px rgba(125, 215, 255, 0.25);
+}
+.pa-dark .dm-bot {
+  background: #0a0c18;
+}
+/* Sign-in and concept pages scroll as one page (not an inner box); the
+   backdrop stays put. */
+.ai-login-root.lgx-page {
+  display: block;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 160, 255, 0.3) transparent;
+}
+.lgx-page::-webkit-scrollbar {
+  width: 6px;
+}
+.lgx-page::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lgx-page::-webkit-scrollbar-thumb {
+  background: rgba(140, 160, 255, 0.3);
+  border-radius: 3px;
+}
+.lgx-page .ai-login-grid,
+.lgx-page .ai-login-stars,
+.lgx-page .ai-login-hud {
+  position: fixed;
+}
+.lgx-page .ai-concept-scroll {
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* The language button scrolls away with the page rather than covering it. */
+.lgx-page .ai-concept-lang-toggle {
+  position: absolute;
 }

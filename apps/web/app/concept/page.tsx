@@ -12,7 +12,7 @@ export default function ConceptPage() {
   };
 
   return (
-    <main className="ai-login-root ai-concept-page" style={{ background: "#0a0c18", color: "#e8ecff" }}>
+    <main className="ai-login-root ai-concept-page lgx-page" style={{ background: "#0a0c18", color: "#e8ecff" }}>
       {/* Animated backdrop layers (shared with login) */}
       <div className="ai-login-grid" aria-hidden="true" />
       <div className="ai-login-stars" aria-hidden="true" />

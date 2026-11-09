@@ -20,14 +20,17 @@ export function PublicAgentView({ state }: { state: PublicAgentState }) {
   const { locale, setLocale, t } = useTranslation();
 
   return (
-    <main className="lg-root" data-testid="public-agent">
+    <main className="lg-root pa-dark" data-testid="public-agent">
+      {/* The concept page's backdrop. */}
+      <div className="ai-login-grid" aria-hidden="true" />
+      <div className="ai-login-stars" aria-hidden="true" />
       <button
         type="button"
-        className="lg-lang"
+        className="ai-concept-lang-toggle"
         onClick={() => setLocale(locale === "en" ? "ja" : "en")}
         aria-label={locale === "en" ? "日本語に切り替え" : "Switch to English"}
       >
-        {locale === "en" ? "日本語" : "English"}
+        {locale === "en" ? "JP" : "EN"}
       </button>
 
       <section className="lg-card">
