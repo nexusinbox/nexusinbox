@@ -28,6 +28,7 @@ import {
   MODE_A_TOOL_ALLOWLIST,
 } from "../src/runtime-gateway.js";
 import { sha256Hex, type AuditEntry } from "../src/audit.js";
+import { decryptEnvelopeTextWithContentKey, unwrapContentKey } from "../src/decrypt.js";
 
 type FakeTransport = ReturnType<typeof vi.fn>;
 
@@ -426,5 +427,110 @@ describe("Isolated mode runtime (Gateway)", () => {
     // send_message was never attempted.
     const methods = rpcTransport.mock.calls.map((call) => call[0]);
     expect(methods).not.toContain("send_message");
+  });
+
+  it("a confirmed send carries a sender copy wrapped for the daemon's own key", async () => {
+    const own = (await crypto.subtle.generateKey({ name: "X25519" }, true, [
+      "deriveBits",
+    ])) as CryptoKeyPair;
+    const ownPub = Buffer.from(await crypto.subtle.exportKey("raw", own.publicKey)).toString(
+      "base64url",
+    );
+    let capturedSendParams: Record<string, unknown> | null = null;
+    const rpcTransport = buildFakeTransport({
+      whoami: { ...GATEWAY_WHOAMI, encryption_public_key: ownPub },
+      resolve_recipient: RECIPIENT_BOB,
+      send_message: (params: Record<string, unknown>) => {
+        capturedSendParams = params;
+        return { message_id: "m-SENT-2", status: "delivered" };
+      },
+    });
+    const { runtime } = await createGatewayRuntime({ rpcTransport, auditSink: () => {} });
+
+    await runtime.sendTextMessage({
+      from_agent: "aid:ai:self",
+      to: "aid:ai:bob",
+      subject: "kept for me",
+      body_markdown: "readable later",
+      mode: "send",
+      confirmed_by_user: true,
+    });
+
+    const envelope = (
+      capturedSendParams as unknown as {
+        envelope: {
+          encrypted_content: string;
+          encrypted_key: string;
+          sender_encrypted_key?: string;
+          metadata: { subject_encrypted: string };
+        };
+      }
+    ).envelope;
+    expect(envelope.sender_encrypted_key?.startsWith("x25519v1:")).toBe(true);
+    expect(envelope.sender_encrypted_key).not.toBe(envelope.encrypted_key);
+    const contentKey = await unwrapContentKey(envelope.sender_encrypted_key!, own.privateKey);
+    await expect(
+      decryptEnvelopeTextWithContentKey({
+        encrypted_content: envelope.encrypted_content,
+        subject_encrypted: envelope.metadata.subject_encrypted,
+        contentKey,
+      }),
+    ).resolves.toEqual({ subject: "kept for me", body: "readable later" });
+  });
+
+  it("a send without a daemon encryption key has no sender copy", async () => {
+    let capturedSendParams: Record<string, unknown> | null = null;
+    const rpcTransport = buildFakeTransport({
+      whoami: GATEWAY_WHOAMI,
+      resolve_recipient: RECIPIENT_BOB,
+      send_message: (params: Record<string, unknown>) => {
+        capturedSendParams = params;
+        return { message_id: "m-SENT-3", status: "delivered" };
+      },
+    });
+    const { runtime } = await createGatewayRuntime({ rpcTransport, auditSink: () => {} });
+
+    await runtime.sendTextMessage({
+      from_agent: "aid:ai:self",
+      to: "aid:ai:bob",
+      subject: "s",
+      body_markdown: "b",
+      mode: "send",
+      confirmed_by_user: true,
+    });
+
+    const envelope = (capturedSendParams as unknown as { envelope: Record<string, unknown> })
+      .envelope;
+    expect(envelope).not.toHaveProperty("sender_encrypted_key");
+  });
+
+  it("read_message opens a message this agent sent with its sender copy", async () => {
+    const message = {
+      encrypted_content: "body",
+      encrypted_key: "x25519v1:for-bob",
+      sender_encrypted_key: "x25519v1:for-me",
+      nonce: "n",
+      sender_did: "did:key:self-current",
+      recipient_did: "did:key:bob-current",
+      subject_encrypted: "subject",
+      thread_id: null,
+    };
+    for (const [content, expected] of [
+      [message, "x25519v1:for-me"],
+      // Someone else's message keeps the recipient wrap.
+      [{ ...message, sender_did: "did:key:bob-current" }, "x25519v1:for-bob"],
+      // No sender copy: the recipient wrap, as before.
+      [{ ...message, sender_encrypted_key: undefined }, "x25519v1:for-bob"],
+    ] as const) {
+      const rpcTransport = buildFakeTransport({
+        whoami: GATEWAY_WHOAMI,
+        read_message: content,
+        unwrap_content_key: { content_key: "ck" },
+      });
+      const { runtime } = await createGatewayRuntime({ rpcTransport });
+      await runtime.readMessage({ message_id: "m-1" });
+      const unwrapCall = rpcTransport.mock.calls.find((c) => c[0] === "unwrap_content_key");
+      expect(unwrapCall?.[1]).toEqual({ encrypted_key: expected });
+    }
   });
 });

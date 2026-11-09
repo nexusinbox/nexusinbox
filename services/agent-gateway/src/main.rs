@@ -297,6 +297,9 @@ struct GatewayState {
 struct SignerIdentity {
     aid: String,
     did: String,
+    /// The daemon's X25519 public key, when it holds one.
+    #[serde(default)]
+    encryption_public_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -717,6 +720,9 @@ async fn handle_whoami(state: &GatewayState, req: &RpcRequest) -> RpcResponse {
                 "aid": identity.aid,
                 "did": identity.did,
                 "agent_ref": state.agent_ref,
+                // Lets the client wrap a sender copy of each content key
+                // (`sender_encrypted_key`, docs/35 §5).
+                "encryption_public_key": identity.encryption_public_key,
             }),
         ),
         Err(e) => RpcResponse::error(req.id.clone(), -32000, e),
@@ -1541,6 +1547,12 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
         get_signer_identity(&self.state).await.map(|id| id.did)
     }
 
+    async fn fetch_our_encryption_key(&self) -> Result<Option<String>, String> {
+        get_signer_identity(&self.state)
+            .await
+            .map(|id| id.encryption_public_key)
+    }
+
     async fn daemon_unwrap_content_key(&self, encrypted_key: &str) -> Result<String, String> {
         let result = call_signer(
             &self.state.signer_socket,
@@ -2323,6 +2335,7 @@ mod tests {
     type DaemonCalls = std::sync::Arc<Mutex<Vec<(String, serde_json::Value)>>>;
 
     const DAEMON_DID: &str = "did:key:z6MkDaemonViewer";
+    const DAEMON_ENCRYPTION_KEY: &str = "ZGFlbW9uLWVuY3J5cHRpb24ta2V5";
 
     /// Signer daemon double on a Unix socket in `dir`: records every RPC
     /// and answers the four the executor uses.
@@ -2351,10 +2364,18 @@ mod tests {
                     .unwrap()
                     .push((method.clone(), req["params"].clone()));
                 let result = match method.as_str() {
-                    "get_public_key" => json!({ "aid": "aid:ai:viewer", "did": DAEMON_DID }),
+                    "get_public_key" => json!({
+                        "aid": "aid:ai:viewer",
+                        "did": DAEMON_DID,
+                        "encryption_public_key": DAEMON_ENCRYPTION_KEY,
+                    }),
                     "unwrap_content_key" => json!({ "content_key": content_key }),
                     "wrap_content_key" => {
-                        json!({ "wrapped_key": "x25519v1:wrapped:for:proposer:key" })
+                        if req["params"]["recipient_encryption_pub"] == DAEMON_ENCRYPTION_KEY {
+                            json!({ "wrapped_key": "x25519v1:wrapped:for:daemon:key" })
+                        } else {
+                            json!({ "wrapped_key": "x25519v1:wrapped:for:proposer:key" })
+                        }
                     }
                     "sign_envelope" => json!({ "sender_did": DAEMON_DID, "signature": "SIG" }),
                     other => panic!("unexpected daemon method {other}"),
@@ -2388,6 +2409,23 @@ mod tests {
             ts.expires_at = Some(Utc::now() + chrono::Duration::seconds(600));
         }
         std::sync::Arc::new(state)
+    }
+
+    #[tokio::test]
+    async fn test_whoami_returns_the_daemon_encryption_key() {
+        let dir = socket_dir();
+        let (signer_socket, _) = spawn_daemon_mock(&dir, String::new()).await;
+        let state = executor_state("http://127.0.0.1:9".into(), signer_socket);
+        let req = RpcRequest {
+            id: json!(1),
+            method: "whoami".into(),
+            params: json!({}),
+        };
+        let resp = handle_rpc(&state, &req).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        let result = resp.result.expect("whoami result");
+        assert_eq!(result["did"], DAEMON_DID);
+        assert_eq!(result["encryption_public_key"], DAEMON_ENCRYPTION_KEY);
     }
 
     const MSG_A: &str = "00000000-0000-0000-0000-00000000000a";
@@ -2700,6 +2738,11 @@ mod tests {
             envelope["encrypted_key"],
             "x25519v1:wrapped:for:proposer:key"
         );
+        // The daemon's own copy of the content key (docs/35 §5).
+        assert_eq!(
+            envelope["sender_encrypted_key"],
+            "x25519v1:wrapped:for:daemon:key"
+        );
         assert_eq!(envelope["metadata"]["thread_id"], MSG_A);
         assert_eq!(
             envelope["metadata"]["auto_reply_origin"],
@@ -2722,6 +2765,8 @@ mod tests {
                 "unwrap_content_key",
                 "get_public_key",
                 "wrap_content_key",
+                "get_public_key",
+                "wrap_content_key",
                 "sign_envelope"
             ]
         );
@@ -2733,10 +2778,18 @@ mod tests {
             daemon_calls[2].1["recipient_encryption_pub"],
             "cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"
         );
+        assert_eq!(
+            daemon_calls[4].1["recipient_encryption_pub"],
+            DAEMON_ENCRYPTION_KEY
+        );
+        assert_eq!(
+            daemon_calls[4].1["content_key"],
+            daemon_calls[2].1["content_key"]
+        );
         // sign_envelope gets exactly the daemon's six fields, with the
         // values the POST body then carries.
         assert_eq!(
-            daemon_calls[3].1,
+            daemon_calls[5].1,
             json!({
                 "sender_did": sent["sender_did"],
                 "recipient_did": sent["recipient_did"],

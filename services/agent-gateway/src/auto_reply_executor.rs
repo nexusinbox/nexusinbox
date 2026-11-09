@@ -70,6 +70,10 @@ pub trait ExecutorBackend: Send + Sync {
     async fn resolve_recipient(&self, did: &str) -> Result<RecipientPubkey, String>;
     /// The signer daemon's DID (`get_public_key`), which replies are sent from.
     async fn fetch_our_did(&self) -> Result<String, String>;
+    /// The daemon's own X25519 public key (`get_public_key`), if it has one.
+    /// Replies carry a copy of the content key wrapped for it so this agent
+    /// can read what it sent (docs/35 §5).
+    async fn fetch_our_encryption_key(&self) -> Result<Option<String>, String>;
     async fn daemon_unwrap_content_key(&self, encrypted_key: &str) -> Result<String, String>;
     async fn daemon_wrap_content_key(
         &self,
@@ -496,6 +500,7 @@ async fn seal_reply<B: ExecutorBackend>(
         .daemon_wrap_content_key(&recipient.encryption_public_key, &content_key)
         .await
         .map_err(|e| format!("wrap_content_key: {e}"))?;
+    let sender_wrapped_key = sender_copy(backend, &content_key).await;
     let signing = EnvelopeSigningParams {
         sender_did,
         recipient_did: recipient.did,
@@ -510,7 +515,7 @@ async fn seal_reply<B: ExecutorBackend>(
         .map_err(|e| format!("sign_envelope: {e}"))?;
     // Same fallback as the web: a thread is named after its first message.
     let thread_id = entry.thread_id.as_deref().unwrap_or(entry.id.as_str());
-    Ok(serde_json::json!({
+    let mut body = serde_json::json!({
         "sender_did": signing.sender_did,
         "recipient_did": signing.recipient_did,
         "envelope": {
@@ -525,7 +530,33 @@ async fn seal_reply<B: ExecutorBackend>(
                 "auto_reply_origin": AUTO_REPLY_ORIGIN_DAEMON,
             }
         }
-    }))
+    });
+    // Not covered by the signature (docs/35 §5).
+    if let Some(key) = sender_wrapped_key {
+        body["envelope"]["sender_encrypted_key"] = Value::String(key);
+    }
+    Ok(body)
+}
+
+/// The content key wrapped for the daemon's own X25519 key. Best effort: a
+/// reply without it still reaches the recipient, only this agent cannot
+/// reread it later.
+async fn sender_copy<B: ExecutorBackend>(backend: &B, content_key: &str) -> Option<String> {
+    let own_pub = match backend.fetch_our_encryption_key().await {
+        Ok(Some(key)) if !key.is_empty() => key,
+        Ok(_) => return None,
+        Err(e) => {
+            eprintln!("[auto-reply] get_public_key for the sender copy failed: {e}");
+            return None;
+        }
+    };
+    match backend.daemon_wrap_content_key(&own_pub, content_key).await {
+        Ok(wrapped) => Some(wrapped),
+        Err(e) => {
+            eprintln!("[auto-reply] wrapping the sender copy failed: {e}");
+            None
+        }
+    }
 }
 
 /// Build the `protocol` block that goes into the outgoing A2A envelope body.
@@ -606,6 +637,7 @@ mod tests {
         config_error: Option<String>,
         // Answers to `fetch_our_did` in order; the last one repeats.
         our_did_answers: Mutex<VecDeque<Result<String, String>>>,
+        our_encryption_key: Option<String>,
         resolve_error: Option<String>,
         claim: Result<bool, String>,
         post_error: Option<PostReplyError>,
@@ -689,6 +721,10 @@ mod tests {
             }
         }
 
+        async fn fetch_our_encryption_key(&self) -> Result<Option<String>, String> {
+            Ok(self.our_encryption_key.clone())
+        }
+
         async fn daemon_unwrap_content_key(&self, _ek: &str) -> Result<String, String> {
             self.log("unwrap");
             Ok(self.content_key.clone())
@@ -696,12 +732,12 @@ mod tests {
 
         async fn daemon_wrap_content_key(
             &self,
-            _recipient_pub: &str,
+            recipient_pub: &str,
             content_key: &str,
         ) -> Result<String, String> {
             self.log("wrap");
             self.wrapped.lock().unwrap().push(content_key.into());
-            Ok("x25519v1:fake:wrapped:key:data".into())
+            Ok(format!("x25519v1:fake:wrapped-for:{recipient_pub}"))
         }
 
         async fn daemon_sign_envelope(
@@ -811,6 +847,7 @@ mod tests {
             master: true,
             config_error: None,
             our_did_answers: Mutex::new(VecDeque::from([Ok("did:key:zViewer".to_string())])),
+            our_encryption_key: Some("daemon-pub-key".into()),
             resolve_error: None,
             claim: Ok(true),
             post_error: None,
@@ -895,6 +932,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(subject, AUTO_REPLY_SUBJECT);
+
+        // The same content key is also wrapped for the daemon itself, so the
+        // agent can reread its reply; the signature covers only the
+        // recipient's wrap.
+        assert_eq!(
+            envelope["encrypted_key"].as_str(),
+            Some("x25519v1:fake:wrapped-for:fake-pub-key")
+        );
+        assert_eq!(
+            envelope["sender_encrypted_key"].as_str(),
+            Some("x25519v1:fake:wrapped-for:daemon-pub-key")
+        );
+        let wrapped = backend.wrapped.lock().unwrap();
+        assert_eq!(wrapped.len(), 2);
+        assert_eq!(wrapped[0], wrapped[1]);
+        assert_eq!(
+            backend.signed.lock().unwrap()[0].encrypted_key,
+            "x25519v1:fake:wrapped-for:fake-pub-key"
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_without_a_daemon_encryption_key_has_no_sender_copy() {
+        let mut backend = make_backend();
+        backend.our_encryption_key = None;
+        let report = tick(&backend).await;
+        assert_eq!(report.sent, 1);
+        let sent = backend.sent.lock().unwrap();
+        assert!(sent[0]["envelope"].get("sender_encrypted_key").is_none());
     }
 
     #[tokio::test]

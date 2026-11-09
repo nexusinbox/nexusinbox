@@ -7,6 +7,7 @@
 // drafts with it. The public half is remembered in localStorage so the page
 // can tell which server-side review key is this browser's.
 
+import { defaultApiClient } from "../api/client";
 import type { Agent, AgentDraft, ReviewKey } from "../api/types";
 import { decryptEnvelopeTextWithContentKey } from "./envelope";
 import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
@@ -125,6 +126,16 @@ export async function senderCopyForDraft(
   agents: Agent[],
 ): Promise<string | undefined> {
   if (!opened) return undefined;
+  // The key of the DID the draft is sent from: for an agent on a computer
+  // that is the signer's key, not the agent's browser-era `encryption_key`.
+  const senderKey = await defaultApiClient
+    .resolveRecipient(draft.sender_did)
+    .then((r) => (r.did === draft.sender_did ? r.encryption_public_key : undefined))
+    .catch(() => undefined);
+  if (senderKey) {
+    const wrapped = await wrapContentKeyForSender(opened.contentKey, senderKey);
+    if (wrapped) return wrapped;
+  }
   const agent = agents.find(
     (a) =>
       a.aid === draft.aid || a.did === draft.sender_did || a.dids?.includes(draft.sender_did),

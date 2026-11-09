@@ -765,25 +765,24 @@ async fn read_message(
     let url = format!("{}/messages/{}/content", gateway.api_url, id);
     let content = crate::api_get(gateway, &url, &token).await?;
     let field = |k: &str| content.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    // A failure here also fails the unwrap below, which reports it.
+    let my_did = crate::get_signer_identity(gateway)
+        .await
+        .map(|me| me.did)
+        .unwrap_or_default();
 
-    let unwrapped = crate::call_signer(
-        &gateway.signer_socket,
-        "unwrap_content_key",
-        serde_json::json!({ "encrypted_key": field("encrypted_key") }),
-    )
-    .await
-    .map_err(|e| {
-        if e.starts_with("cannot connect to signer") {
-            return "The signer on this computer is not running.".to_string();
-        }
-        "This message is not encrypted for this agent's current key, so it cannot be \
-         read here (messages this agent sent are encrypted for their recipient)."
-            .to_string()
-    })?;
-    let content_key = unwrapped
-        .get("content_key")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "could not open this message on this computer".to_string())?;
+    let content_key = open_content_key(gateway, &content, &my_did)
+        .await
+        .map_err(|e| {
+            if e.starts_with("cannot connect to signer") {
+                return "The signer on this computer is not running.".to_string();
+            }
+            "This message is not encrypted for this agent's current key, so it cannot be \
+             read here (messages this agent sent without a copy for itself are encrypted \
+             only for their recipient)."
+                .to_string()
+        })?;
+    let content_key = content_key.as_str();
 
     let body = decrypt_envelope_text(field("encrypted_content"), content_key)
         .map_err(|_| "could not decrypt the message body".to_string())?;
@@ -806,6 +805,48 @@ async fn read_message(
 const DRAFT_BODY_MAX_CHARS: usize = 20_000;
 const DRAFT_SUBJECT_MAX_CHARS: usize = 200;
 
+/// The wrapped content keys this agent may be able to open, best first: its
+/// own copy of a message it sent (`sender_encrypted_key`, docs/35 §5), then
+/// the recipient's.
+fn content_key_wraps<'a>(content: &'a serde_json::Value, my_did: &str) -> Vec<&'a str> {
+    let field = |k: &str| content.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let mut wraps = Vec::with_capacity(2);
+    if !my_did.is_empty()
+        && field("sender_did") == my_did
+        && !field("sender_encrypted_key").is_empty()
+    {
+        wraps.push(field("sender_encrypted_key"));
+    }
+    wraps.push(field("encrypted_key"));
+    wraps
+}
+
+/// Unwrap a message's content key with the signer, trying each of
+/// `content_key_wraps` in turn. Returns the last error.
+async fn open_content_key(
+    gateway: &GatewayState,
+    content: &serde_json::Value,
+    my_did: &str,
+) -> Result<String, String> {
+    let mut last_err = String::from("no wrapped key");
+    for wrapped in content_key_wraps(content, my_did) {
+        match crate::call_signer(
+            &gateway.signer_socket,
+            "unwrap_content_key",
+            serde_json::json!({ "encrypted_key": wrapped }),
+        )
+        .await
+        {
+            Ok(r) => match r.get("content_key").and_then(|v| v.as_str()) {
+                Some(key) => return Ok(key.to_string()),
+                None => last_err = "the signer returned no content key".into(),
+            },
+            Err(e) => last_err = e,
+        }
+    }
+    Err(last_err)
+}
+
 /// The message being answered: its sender, thread and decrypted subject.
 struct Original {
     sender_did: String,
@@ -813,7 +854,12 @@ struct Original {
     subject: String,
 }
 
-async fn open_original(gateway: &GatewayState, token: &str, id: &str) -> Result<Original, String> {
+async fn open_original(
+    gateway: &GatewayState,
+    token: &str,
+    id: &str,
+    my_did: &str,
+) -> Result<Original, String> {
     let url = format!("{}/messages/{}/content", gateway.api_url, id);
     let content = crate::api_get(gateway, &url, token).await?;
     let field = |k: &str| content.get(k).and_then(|v| v.as_str()).unwrap_or("");
@@ -824,18 +870,10 @@ async fn open_original(gateway: &GatewayState, token: &str, id: &str) -> Result<
     let subject = match field("subject_encrypted") {
         "" => String::new(),
         s => {
-            let unwrapped = crate::call_signer(
-                &gateway.signer_socket,
-                "unwrap_content_key",
-                serde_json::json!({ "encrypted_key": field("encrypted_key") }),
-            )
-            .await
-            .map_err(|_| "cannot open the message to reply to on this computer".to_string())?;
-            let key = unwrapped
-                .get("content_key")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            decrypt_envelope_text(s, key).unwrap_or_default()
+            let key = open_content_key(gateway, &content, my_did)
+                .await
+                .map_err(|_| "cannot open the message to reply to on this computer".to_string())?;
+            decrypt_envelope_text(s, &key).unwrap_or_default()
         }
     };
     let thread_id = match field("thread_id") {
@@ -920,7 +958,7 @@ async fn create_draft(
             if !is_uuid(id) {
                 return Err("reply_to_message_id must be a UUID".into());
             }
-            let original = open_original(gateway, &token, id).await?;
+            let original = open_original(gateway, &token, id, &me.did).await?;
             if original.sender_did == me.did {
                 return Err(
                     "that message was sent by this agent; reply to a received message".into(),
@@ -1240,6 +1278,34 @@ mod tests {
             .await;
             assert_eq!(r["isError"], true, "{args}");
         }
+    }
+
+    #[test]
+    fn own_sent_messages_open_with_the_sender_copy_first() {
+        let me = "did:key:zMe";
+        let sent = serde_json::json!({
+            "sender_did": me,
+            "encrypted_key": "x25519v1:for:recipient",
+            "sender_encrypted_key": "x25519v1:for:me",
+        });
+        assert_eq!(
+            content_key_wraps(&sent, me),
+            ["x25519v1:for:me", "x25519v1:for:recipient"]
+        );
+        // Someone else's message, or no sender copy: the recipient's wrap only.
+        assert_eq!(
+            content_key_wraps(&sent, "did:key:zOther"),
+            ["x25519v1:for:recipient"]
+        );
+        assert_eq!(content_key_wraps(&sent, ""), ["x25519v1:for:recipient"]);
+        let without_copy = serde_json::json!({
+            "sender_did": me,
+            "encrypted_key": "x25519v1:for:recipient",
+        });
+        assert_eq!(
+            content_key_wraps(&without_copy, me),
+            ["x25519v1:for:recipient"]
+        );
     }
 
     #[test]

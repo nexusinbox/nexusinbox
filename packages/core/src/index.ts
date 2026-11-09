@@ -116,6 +116,8 @@ export type MessageContentResponse = {
   recipient_did?: string;
   subject_encrypted?: string;
   thread_id?: string | null;
+  /** The content key wrapped for the sender, when the sender kept one (docs/35 §5). */
+  sender_encrypted_key?: string | null;
 };
 
 export type SendMessageResponse = {
@@ -222,11 +224,18 @@ export type GatewayWhoAmI = {
   aid: string;
   did: string;
   agent_ref?: string | null;
+  /** The signer daemon's X25519 public key, when it holds one. */
+  encryption_public_key?: string | null;
 };
 
 export type SendEnvelope = {
   encrypted_content: string;
   encrypted_key: string;
+  /**
+   * The same content key wrapped for the sender, so the sender can reread
+   * the message (docs/35 §5). Not covered by the signature.
+   */
+  sender_encrypted_key?: string;
   nonce: string;
   signature?: string;
   metadata: {

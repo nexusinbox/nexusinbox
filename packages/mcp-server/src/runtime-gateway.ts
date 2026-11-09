@@ -158,7 +158,7 @@ function buildGatewayRuntime(
     },
 
     async readMessage(input): Promise<ReadMessageResult> {
-      const plain = await decryptIncomingViaGateway(gw, input.message_id);
+      const plain = await decryptIncomingViaGateway(gw, input.message_id, whoami.did);
       return {
         message_id: input.message_id,
         sender: plain.content.sender_did ? { did: plain.content.sender_did } : undefined,
@@ -222,6 +222,7 @@ function buildGatewayRuntime(
         subject: input.subject,
         body: input.body_markdown,
         recipientEncPubKey: recipientPublicKey,
+        senderEncPubKey: whoami.encryption_public_key,
       });
       const result = await gw.sendMessage({
         recipientDid: recipient.did,
@@ -248,7 +249,7 @@ function buildGatewayRuntime(
 
     async replyToMessage(input): Promise<DraftEnvelopeResult | SentMessageResult> {
       const mode = input.mode ?? "draft";
-      const plain = await decryptIncomingViaGateway(gw, input.incoming_message_id);
+      const plain = await decryptIncomingViaGateway(gw, input.incoming_message_id, whoami.did);
       if (!plain.content.sender_did) {
         throw new Error("incoming message has no sender_did — cannot draft a reply");
       }
@@ -291,6 +292,7 @@ function buildGatewayRuntime(
         subject,
         body: input.body_markdown,
         recipientEncPubKey: recipientPublicKey,
+        senderEncPubKey: whoami.encryption_public_key,
         threadId,
       });
       const result = await gw.sendMessage({
@@ -324,18 +326,24 @@ function buildGatewayRuntime(
  * (via Gateway) to unwrap the content_key, then decrypt locally. The
  * MCP process never sees the recipient's X25519 private key — only the
  * short-lived content_key plaintext, which is forgotten once this
- * promise resolves.
+ * promise resolves. A message this agent sent opens with its own copy of
+ * the content key (`sender_encrypted_key`, docs/35 §5) when it has one.
  */
 async function decryptIncomingViaGateway(
   gw: NexusInboxGatewayClient,
   messageId: string,
+  ownDid: string,
 ): Promise<{
   content: MessageContentResponse;
   subject: string;
   body: string;
 }> {
   const content = await gw.readMessage(messageId);
-  const contentKey = await gw.unwrapContentKey(content.encrypted_key);
+  const wrappedKey =
+    content.sender_did === ownDid && content.sender_encrypted_key
+      ? content.sender_encrypted_key
+      : content.encrypted_key;
+  const contentKey = await gw.unwrapContentKey(wrappedKey);
   const { subject, body } = await decryptEnvelopeTextWithContentKey({
     encrypted_content: content.encrypted_content,
     subject_encrypted: content.subject_encrypted ?? "",
@@ -368,15 +376,23 @@ async function buildUnsignedEnvelope(args: {
   subject: string;
   body: string;
   recipientEncPubKey: string;
+  /** The daemon's own X25519 key (whoami); adds a sender copy when set. */
+  senderEncPubKey?: string | null;
   threadId?: string | null;
 }): Promise<Omit<SendEnvelope, "signature">> {
   const contentKey = generateContentKey();
   const encSubject = await encryptText(args.subject, contentKey);
   const encBody = await encryptText(args.body, contentKey);
   const encKey = await wrapContentKeyForRecipient(contentKey, args.recipientEncPubKey);
+  // The same content key for this agent, so it can reread what it sent.
+  // Not covered by the signature (docs/35 §5).
+  const senderKey = args.senderEncPubKey
+    ? await wrapContentKeyForRecipient(contentKey, args.senderEncPubKey)
+    : undefined;
   return {
     encrypted_content: serializeEncryptedPayload(encBody),
     encrypted_key: encKey,
+    ...(senderKey ? { sender_encrypted_key: senderKey } : {}),
     nonce: encBody.iv,
     metadata: {
       subject_encrypted: serializeEncryptedPayload(encSubject),

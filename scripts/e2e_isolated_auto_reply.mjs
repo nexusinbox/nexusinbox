@@ -402,6 +402,12 @@ async function main() {
   if (replyA2a.protocol.type !== "schedule_negotiation" || replyA2a.protocol.action !== "accept") fail("expected an accept", replyA2a);
   if (replyA2a.protocol.reply_to !== proposeId) fail("reply_to does not point at the propose", replyA2a);
   console.log(`  selected: ${JSON.stringify(replyA2a.protocol.payload.selected_candidate)}`);
+  // docs/35 §5: the computer keeps a copy of the content key for itself, so
+  // A can read its own reply later.
+  if (!/^x25519v1:/.test(content.sender_encrypted_key ?? "") || content.sender_encrypted_key === content.encrypted_key) {
+    fail("the auto-reply has no sender copy of its key", content.sender_encrypted_key);
+  }
+  console.log("  the reply keeps a sender copy of its key");
 
   step("A's original row is marked sent and claimed");
   const listA = expectStatus(await api("GET", `/messages?agent_did=${encodeURIComponent(A.did)}`, { auth: human }), [200], "list A");
