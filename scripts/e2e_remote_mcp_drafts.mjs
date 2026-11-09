@@ -12,6 +12,9 @@
 //   7. OAuth (docs/33 §10): an app with the official SDK's OAuth client
 //      finds the API from the endpoint's 401, registers, gets the person's
 //      consent and a token, and drafts; a read-only grant cannot draft
+//   8. RELAY=1 (docs/33 §11): Pebble (Let's Encrypt's test CA), the relay,
+//      and a gateway with --mcp-relay that gets its own certificate through
+//      the relay; the OAuth client reaches it at https://<id>.mcp.agent-inbox.ai
 //
 // Needs the same local API as scripts/e2e_isolated_auto_reply.mjs (dev
 // bearer, CSRF on, migrations up to 0027) with
@@ -19,12 +22,15 @@
 //
 // Usage: API=http://localhost:8081 node scripts/e2e_remote_mcp_drafts.mjs
 //   KEEP=1 leaves the stack and the MCP endpoint running.
+//   RELAY=1 also needs AGENT_INBOX_RELAY_TICKET_KEY on the API, a built
+//   relay, and pebble + pebble-challtestsrv v2.10.1 in ~/go/bin.
 //   BROWSER_REVIEW=1 USER_ID=<signed-in user> lets a real browser do steps 5
 //   and 6: the script waits for the browser to set itself up for review,
 //   then waits for the person to press "この内容で送る".
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,6 +42,9 @@ const WORK = process.env.WORK ?? fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-wo
 const MCP_PORT = Number(process.env.MCP_PORT ?? 8797);
 const GATEWAY_BIN =
   process.env.GATEWAY_BIN ?? path.join(REPO, "services/agent-gateway/target/debug/nexusinbox-gateway");
+const RELAY_BIN =
+  process.env.RELAY_BIN ?? path.join(REPO, "services/mcp-relay/target/debug/nexusinbox-relay");
+const RELAY_PORT = Number(process.env.RELAY_PORT ?? 8799);
 const SDK = path.join(REPO, "packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm");
 
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(API).hostname)) {
@@ -178,6 +187,7 @@ let stackDir = null;
 let stackEnv = null;
 let gateway = null;
 let oauthGateway = null;
+const relayProcs = [];
 function stack(command, input) {
   return execFileSync("sh", [STACK, command, stackDir], {
     cwd: REPO,
@@ -430,8 +440,8 @@ async function main() {
       codeVerifier: () => store.verifier,
     };
   };
-  const oauthConnect = async (provider, scopeOverride) => {
-    const transport = new StreamableHTTPClientTransport(new URL(oauthUrl), { authProvider: provider });
+  const oauthConnect = async (provider, scopeOverride, url = oauthUrl, fetchFn = undefined) => {
+    const transport = new StreamableHTTPClientTransport(new URL(url), { authProvider: provider, fetch: fetchFn });
     const client = new Client({ name: "e2e-oauth-muse", version: "0" });
     try {
       await client.connect(transport);
@@ -449,7 +459,7 @@ async function main() {
     const { info, code } = await consent(authUrl);
     await transport.finishAuth(code);
     const again = new Client({ name: "e2e-oauth-muse", version: "0" });
-    await again.connect(new StreamableHTTPClientTransport(new URL(oauthUrl), { authProvider: provider }));
+    await again.connect(new StreamableHTTPClientTransport(new URL(url), { authProvider: provider, fetch: fetchFn }));
     return { client: again, info, authUrl };
   };
   const callOauth = async (client, name, args) => {
@@ -484,6 +494,10 @@ async function main() {
   console.log("  refused");
   await reader.close();
 
+  if (process.env.RELAY) {
+    await relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth });
+  }
+
   console.log("\nPASS: drafts from the remote MCP endpoint are sent only after approval");
   if (process.env.KEEP) {
     console.log(`  KEEP: MCP http://127.0.0.1:${MCP_PORT}/mcp, token ${tokenFile}, user ${userId}`);
@@ -491,11 +505,179 @@ async function main() {
   }
 }
 
+// --- relay (docs/33 §11) -------------------------------------------------
+
+function logTo(file) {
+  return { stdio: ["ignore", fs.openSync(file, "a"), fs.openSync(file, "a")] };
+}
+
+async function waitForLog(file, needle, seconds, what) {
+  for (let i = 0; i < seconds * 4; i++) {
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(needle)) return;
+    await sleep(250);
+  }
+  fail(`${what} (no "${needle}" in ${file})`, fs.existsSync(file) ? fs.readFileSync(file, "utf8").slice(-3000) : "");
+}
+
+function httpsGet(url, ca) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { ca }, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve(Buffer.concat(chunks).toString()));
+    }).on("error", reject);
+  });
+}
+
+// What a cloud AI does, except that DNS for *.mcp.agent-inbox.ai points at
+// the local relay port. The URL, SNI and certificate checks are the real ones.
+function fetchViaRelay(ca) {
+  return async (input, init = {}) => {
+    const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+    if (!url.hostname.endsWith(".mcp.agent-inbox.ai")) {
+      // The local API limits requests per IP; this run has made many.
+      for (let tries = 0; ; tries++) {
+        const r = await fetch(input, init);
+        if (r.status !== 429 || tries >= 12) return r;
+        await sleep(10_000);
+      }
+    }
+    const headers = Object.fromEntries(new Headers(init.headers ?? {}));
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        host: "127.0.0.1",
+        port: RELAY_PORT,
+        servername: url.hostname,
+        ca,
+        method: init.method ?? "GET",
+        path: url.pathname + url.search,
+        headers: { ...headers, host: url.hostname },
+      }, (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const pairs = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => [k, x]) : [[k, String(v)]]));
+          const empty = chunks.length === 0 || [204, 304].includes(res.statusCode);
+          resolve(new Response(empty ? null : Buffer.concat(chunks), { status: res.statusCode, headers: pairs }));
+        });
+      });
+      req.on("error", reject);
+      if (init.body) req.write(typeof init.body === "string" ? init.body : Buffer.from(init.body));
+      req.end();
+    });
+  };
+}
+
+async function relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth }) {
+  step("relay: Pebble, the relay, and a gateway that gets its own certificate");
+  const gobin = path.join(os.homedir(), "go/bin");
+  const pebbleSrc = path.join(execFileSync("go", ["env", "GOMODCACHE"]).toString().trim(), "github.com/letsencrypt/pebble/v2@v2.10.1");
+  const minica = fs.readFileSync(path.join(pebbleSrc, "test/certs/pebble.minica.pem"));
+
+  // DNS for Pebble's validation: every name is 127.0.0.1.
+  const dnsLog = path.join(WORK, "challtestsrv.log");
+  relayProcs.push(spawn(path.join(gobin, "pebble-challtestsrv"), [
+    "-defaultIPv4", "127.0.0.1", "-defaultIPv6", "", "-dnsserver", "127.0.0.1:8053",
+    "-http01", "", "-https01", "", "-tlsalpn01", "", "-doh", "", "-management", "127.0.0.1:8055",
+  ], logTo(dnsLog)));
+  const pebbleConfig = path.join(WORK, "pebble-config.json");
+  fs.writeFileSync(pebbleConfig, JSON.stringify({
+    pebble: {
+      listenAddress: "127.0.0.1:14000",
+      managementListenAddress: "127.0.0.1:15000",
+      certificate: path.join(pebbleSrc, "test/certs/localhost/cert.pem"),
+      privateKey: path.join(pebbleSrc, "test/certs/localhost/key.pem"),
+      httpPort: 5002,
+      tlsPort: RELAY_PORT, // TLS-ALPN-01 goes to the relay, which passes it to the computer
+      ocspResponderURL: "",
+      externalAccountBindingRequired: false,
+    },
+  }));
+  const pebbleLog = path.join(WORK, "pebble.log");
+  relayProcs.push(spawn(path.join(gobin, "pebble"), ["-config", pebbleConfig, "-dnsserver", "127.0.0.1:8053"], {
+    ...logTo(pebbleLog),
+    env: { ...process.env, PEBBLE_VA_NOSLEEP: "1", PEBBLE_WFE_NONCEREJECT: "0" },
+  }));
+  await waitForLog(pebbleLog, "ACME directory available", 20, "Pebble did not start");
+
+  // The relay's own certificate (Let's Encrypt in production).
+  const pki = path.join(WORK, "relay-pki");
+  fs.mkdirSync(pki, { recursive: true });
+  const ossl = (args) => execFileSync("openssl", args, { cwd: pki, stdio: ["ignore", "pipe", "pipe"] });
+  ossl(["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "1", "-subj", "/CN=e2e relay CA"]);
+  ossl(["req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-keyout", "relay.key", "-out", "relay.csr", "-subj", "/CN=relay.agent-inbox.ai"]);
+  fs.writeFileSync(path.join(pki, "ext.cnf"), "basicConstraints=critical,CA:FALSE\nsubjectAltName=DNS:relay.agent-inbox.ai\nextendedKeyUsage=serverAuth\n");
+  ossl(["x509", "-req", "-in", "relay.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", "relay.pem", "-days", "1", "-extfile", "ext.cnf"]);
+
+  const key = expectStatus(await api("GET", "/mcp-relay/ticket-key"), [200], "ticket key (is AGENT_INBOX_RELAY_TICKET_KEY set on the API?)");
+  const relayLog = path.join(WORK, "relay.log");
+  relayProcs.push(spawn(RELAY_BIN, [], {
+    ...logTo(relayLog),
+    env: {
+      PATH: process.env.PATH,
+      RELAY_LISTEN: `127.0.0.1:${RELAY_PORT}`,
+      RELAY_TICKET_PUBLIC_KEY: key.x,
+      RELAY_TLS_CERT: path.join(pki, "relay.pem"),
+      RELAY_TLS_KEY: path.join(pki, "relay.key"),
+    },
+  }));
+  await waitForLog(relayLog, "listening", 20, "relay did not start");
+
+  const gwLog = path.join(WORK, "mcp-relay-gateway.log");
+  const acmeCache = path.join(WORK, "acme");
+  relayProcs.push(spawn(GATEWAY_BIN, [
+    "--llm-socket", path.join(sockDir, "mcp-relay.sock"),
+    "--signer-socket", stackEnv.AGENT_INBOX_SIGNER_SOCKET,
+    "--api-url", API,
+    "--mcp-relay", `127.0.0.1:${RELAY_PORT}`,
+    "--mcp-relay-ca", path.join(pki, "ca.pem"),
+    "--mcp-acme-directory", "https://localhost:14000/dir",
+    "--mcp-acme-ca", path.join(pebbleSrc, "test/certs/pebble.minica.pem"),
+    "--mcp-acme-cache", acmeCache,
+  ], logTo(gwLog)));
+  await waitForLog(gwLog, "Connected to the relay as", 30, "the gateway did not connect to the relay");
+  const host = fs.readFileSync(gwLog, "utf8").match(/Connected to the relay as (\S+)/)[1];
+  if (!/^[a-km-np-z2-9]{10}\.mcp\.agent-inbox\.ai$/.test(host)) fail("unexpected MCP host", host);
+  console.log(`  connected as ${host}`);
+  await waitForLog(gwLog, "DeployedNewCert", 60, "no certificate");
+  if ((fs.statSync(acmeCache).mode & 0o777) !== 0o700) fail("the ACME cache is not 0700");
+  console.log("  certificate issued by Pebble through the relay (TLS-ALPN-01)");
+
+  // Trust only Pebble's root for the MCP host: the chain must verify for
+  // this name, which only the computer holds the key for.
+  const root = await httpsGet("https://localhost:15000/roots/0", minica);
+  const relayFetch = fetchViaRelay(root);
+  const relayUrl = `https://${host}/mcp`;
+  const prm = await (await relayFetch(`https://${host}/.well-known/oauth-protected-resource/mcp`)).json();
+  if (prm.resource !== relayUrl || prm.authorization_servers?.[0] !== API) fail("protected resource metadata via the relay", prm);
+
+  step("relay: the OAuth client reads and drafts at https://<id>.mcp.agent-inbox.ai");
+  const { client } = await oauthConnect(makeProvider(), undefined, relayUrl, relayFetch);
+  const read = await callOauth(client, "read_message", { message_id: sent.message_id });
+  if (read.error || read.value.subject !== "Lunch on Friday?") fail("read via the relay", read);
+  const draft = await callOauth(client, "create_draft", { reply_to_message_id: sent.message_id, body: "Drafted through the relay." });
+  if (draft.error) fail("draft via the relay", draft);
+  await client.close();
+  expectStatus(await api("DELETE", `/agent-drafts/${draft.value.draft_id}`, { auth: human }), [204], "discard");
+  console.log("  read and drafted");
+
+  step("relay: names nobody holds go nowhere");
+  const nobody = "abcdefghij.mcp.agent-inbox.ai";
+  const refused = await relayFetch(`https://${nobody}/mcp`).then(() => false, () => true);
+  if (!refused) fail("the relay answered for a name nobody holds");
+  const counts = fs.readFileSync(relayLog, "utf8");
+  // Only its own listen line may carry an address; no computer's name.
+  const lines = counts.split("\n").filter((l) => l && !l.includes("listening on"));
+  if (counts.includes(host) || lines.some((l) => /\d+\.\d+\.\d+\.\d+/.test(l))) fail("the relay logged a host or an address", counts);
+  console.log("  refused; the relay log names no host and no address");
+}
+
 function cleanup() {
   if (process.env.KEEP) return;
   try {
     gateway?.kill();
     oauthGateway?.kill();
+    for (const p of relayProcs) p.kill();
   } catch {}
   if (stackDir) {
     try {

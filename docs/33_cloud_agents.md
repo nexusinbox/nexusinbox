@@ -69,7 +69,7 @@
 |---|---|---|
 | 1. パソコン側の MCP の入口 | ゲートウェイに Streamable HTTP の MCP (今の 6 つのツール、送信は下書き → 人の確認) を足す。トークンは API に問い合わせて確かめる。手元の自己署名の証明書と、公式の MCP クライアント (Inspector / SDK) で確かめる | なし |
 | 2. OAuth 2.1 | API に認可サーバ (メタデータ、クライアント登録、同意画面、トークン、取り消し、監査ログ) を足す。パソコン側は Protected Resource Metadata で API を指す | 本番 API のデプロイ |
-| 3. 中継 | SNI を見て TCP をそのまま流す中継サーバと、パソコンからの外向きの常時接続。証明書はパソコンが TLS-ALPN-01 で自分で取る | `*.mcp.nexusinbox.ai` の DNS、Fly の新しいアプリ |
+| 3. 中継 | SNI を見て TCP をそのまま流す中継サーバと、パソコンからの外向きの常時接続。証明書はパソコンが TLS-ALPN-01 で自分で取る | `*.mcp.agent-inbox.ai` の DNS (別ドメイン、§11.1)、Fly の新しいアプリ |
 | 4. 画面 | エージェントの「いまの状態」に「クラウドの AI からつなぐ」(URL と許可の手順、事業者が本文を読むことの説明) | 本番 Web のデプロイ (画面案を先に見せる) |
 | 5. 実機の確認 | Muse / dots / Grok Bot の実際のコネクタでつなぐ | 運営者のアカウントで行う |
 
@@ -126,7 +126,7 @@
 
 | 役割 (MCP の認可仕様) | どこ |
 |---|---|
-| リソースサーバ | パソコンのゲートウェイ (`<id>.mcp.nexusinbox.ai/mcp`、段階 3 までは手元の URL) |
+| リソースサーバ | パソコンのゲートウェイ (`<id>.mcp.agent-inbox.ai/mcp`、§11。段階 3 までは手元の URL) |
 | 認可サーバ | NexusInbox の API (`https://api.nexusinbox.ai`) |
 | 許可の画面 | Web (`https://app.nexusinbox.ai/oauth/authorize`)。World ID のログインを使う |
 | クライアント | Muse などのアプリ |
@@ -172,3 +172,91 @@
 - 確かめたこと: `scripts/e2e_remote_mcp_drafts.mjs` の OAuth の段で、公式の MCP SDK (1.32.2) の OAuth 付きクライアントが、401 → 案内 → 登録 → 許可 → トークン → 読む・下書きまで通った。読むだけの許可では下書きを断る。本物のブラウザで許可の画面を開き、「許可する」でアプリの戻り先にコード・`state`・`iss` が渡ること、「つながっている AI」から切れることも確かめた。API の DB テスト (`oauth_db_integration_test.rs`) で、他人のパソコン・知らない戻り先・送る権限・plain の PKCE・コードの使い回し・リフレッシュの使い回し・30 日の放置を確かめた
 - 切ってから止まるまで、パソコンが覚えている間 (最大 60 秒) かかる。画面にもそう書いた
 - 未対応: ブラウザの中で OAuth を行うクライアント向けの CORS (MCP Inspector など)。Muse やほかの事業者のクライアントはサーバ側で行う想定。実機で必要になったら足す
+
+## 11. 段階 3: 中継 (2026-11-09)
+
+運営者の承認: 入口は別ドメインの `agent-inbox.ai` (旧名で持っていたもの)、設計を書いてから手元で実装 (「OK」)。DNS と Fly の新アプリは、実行の直前にもう一度確認を取る。
+
+### 11.1 入口を別ドメインにする理由
+
+`<id>.mcp.…` の証明書と鍵は利用者のパソコンが持ち、TLS をほどくのもパソコンなので、その名前の下で何を返すかは利用者が決められる。本番のログイン Cookie は `Domain=.nexusinbox.ai` (app と api で共有) なので、`<id>.mcp.nexusinbox.ai` にすると次のことが起きる。
+
+- 悪意のある利用者が自分の入口のリンクを送ると、開いた人のブラウザが NexusInbox のセッション Cookie を平文でその人のパソコンに渡す (HttpOnly / Secure でも止まらない)
+- Cookie をホスト限定にしても、サブドメインから `.nexusinbox.ai` に Cookie を書き込める。ブラウザはサブドメインを同じサイトとみなすので SameSite も効かない
+- 誰かが入口でフィッシングを配ると、Safe Browsing などが `nexusinbox.ai` ごと止めることがある
+- Let's Encrypt の新規発行 (登録ドメインあたり週 50 枚) を本体と取り合う
+
+`agent-inbox.ai` の確認 (2026-11-09): Cloudflare の DNS、Cloudflare Registrar (期限 2028-04-11)。`agent-inbox.ai`・`www`・`app` は `app.nexusinbox.ai` への転送だけで、Cookie もメールも無い。改名 (2026-04) 前の Cookie は 14 日で切れている。
+
+守ること:
+
+- `agent-inbox.ai` には、ログインや Cookie を使うものを今後も置かない (転送だけ)
+- `mcp.agent-inbox.ai` に CAA (`0 issue "letsencrypt.org"`、`0 issuewild ";"`) を置く。本体と `app` の証明書には影響しない
+- 自動更新を有効にしておく (止まると入口が全部止まる)
+- 改名前の名残の `api.agent-inbox.ai` (Fly の旧アドレスを指したまま) は消す (運営者が Cloudflare で行う)
+
+### 11.2 名前
+
+| 名前 | 中身 |
+|---|---|
+| `<id>.mcp.agent-inbox.ai` | クラウドの AI がつなぐ入口。`<id>` は API が割り当てる 10 文字 (`[a-km-np-z2-9]`、50 bit)。DNS はワイルドカード、プロキシなし |
+| `relay.agent-inbox.ai` | パソコンが外向きにつなぐ先。中継が自分で TLS をほどく |
+
+API は `AGENT_INBOX_MCP_RESOURCE_DOMAIN=mcp.agent-inbox.ai` で URL を割り当てる (既定もこれに変える)。
+
+### 11.3 しくみ
+
+```
+クラウドの AI ──TLS (SNI=<id>.mcp.agent-inbox.ai)──▶ 中継 :443 ──そのまま──▶ パソコンのゲートウェイ (TLS をほどく)
+                                                       ▲
+パソコン ──TLS (SNI=relay.agent-inbox.ai)、入場券──────┘ (外向きの常時接続の上に、接続ごとのストリームを多重化)
+```
+
+1. ゲートウェイは起動時に、今と同じく `POST /mcp-resources` で入口の URL を受け取る
+2. API に入場券を頼む (`POST /mcp-resources/relay-ticket`、エージェントトークン + DPoP)。入場券は API の署名 (Ed25519 の JWS) で、中身は `<id>`、宛先 `relay.agent-inbox.ai`、期限 2 分、そしてゲートウェイの DPoP 鍵の指紋 (`cnf.jkt`)。API は、その入口を登録したクレデンシャルにだけ出す
+3. ゲートウェイは `relay.agent-inbox.ai:443` に TLS でつなぎ (ALPN `nexusinbox-relay/1`)、入場券と、DPoP 鍵でこの TLS 接続に署名したもの (TLS exporter の値への署名) を送る。中継は次を確かめる: API の公開鍵での署名、期限、宛先、指紋が署名した鍵と一致、exporter の値が自分の接続と一致。入場券だけ盗んでも、別の接続では使えない
+4. 通ったら、その接続の上で多重化 (yamux) を始め、`<id>` → この接続、を覚える。同じ `<id>` で新しくつながったら新しい方に切り替える (古い方は流れているものが終わるまで残す)。1 時間でつなぎ直す (新しい入場券)
+5. クラウドの AI が `<id>.mcp.agent-inbox.ai:443` につなぐと、中継は ClientHello の SNI だけを読み、該当するパソコンにストリームを開いて、読んだ分も含めてバイトをそのまま流す。TLS はほどかない。SNI が無い・形が違う・つながっているパソコンが無いときは閉じる
+6. ゲートウェイはストリームごとに TLS をほどき、今の MCP の入口 (`/mcp`、PRM) をそのまま返す
+7. 証明書: ゲートウェイが Let's Encrypt の TLS-ALPN-01 で自分の `<id>.mcp.agent-inbox.ai` を取る。検証の接続も中継を通ってパソコンに届き、パソコンが答える。証明書と鍵は `~/.nexusinbox/<slug>/acme/` に 0600 で置き、期限の 30 日前に取り直す
+
+中継の自分の証明書 (`relay.agent-inbox.ai`) も同じ TLS-ALPN-01 で取り、Fly のボリュームに置く (再起動のたびに取り直して上限に当たらないように)。
+
+### 11.4 運営が持つもの・見えるもの
+
+- 中継が見るのは、どの `<id>` に、いつ、どの IP から、どれだけの量が流れたかだけ。中身は暗号のまま。ログは数の集計とエラーだけにし、接続ごとの IP や `<id>` は書かない
+- 中継は DB も秘密も持たない (自分の証明書と、API の公開鍵だけ)。入場券は短命で、使い捨てでなくても指紋と接続に縛られている
+- 前提として残ること: 運営は DNS と中継を持つので、その気になれば `<id>` の証明書を取って間に入れる。これは C の形の限界で、発行は CT ログに必ず残るので後から分かる。パソコンが自分の名前の CT ログを見張るしくみは後で足す
+- 証明書の発行は CT ログに載るので、`<id>` の数 (= 使っている人の数のおおよそ) は外から見える。`<id>` はランダムなので、誰かは分からない
+
+### 11.5 乱用と負荷への備え
+
+- 公開側: ClientHello を読むのは 5 秒・16 KB まで。IP ごとの同時接続、`<id>` ごとの同時ストリーム (32)、全体の上限を置く。何も流れない接続は 5 分で閉じる
+- 中継側の接続: `<id>` ごとに 1 本 (新しい方が勝つ)。入場券の確認に失敗した IP は少し待たせる
+- Fly の PROXY protocol で元の IP を受け取り、IP ごとの上限に使う
+- Let's Encrypt の上限: 新規は登録ドメインあたり週 50 枚 (更新は別枠)。超えそうになったら Public Suffix List への登録か、上限の引き上げを申し込む
+
+### 11.6 Fly
+
+- アプリ `nexusinbox-mcp-relay`、東京、shared-cpu-1x 256 MB を 1 台、止めない
+- 専用 IPv4 (生の TCP を 443 で受けるため) と IPv6。サービスは内側の 8443 → 外の 443、`handlers` なしで PROXY protocol だけ
+- 1 GB のボリューム (中継自身の証明書)
+- 費用の目安: 月 $4〜5 (VM 約 $2、専用 IPv4 $2、ボリューム $0.15、転送量)
+- 1 台なので、デプロイのたびに数秒切れる。ゲートウェイはつなぎ直す
+
+### 11.7 進め方
+
+1. 中継 (`services/mcp-relay`、Rust): SNI の振り分け、入場券の確認、多重化、上限
+2. API: 入場券 (`POST /mcp-resources/relay-ticket`)、署名鍵 `AGENT_INBOX_RELAY_TICKET_KEY`、入口の既定のドメインを `mcp.agent-inbox.ai` に
+3. ゲートウェイ: `--mcp-relay relay.agent-inbox.ai:443`。入場券を取ってつなぎ、ストリームごとに TLS をほどいて今の MCP の入口を返す。証明書の自動取得
+4. 手元で通しで確かめる: Pebble (Let's Encrypt のテスト用 ACME サーバ) + 中継 + ゲートウェイ + 公式の MCP SDK の OAuth 付きクライアント
+5. 外部の変更 (要確認): DNS (`*.mcp` と `relay`、CAA)、Fly のアプリ・IP・ボリューム、API の秘密 (署名鍵) と設定。Let's Encrypt はまず staging で確かめてから本番に切り替える
+
+### 11.8 実装 (手元で確認済み、2026-11-09)
+
+- 中継 `services/mcp-relay` (`nexusinbox-relay`): SNI は自前の小さなパーサで読む (複数レコードにまたがる ClientHello も可)。`relay.agent-inbox.ai` だけ自分で TLS をほどき (固定の証明書か、rustls-acme で TLS-ALPN-01)、入場券と証明を確かめてから yamux を始める。ログは 10 分ごとの数だけ。`Dockerfile` と `fly.toml` は用意したが、まだ出していない
+- API: `POST /mcp-resources/relay-ticket` (DPoP に縛られたエージェントトークンだけ。Bearer だけのトークンには出さない)、`GET /mcp-relay/ticket-key` (中継に設定する公開鍵)。鍵は `AGENT_INBOX_RELAY_TICKET_KEY` (32 バイト、base64url)。入口は `mcp.agent-inbox.ai` の下に割り当てる。名前を指定せずに頼まれたとき、今の URL が手元の確かめ用か旧ドメイン (`mcp.nexusinbox.ai`) なら、新しく割り当て直す
+- ゲートウェイ: `--mcp-relay <host[:port]> --mcp-acme-cache <dir>`。証明書の注文は、中継への最初の接続ができてから始める (検証の接続が届くように)。中継の TTL の 2 分前に新しい接続を張り、古い方は最大 10 分、流れているものを運び終えるまで残す。`--mcp-listen` (ループバック) と同時に使える
+- 確かめたこと: `RELAY=1 node scripts/e2e_remote_mcp_drafts.mjs` で、Pebble (Let's Encrypt のテスト用 CA) + 中継 + ゲートウェイ + 公式の MCP SDK の OAuth 付きクライアントを通した。ゲートウェイが中継越しの TLS-ALPN-01 で `<id>.mcp.agent-inbox.ai` の証明書を取り、クライアントは Pebble のルートだけを信じて `https://<id>.mcp.agent-inbox.ai/mcp` に OAuth でつなぎ、読む・下書きができた。誰も持っていない名前は中継が閉じる。中継のログに名前とアドレスは出ない。単体テスト: 中継 15 (SNI、入場券の偽造・使い回し・別の鍵・期限、PROXY ヘッダ、アイドル)、API の DB テストに入場券 1
+- 本番 (2026-11-09): API に `AGENT_INBOX_RELAY_TICKET_KEY` (運営者が設定、公開鍵は `fly.toml` に)。Fly アプリ `nexusinbox-mcp-relay` (東京、専用 IPv4 `137.66.2.20`、IPv6 `2a09:8280:1::1f2:5e3d:0`、ボリューム `relay_data`)。DNS (`relay` と `*.mcp` は DNS のみ、`mcp` に CAA `0 issue "letsencrypt.org"`)。中継の証明書は Let's Encrypt の staging で取れることを確かめてから本番に切り替えた (最初の 1 回は DNS の反映前で失敗し、自動で取り直した)。外から `relay.agent-inbox.ai` の証明書の検証が通り、持ち主のいない `<id>.mcp` は閉じられることを確かめた
+- まだ: パソコンを本番の中継につないで確かめる (§11.7 の 5 の残り)、`nexusinbox connect` から中継を使う設定 (段階 4 の画面と一緒に)、CT ログの見張り

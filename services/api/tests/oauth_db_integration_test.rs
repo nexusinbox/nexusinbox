@@ -461,7 +461,7 @@ async fn a_computer_gets_one_stable_mcp_url() {
     let pool = db!();
     let s = setup(pool, "0xoauth-1", 0x61).await;
     assert!(
-        s.resource.starts_with("https://") && s.resource.ends_with(".mcp.nexusinbox.ai/mcp"),
+        s.resource.starts_with("https://") && s.resource.ends_with(".mcp.agent-inbox.ai/mcp"),
         "{}",
         s.resource
     );
@@ -728,4 +728,161 @@ async fn idle_grants_stop_working_and_are_cleaned_up() {
         .await
         .unwrap();
     assert_eq!(left, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Relay tickets (docs/33 §11.3)
+// ---------------------------------------------------------------------------
+
+fn jkt_of(key: &SigningKey) -> String {
+    let x = URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes());
+    let canonical = format!(r#"{{"crv":"Ed25519","kty":"OKP","x":"{x}"}}"#);
+    URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes()))
+}
+
+fn dpop_proof(key: &SigningKey, method: &str, path: &str, access: &str) -> String {
+    let header = json!({
+        "typ": "dpop+jwt",
+        "alg": "EdDSA",
+        "jwk": { "kty": "OKP", "crv": "Ed25519",
+                 "x": URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()) },
+    });
+    let claims = json!({
+        "htm": method,
+        "htu": path,
+        "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(access.as_bytes())),
+        "iat": chrono::Utc::now().timestamp(),
+        "jti": Uuid::new_v4().to_string(),
+    });
+    let input = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    let sig = key.sign(input.as_bytes());
+    format!("{input}.{}", URL_SAFE_NO_PAD.encode(sig.to_bytes()))
+}
+
+async fn dpop_call(
+    app: &axum::Router,
+    key: &SigningKey,
+    access: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .header("authorization", format!("DPoP {access}"))
+                .header("dpop", dpop_proof(key, method, path, access))
+                .header("content-type", "application/json")
+                .body(Body::from(body.map(|b| b.to_string()).unwrap_or_default()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+const RELAY_KEY_SEED: [u8; 32] = [0x42; 32];
+
+#[tokio::test]
+#[serial]
+async fn relay_tickets_are_bound_to_the_computers_dpop_key() {
+    let pool = db!();
+    std::env::set_var(
+        "AGENT_INBOX_RELAY_TICKET_KEY",
+        URL_SAFE_NO_PAD.encode(RELAY_KEY_SEED),
+    );
+    let s = setup(pool, "0xoauth-relay", 0x71).await;
+
+    // A plain bearer token is not enough: the relay needs a key to check.
+    let (status, body) = call(
+        &s.app,
+        "POST",
+        "/mcp-resources/relay-ticket",
+        &s.agent,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // Bind the same token to a DPoP key.
+    let dpop_key = SigningKey::from_bytes(&[0x37; 32]);
+    let access = s.agent.trim_start_matches("Bearer ").to_string();
+    sqlx::query("UPDATE agent_tokens SET dpop_jkt = $1 WHERE access_hash = $2")
+        .bind(jkt_of(&dpop_key))
+        .bind(sha256_hex(&access))
+        .execute(&s.pool)
+        .await
+        .unwrap();
+    let (status, body) = dpop_call(
+        &s.app,
+        &dpop_key,
+        &access,
+        "POST",
+        "/mcp-resources/relay-ticket",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let host = s
+        .resource
+        .trim_start_matches("https://")
+        .trim_end_matches("/mcp");
+    assert_eq!(body["host"], host);
+    assert_eq!(body["relay"], "relay.agent-inbox.ai");
+
+    // The ticket verifies with the published key and carries the binding.
+    let (status, jwk) = call(&s.app, "GET", "/mcp-relay/ticket-key", "", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let x: [u8; 32] = URL_SAFE_NO_PAD
+        .decode(jwk["x"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(&x).unwrap();
+    let ticket = body["ticket"].as_str().unwrap();
+    let (input, sig) = ticket.rsplit_once('.').unwrap();
+    let sig: [u8; 64] = URL_SAFE_NO_PAD.decode(sig).unwrap().try_into().unwrap();
+    vk.verify_strict(
+        input.as_bytes(),
+        &ed25519_dalek::Signature::from_bytes(&sig),
+    )
+    .unwrap();
+    let claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(input.split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(claims["sub"], host);
+    assert_eq!(claims["aud"], "relay.agent-inbox.ai");
+    assert_eq!(claims["cnf"]["jkt"], jkt_of(&dpop_key));
+    assert!(claims["exp"].as_u64().unwrap() <= claims["iat"].as_u64().unwrap() + 120);
+
+    // A person's session gets none, and without a key there are none at all.
+    let human = seed_session(&s.pool, s.me.user_id, "0xoauth-relay", "orb").await;
+    let (status, _) = call(&s.app, "POST", "/mcp-resources/relay-ticket", &human, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    std::env::remove_var("AGENT_INBOX_RELAY_TICKET_KEY");
+    let (status, _) = dpop_call(
+        &s.app,
+        &dpop_key,
+        &access,
+        "POST",
+        "/mcp-resources/relay-ticket",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }

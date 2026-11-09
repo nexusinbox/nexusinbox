@@ -509,7 +509,7 @@ fn resource_domain() -> String {
         .ok()
         .map(|d| d.trim().trim_matches('.').to_ascii_lowercase())
         .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| "mcp.nexusinbox.ai".to_string())
+        .unwrap_or_else(|| "mcp.agent-inbox.ai".to_string())
 }
 
 fn new_resource_url() -> String {
@@ -569,7 +569,13 @@ pub(crate) async fn register_mcp_resource(
             .await
             .map_err(|error| internal_error("failed to look up the MCP URL", error))?;
     if let Some(existing) = existing {
-        if wanted.as_deref().is_none_or(|w| w == existing) {
+        // Asking without a name keeps the assigned URL, unless it is a local
+        // test URL or one from before the relay's domain (docs/33 §11.2).
+        let keep = match wanted.as_deref() {
+            Some(w) => w == existing,
+            None => relay_hostname(&existing).is_some(),
+        };
+        if keep {
             return Ok(Json(serde_json::json!({ "resource": existing })));
         }
         sqlx::query("DELETE FROM mcp_resources WHERE credential_id = $1")
@@ -605,6 +611,138 @@ pub(crate) async fn register_mcp_resource(
         return Err(conflict_error("that MCP URL is taken"));
     }
     Ok(Json(serde_json::json!({ "resource": resource })))
+}
+
+// ---------------------------------------------------------------------------
+// Relay tickets (docs/33 §11.3)
+// ---------------------------------------------------------------------------
+
+const RELAY_TICKET_TTL_SECS: u64 = 120;
+
+fn relay_host() -> String {
+    std::env::var("AGENT_INBOX_RELAY_HOST")
+        .ok()
+        .map(|h| h.trim().to_ascii_lowercase())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "relay.agent-inbox.ai".to_string())
+}
+
+/// The API's Ed25519 key for relay tickets: 32 bytes, base64url, in
+/// `AGENT_INBOX_RELAY_TICKET_KEY`. Without it the API issues no tickets.
+fn relay_ticket_key() -> Option<ed25519_dalek::SigningKey> {
+    let raw = std::env::var("AGENT_INBOX_RELAY_TICKET_KEY").ok()?;
+    let bytes = URL_SAFE_NO_PAD.decode(raw.trim()).ok()?;
+    let seed: [u8; 32] = bytes.try_into().ok()?;
+    Some(ed25519_dalek::SigningKey::from_bytes(&seed))
+}
+
+fn relay_unavailable() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ErrorResponse {
+            error: "relay_unavailable".to_string(),
+            message: "the relay is not set up on this server".to_string(),
+        }),
+    )
+}
+
+/// The host a relay ticket names, taken from an assigned MCP URL. Only URLs
+/// under the relay's domain qualify; local test URLs never do.
+fn relay_hostname(resource: &str) -> Option<String> {
+    let url = reqwest::Url::parse(resource).ok()?;
+    if url.scheme() != "https" || url.port().is_some() || url.path() != "/mcp" {
+        return None;
+    }
+    let host = url.host_str()?.to_ascii_lowercase();
+    let suffix = format!(".{}", resource_domain());
+    let id = host.strip_suffix(&suffix)?;
+    let ok = id.len() == 10
+        && id
+            .bytes()
+            .all(|b| b"abcdefghijkmnpqrstuvwxyz23456789".contains(&b));
+    ok.then_some(host)
+}
+
+fn sign_relay_ticket(key: &ed25519_dalek::SigningKey, host: &str, jkt: &str, now: u64) -> String {
+    use ed25519_dalek::Signer;
+    let header = serde_json::json!({ "alg": "EdDSA", "typ": "nexusinbox-relay-ticket+jwt" });
+    let claims = serde_json::json!({
+        "aud": relay_host(),
+        "sub": host,
+        "cnf": { "jkt": jkt },
+        "iat": now,
+        "exp": now + RELAY_TICKET_TTL_SECS,
+    });
+    let input = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    let signature = key.sign(input.as_bytes());
+    format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()))
+}
+
+/// GET /mcp-relay/ticket-key — the public key the relay checks tickets
+/// with. Public by design; the relay is configured with it once.
+pub(crate) async fn relay_ticket_public_key(
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let key = relay_ticket_key().ok_or_else(relay_unavailable)?;
+    Ok(Json(serde_json::json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()),
+    })))
+}
+
+/// POST /mcp-resources/relay-ticket — a short-lived ticket that lets this
+/// computer take its own MCP host on the relay. It is bound to the DPoP key
+/// of the calling token, so the relay can require proof of that key on the
+/// very connection that presents it.
+pub(crate) async fn relay_ticket(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    let AuthContext::Agent { credential_id, .. } = &ctx else {
+        return Err(forbidden_error("the computer asks for its relay ticket"));
+    };
+    ctx.require_scope("messages.read")?;
+    let key = relay_ticket_key().ok_or_else(relay_unavailable)?;
+    let pool = oauth_pool(&state).await?;
+
+    let token = token_from_headers(&headers);
+    let jkt: Option<String> =
+        sqlx::query_scalar("SELECT dpop_jkt FROM agent_tokens WHERE access_hash = $1")
+            .bind(sha256_hex(token.as_bytes()))
+            .fetch_optional(&pool)
+            .await
+            .map_err(|error| internal_error("failed to look up the token", error))?;
+    let jkt = jkt
+        .filter(|j| j != "none")
+        .ok_or_else(|| forbidden_error("the relay needs a DPoP-bound token"))?;
+
+    let resource: Option<String> =
+        sqlx::query_scalar("SELECT resource FROM mcp_resources WHERE credential_id = $1")
+            .bind(credential_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|error| internal_error("failed to look up the MCP URL", error))?;
+    let resource = resource.ok_or_else(|| not_found_error("register the MCP URL first"))?;
+    let host = relay_hostname(&resource)
+        .ok_or_else(|| validation_error("this MCP URL is not served through the relay"))?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(Json(serde_json::json!({
+        "ticket": sign_relay_ticket(&key, &host, &jkt, now),
+        "relay": relay_host(),
+        "host": host,
+        "expires_in": RELAY_TICKET_TTL_SECS,
+    })))
 }
 
 // ---------------------------------------------------------------------------

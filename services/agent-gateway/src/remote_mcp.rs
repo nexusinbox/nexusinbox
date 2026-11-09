@@ -81,33 +81,55 @@ struct Caller {
 /// speaks plain HTTP, so it must not be reachable from the network.
 pub async fn serve(
     gateway: Arc<GatewayState>,
-    listen: SocketAddr,
+    listen: Option<SocketAddr>,
     static_token: Option<String>,
     public_url: Option<String>,
+    relay: Option<crate::relay_client::Options>,
 ) -> Result<(), String> {
-    if !listen.ip().is_loopback() {
-        return Err(format!(
-            "--mcp-listen must be a loopback address for now (got {listen}); \
-             remote access goes through the relay (docs/33 §7)"
-        ));
+    if let Some(listen) = listen {
+        if !listen.ip().is_loopback() {
+            return Err(format!(
+                "--mcp-listen must be a loopback address (got {listen}); \
+                 remote access goes through the relay (--mcp-relay, docs/33 §11)"
+            ));
+        }
+    }
+    if relay.is_some() && public_url.is_some() {
+        return Err(
+            "--mcp-public-url is for local tests; with --mcp-relay the API assigns the URL".into(),
+        );
     }
     // Ask the API for this computer's MCP URL (or, in a local test, name it).
     let resource = match register_resource(&gateway, public_url.as_deref()).await {
         Ok(r) => Some(r),
-        Err(e) if static_token.is_some() => {
+        Err(e) if static_token.is_some() && relay.is_none() => {
             eprintln!("[WARN] OAuth is off for the remote MCP endpoint: {e}");
             None
         }
         Err(e) => return Err(format!("could not register the MCP URL: {e}")),
     };
     let state = Arc::new(McpState {
-        gateway,
+        gateway: gateway.clone(),
         token_digest: static_token.map(|t| Sha256::digest(t.as_bytes()).into()),
         resource: resource.clone(),
         client_name: std::sync::Mutex::new(None),
         introspection_cache: std::sync::Mutex::new(HashMap::new()),
     });
     let app = router(state);
+
+    if let Some(opts) = relay {
+        let resource = resource.clone().ok_or("no MCP URL for the relay")?;
+        let app = app.clone();
+        let gateway = gateway.clone();
+        let relayed = tokio::spawn(crate::relay_client::run(gateway, app, resource, opts));
+        if listen.is_none() {
+            return relayed.await.map_err(|e| format!("relay task: {e}"))?;
+        }
+    }
+
+    let Some(listen) = listen else {
+        return Ok(());
+    };
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .map_err(|e| format!("failed to bind {listen}: {e}"))?;
@@ -1042,9 +1064,15 @@ mod tests {
     #[tokio::test]
     async fn non_loopback_listen_is_refused() {
         let gw = Arc::new(crate::test_gateway_state());
-        let err = serve(gw, "0.0.0.0:0".parse().unwrap(), Some("x".repeat(64)), None)
-            .await
-            .unwrap_err();
+        let err = serve(
+            gw,
+            Some("0.0.0.0:0".parse().unwrap()),
+            Some("x".repeat(64)),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
         assert!(err.contains("loopback"));
     }
 

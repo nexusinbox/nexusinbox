@@ -15633,6 +15633,8 @@ fn app_with_state(state: AppState) -> Router {
             axum::routing::delete(oauth::delete_grant),
         )
         .route("/mcp-resources", post(oauth::register_mcp_resource))
+        .route("/mcp-resources/relay-ticket", post(oauth::relay_ticket))
+        .route("/mcp-relay/ticket-key", get(oauth::relay_ticket_public_key))
         .route(
             "/review-keys",
             get(list_review_keys).post(create_review_key),

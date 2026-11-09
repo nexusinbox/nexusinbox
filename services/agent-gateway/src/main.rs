@@ -34,6 +34,7 @@ mod a2a_rust;
 mod auto_reply_executor;
 mod envelope_crypto;
 mod policy_evaluator;
+mod relay_client;
 mod remote_mcp;
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,34 @@ struct Cli {
     /// the API assigns one.
     #[arg(long)]
     mcp_public_url: Option<String>,
+
+    /// Serve the remote MCP endpoint through this relay (`host[:port]`,
+    /// e.g. relay.agent-inbox.ai), so cloud AIs can reach this computer at
+    /// the URL the API assigns (docs/33 §11).
+    #[arg(long)]
+    mcp_relay: Option<String>,
+
+    /// Where this computer keeps its ACME account and certificate (0700).
+    #[arg(long, requires = "mcp_relay")]
+    mcp_acme_cache: Option<std::path::PathBuf>,
+
+    #[arg(
+        long,
+        default_value = "https://acme-v02.api.letsencrypt.org/directory",
+        requires = "mcp_relay"
+    )]
+    mcp_acme_directory: String,
+
+    #[arg(long, requires = "mcp_relay")]
+    mcp_acme_contact: Option<String>,
+
+    /// For local tests: an extra root for the ACME server's TLS.
+    #[arg(long, requires = "mcp_relay")]
+    mcp_acme_ca: Option<std::path::PathBuf>,
+
+    /// For local tests: an extra root for the relay's certificate.
+    #[arg(long, requires = "mcp_relay")]
+    mcp_relay_ca: Option<std::path::PathBuf>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1192,7 +1221,7 @@ async fn main() {
         dpop_public_jwk,
     });
 
-    if let Some(listen) = cli.mcp_listen {
+    if cli.mcp_listen.is_some() || cli.mcp_relay.is_some() {
         let token = cli.mcp_token_file.as_deref().map(|file| {
             remote_mcp::load_or_create_token(file).unwrap_or_else(|e| {
                 eprintln!("[ERROR] {e}");
@@ -1200,9 +1229,25 @@ async fn main() {
             })
         });
         let public_url = cli.mcp_public_url.clone();
+        let relay = match (cli.mcp_relay.clone(), cli.mcp_acme_cache.clone()) {
+            (Some(relay), Some(acme_cache)) => Some(relay_client::Options {
+                relay,
+                relay_ca: cli.mcp_relay_ca.clone(),
+                acme_directory: cli.mcp_acme_directory.clone(),
+                acme_cache,
+                acme_ca: cli.mcp_acme_ca.clone(),
+                acme_contact: cli.mcp_acme_contact.clone(),
+            }),
+            (Some(_), None) => {
+                eprintln!("[ERROR] --mcp-relay needs --mcp-acme-cache");
+                std::process::exit(1);
+            }
+            _ => None,
+        };
+        let listen = cli.mcp_listen;
         let mcp_state = Arc::clone(&state);
         tokio::spawn(async move {
-            if let Err(e) = remote_mcp::serve(mcp_state, listen, token, public_url).await {
+            if let Err(e) = remote_mcp::serve(mcp_state, listen, token, public_url, relay).await {
                 eprintln!("[ERROR] {e}");
                 std::process::exit(1);
             }

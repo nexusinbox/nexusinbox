@@ -1,0 +1,54 @@
+# NexusInbox MCP relay (docs/33 §11.6). App, dedicated IPv4 137.66.2.20,
+# IPv6 2a09:8280:1::1f2:5e3d:0 and volume relay_data created 2026-11-09.
+# Deploy by hand from this directory: fly deploy
+
+app = 'nexusinbox-mcp-relay'
+primary_region = 'nrt'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  RELAY_LISTEN = '[::]:8443'
+  RELAY_HOST = 'relay.agent-inbox.ai'
+  RELAY_MCP_DOMAIN = 'mcp.agent-inbox.ai'
+  RELAY_ACME_CACHE = '/data/acme'
+  # Production Let's Encrypt is the default. Staging was checked first
+  # (2026-11-09); set RELAY_ACME_DIRECTORY to its directory to go back.
+  # Fly's proxy prepends a PROXY v1 header so per-IP limits see the client.
+  RELAY_PROXY_PROTOCOL = 'true'
+  # Public: `x` from https://api.nexusinbox.ai/mcp-relay/ticket-key.
+  # Change it together with AGENT_INBOX_RELAY_TICKET_KEY on the API.
+  RELAY_TICKET_PUBLIC_KEY = 'inSJBNj-yCx4REqC8BzZApdo2ASQiElcRW5BFjVSuis'
+
+[mounts]
+  source = 'relay_data'
+  destination = '/data'
+
+# Raw TCP on 443 (a dedicated IPv4 is needed for that): Fly must not end
+# TLS here, or the relay would see plaintext.
+[[services]]
+  internal_port = 8443
+  protocol = 'tcp'
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 443
+    handlers = ['proxy_proto']
+    proxy_proto_options = { version = 'v1' }
+
+  [services.concurrency]
+    type = 'connections'
+    soft_limit = 3000
+    hard_limit = 4000
+
+  [[services.tcp_checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'

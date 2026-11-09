@@ -46,6 +46,18 @@ async-trait = "0.1"
 # Remote MCP endpoint (docs/33 stage 1)
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 
+# Remote MCP through the relay (docs/33 §11)
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["compat"] }
+yamux = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls-pemfile = "2"
+rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tls12", "webpki-roots"] }
+webpki-roots = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

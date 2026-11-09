@@ -17,15 +17,16 @@ name: CI
 # trust is well-founded — CLAUDE.md + docs/27 codify the same fmt /
 # clippy / test commands the workflow runs, and Rust toolchain
 # differences between local and CI are the only place a green local
-# build can still surface a CI failure (we run on ubuntu-latest's
+# build can still surface a CI failure (CI installs the latest
 # stable; local can lag).
 #
 # Why we still keep `pull_request` *and* `push: main` triggers: the
 # pull_request run is the safety gate before merge; the push run is
 # what `Deploy API` waits on via `workflow_run`. A docs-only push
 # to main lets every job no-op, the workflow still reports success,
-# and Deploy API's own `git diff HEAD^ HEAD` path filter then
-# decides not to deploy. Net effect: docs commits cost ~0 min.
+# and Deploy API's own path filter (diff against the last deployed
+# commit) then decides not to deploy. Net effect: docs commits cost
+# ~0 min.
 
 on:
   pull_request:
@@ -45,7 +46,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# `dorny/paths-filter@v3` reads the changed-files list via the
+# `dorny/paths-filter@v4` reads the changed-files list via the
 # `pull-requests` API on `pull_request` events. The default
 # `GITHUB_TOKEN` on private Hobby repos doesn't carry that scope,
 # so the action fails with "Resource not accessible by integration"
@@ -56,17 +57,12 @@ permissions:
   contents: read
   pull-requests: read
 
-env:
-  # Opt into Node.js 24 runtime for JavaScript actions (checkout, pnpm/action-setup)
-  # to clear the Node 20 deprecation warning ahead of the 2026-09-16 removal.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   changes:
-    runs-on: ubuntu-latest
-    # Resolve the diff once and expose six boolean outputs the
+    runs-on: ubuntu-24.04
+    # Resolve the diff once and expose one boolean output per area the
     # downstream jobs gate on. Cheap (no full source checkout
-    # needed for paths-filter v3 against pull_request events; for
+    # needed for paths-filter against pull_request events; for
     # push it does a shallow checkout under the hood).
     outputs:
       web: ${{ steps.filter.outputs.web }}
@@ -77,9 +73,10 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       signer: ${{ steps.filter.outputs.signer }}
       gateway: ${{ steps.filter.outputs.gateway }}
+      relay: ${{ steps.filter.outputs.relay }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # The packages list is split per consumer. `web` includes the
@@ -152,15 +149,18 @@ jobs:
               - 'services/agent-gateway/**'
               - 'tests/vectors/**'
               - '.github/workflows/ci.yml'
+            relay:
+              - 'services/mcp-relay/**'
+              - '.github/workflows/ci.yml'
 
   node-web:
     needs: changes
     if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -182,11 +182,11 @@ jobs:
   node-mcp:
     needs: changes
     if: needs.changes.outputs.mcp == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -212,11 +212,11 @@ jobs:
   node-ui:
     needs: changes
     if: needs.changes.outputs.ui == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -227,11 +227,11 @@ jobs:
   node-storage-adapters:
     needs: changes
     if: needs.changes.outputs.storage == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -242,11 +242,11 @@ jobs:
   node-contract:
     needs: changes
     if: needs.changes.outputs.contract == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -261,7 +261,7 @@ jobs:
   rust-api:
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/api
@@ -283,7 +283,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # Caches ~/.cargo + target/ keyed on Cargo.lock. Cuts a clean
       # cargo test from ~3-4 min to ~30-60s on cache hit. Per-workspace
@@ -317,12 +317,12 @@ jobs:
   rust-signer-daemon:
     needs: changes
     if: needs.changes.outputs.signer == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/signer-daemon
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -334,16 +334,33 @@ jobs:
   rust-agent-gateway:
     needs: changes
     if: needs.changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/agent-gateway
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: services/agent-gateway
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  rust-mcp-relay:
+    needs: changes
+    if: needs.changes.outputs.relay == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/mcp-relay
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/mcp-relay
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
