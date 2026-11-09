@@ -37,23 +37,63 @@ export function computerStatus(
   aid: string,
   now: number,
 ): ComputerStatus {
-  const computers = credentials.filter(
-    (c) => c.aid === aid && c.status === "active" && c.key_holder === "signer_daemon",
-  );
-  if (computers.length === 0) return { kind: "browser" };
-  // Activating the credential is the computer's first contact; before its
-  // first API call that is all there is.
-  const lastContact = (c: AgentCredential) =>
-    parseServerTime(c.last_used_at) ?? parseServerTime(c.activated_at);
-  let latest = computers[0];
-  for (const c of computers) {
-    if ((lastContact(c) ?? 0) > (lastContact(latest) ?? 0)) latest = c;
-  }
+  const latest = latestComputer(credentials, aid);
+  if (!latest) return { kind: "browser" };
   const seen = lastContact(latest);
   if (seen !== null && now - seen <= CONNECTED_WITHIN_MS) {
     return { kind: "connected", device: latest.label, lastSeenAt: seen };
   }
   return { kind: "silent", device: latest.label, lastSeenAt: seen };
+}
+
+// Activating the credential is the computer's first contact; before its
+// first API call that is all there is.
+function lastContact(c: AgentCredential): number | null {
+  return parseServerTime(c.last_used_at) ?? parseServerTime(c.activated_at);
+}
+
+/** The computer holding this agent's keys that was heard from last. */
+function latestComputer(credentials: AgentCredential[], aid: string): AgentCredential | null {
+  const computers = credentials.filter(
+    (c) => c.aid === aid && c.status === "active" && c.key_holder === "signer_daemon",
+  );
+  let latest: AgentCredential | null = null;
+  for (const c of computers) {
+    if (!latest || (lastContact(c) ?? 0) > (lastContact(latest) ?? 0)) latest = c;
+  }
+  return latest;
+}
+
+/** The computer says every 30 s (5 s while getting ready) whether it serves. */
+export const SERVING_WITHIN_MS = 2 * 60_000;
+
+export type CloudAccessStatus =
+  | { kind: "unavailable" }
+  | { kind: "off"; credentialId: string }
+  | { kind: "preparing"; credentialId: string }
+  | { kind: "ready"; credentialId: string; url: string }
+  | { kind: "stopped"; credentialId: string };
+
+/**
+ * Whether cloud AIs can reach this agent through the relay (docs/33 §12).
+ * It runs on the agent's computer, so a browser-only agent cannot.
+ */
+export function cloudAccessStatus(
+  credentials: AgentCredential[],
+  aid: string,
+  now: number,
+): CloudAccessStatus {
+  const latest = latestComputer(credentials, aid);
+  if (!latest) return { kind: "unavailable" };
+  const credentialId = latest.credential_id;
+  if (!latest.cloud_access) return { kind: "off", credentialId };
+  const seen = lastContact(latest);
+  if (seen === null || now - seen > CONNECTED_WITHIN_MS) return { kind: "stopped", credentialId };
+  const serving = parseServerTime(latest.cloud_serving_at);
+  if (latest.cloud_url && serving !== null && now - serving <= SERVING_WITHIN_MS) {
+    return { kind: "ready", credentialId, url: latest.cloud_url };
+  }
+  return { kind: "preparing", credentialId };
 }
 
 /** Key order does not matter when comparing policies. */

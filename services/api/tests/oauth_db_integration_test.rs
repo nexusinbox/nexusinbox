@@ -194,8 +194,8 @@ async fn seed_agent_token(pool: &PgPool, agent: &UserAgent) -> String {
     let credential_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO agent_credentials \
-           (id, aid, user_id, label, status, signing_public_key, activated_at) \
-         VALUES ($1, $2, $3, 'test', 'active', 'unused', NOW())",
+           (id, aid, user_id, label, status, signing_public_key, activated_at, key_holder) \
+         VALUES ($1, $2, $3, 'test', 'active', 'unused', NOW(), 'signer_daemon')",
     )
     .bind(credential_id)
     .bind(&agent.aid)
@@ -804,6 +804,19 @@ async fn relay_tickets_are_bound_to_the_computers_dpop_key() {
         URL_SAFE_NO_PAD.encode(RELAY_KEY_SEED),
     );
     let s = setup(pool, "0xoauth-relay", 0x71).await;
+    let credential_id: Uuid =
+        sqlx::query_scalar("SELECT credential_id FROM mcp_resources WHERE resource = $1")
+            .bind(&s.resource)
+            .fetch_one(&s.pool)
+            .await
+            .unwrap();
+    // An AI app the person let in through this computer (docs/33 §12 checks
+    // that turning cloud access off disconnects it).
+    let code = consent(&s).await;
+    let (status, tokens) = exchange(&s, &code, VERIFIER).await;
+    assert_eq!(status, StatusCode::OK, "{tokens}");
+    let app_token = tokens["access_token"].as_str().unwrap().to_string();
+    assert_eq!(introspect(&s, &app_token).await["active"], true);
 
     // A plain bearer token is not enough: the relay needs a key to check.
     let (status, body) = call(
@@ -825,15 +838,70 @@ async fn relay_tickets_are_bound_to_the_computers_dpop_key() {
         .execute(&s.pool)
         .await
         .unwrap();
-    let (status, body) = dpop_call(
+    let ticket_call = || {
+        dpop_call(
+            &s.app,
+            &dpop_key,
+            &access,
+            "POST",
+            "/mcp-resources/relay-ticket",
+            None,
+        )
+    };
+    let status_call = |serving: bool| {
+        dpop_call(
+            &s.app,
+            &dpop_key,
+            &access,
+            "POST",
+            "/mcp-resources/relay-status",
+            Some(json!({ "serving": serving })),
+        )
+    };
+
+    // Off until the person turns it on: no ticket, and the computer is told.
+    let (status, body) = ticket_call().await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (status, body) = status_call(true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["enabled"], false);
+    let cloud_access = format!("/agent-credentials/{credential_id}/cloud-access");
+    // Only the person turns it on, not the computer.
+    let (status, _) = dpop_call(
         &s.app,
         &dpop_key,
         &access,
-        "POST",
-        "/mcp-resources/relay-ticket",
-        None,
+        "PUT",
+        &cloud_access,
+        Some(json!({ "enabled": true })),
     )
     .await;
+    assert_ne!(status, StatusCode::OK);
+    let (status, body) = call(
+        &s.app,
+        "PUT",
+        &cloud_access,
+        &s.me.auth,
+        Some(json!({ "enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = status_call(true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["enabled"], true);
+    let (_, list) = call(&s.app, "GET", "/agent-credentials", &s.me.auth, None).await;
+    let mine = list["credentials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["credential_id"] == credential_id.to_string())
+        .unwrap()
+        .clone();
+    assert_eq!(mine["cloud_access"], true, "{mine}");
+    assert_eq!(mine["cloud_url"], s.resource.as_str());
+    assert!(mine["cloud_serving_at"].is_string(), "{mine}");
+
+    let (status, body) = ticket_call().await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let host = s
         .resource
@@ -874,7 +942,71 @@ async fn relay_tickets_are_bound_to_the_computers_dpop_key() {
     let human = seed_session(&s.pool, s.me.user_id, "0xoauth-relay", "orb").await;
     let (status, _) = call(&s.app, "POST", "/mcp-resources/relay-ticket", &human, None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Turning it off closes the door and disconnects the AI apps let in
+    // through this computer.
+    let (status, body) = call(
+        &s.app,
+        "PUT",
+        &cloud_access,
+        &s.me.auth,
+        Some(json!({ "enabled": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["disconnected"], 1);
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT bool_and(revoked_at IS NOT NULL) FROM oauth_grants WHERE resource = $1",
+    )
+    .bind(&s.resource)
+    .fetch_one(&s.pool)
+    .await
+    .unwrap();
+    assert!(revoked);
+    let (status, _) = ticket_call().await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, body) = status_call(true).await;
+    assert_eq!(body["enabled"], false);
+    let serving: Option<String> =
+        sqlx::query_scalar("SELECT cloud_serving_at::text FROM agent_credentials WHERE id = $1")
+            .bind(credential_id)
+            .fetch_one(&s.pool)
+            .await
+            .unwrap();
+    assert_eq!(serving, None);
+
+    // Someone else's computer cannot be switched.
+    let other = seed_user_with_agent(&s.pool, "0xoauth-relay-other", "other", 0x72).await;
+    let (status, _) = call(
+        &s.app,
+        "PUT",
+        &cloud_access,
+        &other.auth,
+        Some(json!({ "enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = call(
+        &s.app,
+        "PUT",
+        &cloud_access,
+        &s.me.auth,
+        Some(json!({ "enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     std::env::remove_var("AGENT_INBOX_RELAY_TICKET_KEY");
+    // Without the relay key it cannot be turned on.
+    let (status, _) = call(
+        &s.app,
+        "PUT",
+        &cloud_access,
+        &s.me.auth,
+        Some(json!({ "enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     let (status, _) = dpop_call(
         &s.app,
         &dpop_key,

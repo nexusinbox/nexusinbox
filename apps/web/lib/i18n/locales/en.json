@@ -1401,6 +1401,36 @@
     }
   },
 
+  "cloudAccess": {
+    "label": "Cloud AIs",
+    "off": "Off",
+    "offSub": "Let AIs that run in the cloud, such as Meta's Muse or Claude, read this agent's inbox and write drafts. They cannot send.",
+    "turnOn": "Turn on",
+    "confirmTitle": "Let cloud AIs use this agent?",
+    "confirmDraft": "A connected AI can read the inbox and write drafts. It cannot send. Drafts go to Needs review, and you send them after checking.",
+    "confirmProvider": "Whatever text the AI is given can be read by the company that runs it (such as Meta or Anthropic). NexusInbox only provides the path and cannot see the contents.",
+    "confirmGrant": "You allow each AI app yourself, and can disconnect it at any time.",
+    "confirmComputer": "It works only while this computer is running.",
+    "preparing": "The computer is getting ready",
+    "preparingSub": "The URL to connect with appears here in about a minute. You can keep this page open.",
+    "preparingSlow": "If nothing changes after a few minutes, update the program on the computer and start it again.",
+    "ready": "On",
+    "connectedCount": "Connected AIs: {n}",
+    "step1": "In the AI app, open \"Add connector\" (custom MCP server) and paste this URL",
+    "step2": "NexusInbox's permission page opens; check the app name and what it can do, then press Allow",
+    "step3": "When you are done, disconnect it under Details → Connected AIs below",
+    "urlNote": "Knowing this URL does nothing without your permission.",
+    "turnOff": "Turn off",
+    "turnOffConfirm": "Turning it off also disconnects every AI connected through this computer. To connect again, you allow each AI again.",
+    "keep": "Keep it on",
+    "turnedOff": "Turned off. Disconnected {n} AI app(s).",
+    "stopped": "Stopped",
+    "stoppedSub": "The program on the computer is not running, so cloud AIs cannot connect either. When it starts again, the same URL works.",
+    "unavailable": "Available when the agent runs on a computer",
+    "unavailableSub": "Cloud AIs read the inbox through your computer, so an agent that lives only in this browser cannot use them.",
+    "failed": "Could not change this. Please try again later."
+  },
+
   "agentStatus": {
     "title": "Status",
     "where": "Runs on",

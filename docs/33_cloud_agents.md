@@ -252,11 +252,43 @@ API は `AGENT_INBOX_MCP_RESOURCE_DOMAIN=mcp.agent-inbox.ai` で URL を割り�
 4. 手元で通しで確かめる: Pebble (Let's Encrypt のテスト用 ACME サーバ) + 中継 + ゲートウェイ + 公式の MCP SDK の OAuth 付きクライアント
 5. 外部の変更 (要確認): DNS (`*.mcp` と `relay`、CAA)、Fly のアプリ・IP・ボリューム、API の秘密 (署名鍵) と設定。Let's Encrypt はまず staging で確かめてから本番に切り替える
 
-### 11.8 実装 (手元で確認済み、2026-11-09)
+### 11.8 実装 (手元と本番で確認済み、2026-11-09)
 
 - 中継 `services/mcp-relay` (`nexusinbox-relay`): SNI は自前の小さなパーサで読む (複数レコードにまたがる ClientHello も可)。`relay.agent-inbox.ai` だけ自分で TLS をほどき (固定の証明書か、rustls-acme で TLS-ALPN-01)、入場券と証明を確かめてから yamux を始める。ログは 10 分ごとの数だけ。`Dockerfile` と `fly.toml` は用意したが、まだ出していない
 - API: `POST /mcp-resources/relay-ticket` (DPoP に縛られたエージェントトークンだけ。Bearer だけのトークンには出さない)、`GET /mcp-relay/ticket-key` (中継に設定する公開鍵)。鍵は `AGENT_INBOX_RELAY_TICKET_KEY` (32 バイト、base64url)。入口は `mcp.agent-inbox.ai` の下に割り当てる。名前を指定せずに頼まれたとき、今の URL が手元の確かめ用か旧ドメイン (`mcp.nexusinbox.ai`) なら、新しく割り当て直す
 - ゲートウェイ: `--mcp-relay <host[:port]> --mcp-acme-cache <dir>`。証明書の注文は、中継への最初の接続ができてから始める (検証の接続が届くように)。中継の TTL の 2 分前に新しい接続を張り、古い方は最大 10 分、流れているものを運び終えるまで残す。`--mcp-listen` (ループバック) と同時に使える
 - 確かめたこと: `RELAY=1 node scripts/e2e_remote_mcp_drafts.mjs` で、Pebble (Let's Encrypt のテスト用 CA) + 中継 + ゲートウェイ + 公式の MCP SDK の OAuth 付きクライアントを通した。ゲートウェイが中継越しの TLS-ALPN-01 で `<id>.mcp.agent-inbox.ai` の証明書を取り、クライアントは Pebble のルートだけを信じて `https://<id>.mcp.agent-inbox.ai/mcp` に OAuth でつなぎ、読む・下書きができた。誰も持っていない名前は中継が閉じる。中継のログに名前とアドレスは出ない。単体テスト: 中継 15 (SNI、入場券の偽造・使い回し・別の鍵・期限、PROXY ヘッダ、アイドル)、API の DB テストに入場券 1
 - 本番 (2026-11-09): API に `AGENT_INBOX_RELAY_TICKET_KEY` (運営者が設定、公開鍵は `fly.toml` に)。Fly アプリ `nexusinbox-mcp-relay` (東京、専用 IPv4 `137.66.2.20`、IPv6 `2a09:8280:1::1f2:5e3d:0`、ボリューム `relay_data`)。DNS (`relay` と `*.mcp` は DNS のみ、`mcp` に CAA `0 issue "letsencrypt.org"`)。中継の証明書は Let's Encrypt の staging で取れることを確かめてから本番に切り替えた (最初の 1 回は DNS の反映前で失敗し、自動で取り直した)。外から `relay.agent-inbox.ai` の証明書の検証が通り、持ち主のいない `<id>.mcp` は閉じられることを確かめた
-- まだ: パソコンを本番の中継につないで確かめる (§11.7 の 5 の残り)、`nexusinbox connect` から中継を使う設定 (段階 4 の画面と一緒に)、CT ログの見張り
+- 本番で端から端まで (2026-11-09): 運営者のパソコンのゲートウェイを `--mcp-relay relay.agent-inbox.ai` で本番の API につなぎ、`https://vxf3r9rnba.mcp.agent-inbox.ai/mcp` として中継に載せた。ゲートウェイの証明書は中継越しの TLS-ALPN-01 で Let's Encrypt の本番 (YE1) から取れ、外からの検証が通った。公式の MCP SDK の OAuth 付きクライアントで、`app.nexusinbox.ai` の同意画面から許可し、ツールの一覧 (送信のツールは出ない)、`list_my_agents`、`list_inbox`、`create_draft` (下書きは「確認が必要」に入った) まで中継を通った。下書きは、確認に使うブラウザを「確認が必要」で決めていないと作れない (そう返る)。これは中継ではなく下書きの仕組みの前提
+- まだ: CT ログの見張り (段階 4 は §12)
+
+## 12. 段階 4: 画面からオン・オフ (2026-11-09)
+
+画面案は `docs/33_cloud_access_mock.html`。運営者が推奨どおりで了承した (オン・オフは画面だけ、やめると許可もまとめて切る、行の名前は「クラウドの AI」)。
+
+### 12.1 決めたこと
+
+- エージェント設定の「いまの状態」に「クラウドの AI」の行を足す。状態は 6 つ: パソコンが無い (このブラウザだけ) / 使っていない / 準備中 / 使える (URL と手順 3 つ、つながっている AI の数) / パソコンが止まっている / オンにする前の確認 (本文は AI の事業者が読めること、運営者は中身を見ないこと、AI ごとに許可が要ること、送信はできないこと)
+- オン・オフは Web の画面だけで切り替える。ターミナルでの操作は要らない。初期値はオフ。Web にログインできる人がオンにできる、という引き換えは了承済み (つなぐには AI ごとの許可も要る)
+- 「使うのをやめる」で、そのパソコンを通して許可した AI をすべて切る。またオンにしたら、AI ごとに許可し直す
+- URL はパソコン (credential) ごとに 1 つで、オフ → オンでも変わらない
+
+### 12.2 しくみ
+
+- API (migration 0028): `agent_credentials.cloud_access_enabled_at` (NULL ならオフ) と `cloud_serving_at` (パソコンが最後に「中継に載っている」と言った時刻)
+  - `PUT /agent-credentials/:id/cloud-access {enabled}` (人のセッションだけ、自分の・有効な・パソコンが鍵を持つ credential だけ)。オフにすると、その credential の MCP URL への許可をまとめて取り消し、件数を返す。操作履歴に `cloud_access_enabled` / `cloud_access_disabled`。中継の鍵が API に無ければオンにできない (503)
+  - `POST /mcp-resources/relay-status {serving}` (パソコンのエージェントトークン): オンかどうかを返し、オンで `serving` なら `cloud_serving_at` を更新する
+  - `POST /mcp-resources/relay-ticket` は、オンのときだけ入場券を出す (オフなら 403)
+  - `GET /agent-credentials` に `cloud_access`、`cloud_url` (中継のドメインの URL だけ)、`cloud_serving_at`。`GET /oauth/grants` に `resource`
+- ゲートウェイ: `--mcp-relay` があると、30 秒ごとに (準備中は 5 秒ごとに) `relay-status` を聞く。オンになったら URL を登録して中継につなぐ。オフになったら中継の処理をまとめて止める (中継への接続も、流れていた接続も閉じる)。「載っている」は、中継とのセッションがあり、証明書 (新規かキャッシュ) が入っていること
+- 起動スクリプト: `connect` / `start <dir>` で起動したときは、常に `--mcp-relay relay.agent-inbox.ai --mcp-acme-cache <dir>/acme` を渡す。使うかどうかは画面の設定で決まる。`AGENT_INBOX_MCP_RELAY=off` で外せる
+- 画面: 30 秒ごとに更新 (準備中は 5 秒ごと)。「使える」は、パソコンが 2 分以内に応答していて、`cloud_serving_at` も 2 分以内のとき。古いパソコンのプログラムは `relay-status` を聞かないので「準備中」のまま止まる。画面に「数分たっても変わらないときは、パソコンのプログラムを最新にして起動し直す」と書いた
+- オフにしてからパソコンが中継から抜けるまで、最大 30 秒かかる。その間も許可は取り消し済みなので、AI からは何もできない (トークンの確認結果はパソコンが最大 60 秒覚える。§10.5)
+
+### 12.3 確かめたこと
+
+- API の DB テスト (`relay_tickets_are_bound_to_the_computers_dpop_key` に追加): オフでは入場券が出ず、`relay-status` も `enabled: false` を返す。パソコンのトークンではオンにできない。人がオンにすると入場券が出て、一覧に URL と `cloud_serving_at` が出る。オフにすると許可が 1 件取り消され、入場券が止まり、`cloud_serving_at` が消える。他人はその credential を切り替えられない (404)。中継の鍵が無いとオンにできない (503)
+- `RELAY=1 node scripts/e2e_remote_mcp_drafts.mjs`: ゲートウェイはオフの間は中継につながらない。人がオンにすると中継につながり、証明書を取り、OAuth のクライアントが読む・下書きまでできる。一覧が「使える」になる。オフにすると AI が 1 件切れ、パソコンが中継から抜け、中継はその名前に答えなくなる
+- 手元の Web (ローカルの API と e2e の構成) で、使っていない → 確認 → 準備中 → 使える (URL とコピー) → やめる確認 → 使っていない、を画面で押して確かめた
+- Web の単体テスト (`cloudAccessStatus`): パソコンが無い、オフ、使える、準備中 (応答が古い・URL が無い)、止まっている
+

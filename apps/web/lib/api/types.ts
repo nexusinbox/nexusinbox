@@ -123,6 +123,12 @@ export type AgentCredential = {
    * See docs/21_message_visibility_ux_for_mcp_modes.md §7.
    */
   key_holder?: "web_keystore" | "signer_daemon" | "unknown";
+  /** Cloud AIs may reach this computer through the relay (docs/33 §12). */
+  cloud_access?: boolean;
+  /** The computer's MCP URL under the relay's domain, once assigned. */
+  cloud_url?: string | null;
+  /** When the computer last said it is reachable through the relay. */
+  cloud_serving_at?: string | null;
 };
 
 export type AgentCredentialsResponse = {
@@ -611,6 +617,8 @@ export type OAuthAuthorizeInfo = {
 export type OAuthGrant = {
   id: string;
   aid: string;
+  /** The MCP URL of the computer the app was let in through. */
+  resource: string;
   agent_label: string;
   client_name: string;
   scope: string[];

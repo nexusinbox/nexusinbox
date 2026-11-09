@@ -99,29 +99,24 @@ pub async fn serve(
             "--mcp-public-url is for local tests; with --mcp-relay the API assigns the URL".into(),
         );
     }
-    // Ask the API for this computer's MCP URL (or, in a local test, name it).
-    let resource = match register_resource(&gateway, public_url.as_deref()).await {
-        Ok(r) => Some(r),
-        Err(e) if static_token.is_some() && relay.is_none() => {
-            eprintln!("[WARN] OAuth is off for the remote MCP endpoint: {e}");
-            None
+    // Ask the API for this computer's MCP URL (or, in a local test, name
+    // it). With only the relay, that waits until cloud access is on.
+    let resource = if listen.is_some() || relay.is_none() {
+        match register_resource(&gateway, public_url.as_deref()).await {
+            Ok(r) => Some(r),
+            Err(e) if static_token.is_some() && relay.is_none() => {
+                eprintln!("[WARN] OAuth is off for the remote MCP endpoint: {e}");
+                None
+            }
+            Err(e) => return Err(format!("could not register the MCP URL: {e}")),
         }
-        Err(e) => return Err(format!("could not register the MCP URL: {e}")),
+    } else {
+        None
     };
-    let state = Arc::new(McpState {
-        gateway: gateway.clone(),
-        token_digest: static_token.map(|t| Sha256::digest(t.as_bytes()).into()),
-        resource: resource.clone(),
-        client_name: std::sync::Mutex::new(None),
-        introspection_cache: std::sync::Mutex::new(HashMap::new()),
-    });
-    let app = router(state);
+    let app = app_for(&gateway, static_token.as_deref(), resource.clone());
 
     if let Some(opts) = relay {
-        let resource = resource.clone().ok_or("no MCP URL for the relay")?;
-        let app = app.clone();
-        let gateway = gateway.clone();
-        let relayed = tokio::spawn(crate::relay_client::run(gateway, app, resource, opts));
+        let relayed = tokio::spawn(cloud_access(gateway.clone(), static_token.clone(), opts));
         if listen.is_none() {
             return relayed.await.map_err(|e| format!("relay task: {e}"))?;
         }
@@ -140,6 +135,86 @@ pub async fn serve(
     axum::serve(listener, app)
         .await
         .map_err(|e| format!("remote MCP server stopped: {e}"))
+}
+
+fn app_for(
+    gateway: &Arc<GatewayState>,
+    static_token: Option<&str>,
+    resource: Option<String>,
+) -> Router {
+    router(Arc::new(McpState {
+        gateway: gateway.clone(),
+        token_digest: static_token.map(|t| Sha256::digest(t.as_bytes()).into()),
+        resource,
+        client_name: std::sync::Mutex::new(None),
+        introspection_cache: std::sync::Mutex::new(HashMap::new()),
+    }))
+}
+
+/// Serves through the relay only while the person has turned cloud access
+/// on for this computer (docs/33 §12). Asks the API every 30 s (every 5 s
+/// while getting ready), and leaves the relay as soon as it is turned off.
+async fn cloud_access(
+    gateway: Arc<GatewayState>,
+    static_token: Option<String>,
+    opts: crate::relay_client::Options,
+) -> Result<(), String> {
+    use crate::relay_client::{run, Status};
+    let status = Arc::new(Status::default());
+    let mut running: Option<tokio::task::JoinHandle<Result<(), String>>> = None;
+    let mut said_off = false;
+    loop {
+        if running.as_ref().is_some_and(|h| h.is_finished()) {
+            if let Some(h) = running.take() {
+                h.await.map_err(|e| format!("relay task: {e}"))??;
+            }
+        }
+        let serving = running.is_some() && status.serving();
+        match relay_status(&gateway, serving).await {
+            Ok(true) if running.is_none() => match register_resource(&gateway, None).await {
+                Ok(resource) => {
+                    status.reset();
+                    let app = app_for(&gateway, static_token.as_deref(), Some(resource.clone()));
+                    running = Some(tokio::spawn(run(
+                        gateway.clone(),
+                        app,
+                        resource,
+                        opts.clone(),
+                        status.clone(),
+                    )));
+                    said_off = false;
+                }
+                Err(e) => eprintln!("[WARN] Could not register the MCP URL: {e}"),
+            },
+            Ok(true) => {}
+            Ok(false) => {
+                if let Some(h) = running.take() {
+                    h.abort();
+                    status.reset();
+                    eprintln!("[INFO] Cloud access was turned off; left the relay");
+                } else if !said_off {
+                    eprintln!("[INFO] Cloud access is off; it can be turned on in the app");
+                }
+                said_off = true;
+            }
+            Err(e) => eprintln!("[WARN] Could not check cloud access: {e}"),
+        }
+        let wait = if running.is_some() && !serving { 5 } else { 30 };
+        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+    }
+}
+
+async fn relay_status(gateway: &GatewayState, serving: bool) -> Result<bool, String> {
+    let token = crate::ensure_token(gateway).await?;
+    let url = format!("{}/mcp-resources/relay-status", gateway.api_url);
+    let out = crate::api_post(
+        gateway,
+        &url,
+        &token,
+        &serde_json::json!({ "serving": serving }),
+    )
+    .await?;
+    Ok(out["enabled"].as_bool().unwrap_or(false))
 }
 
 fn router(state: Arc<McpState>) -> Router {

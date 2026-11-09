@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>クラウドの AI からつなぐ（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn: #8a5a00; --warn-soft: #fff7e6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.7 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 880px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .scenes { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .scenes button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .scenes button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* The settings page, simplified */
+  .page { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 640px) { .page { grid-template-columns: 1fr; } }
+  .list { display: grid; gap: 8px; align-content: start; }
+  .agent { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+  .agent.sel { border: 1.5px solid var(--accent); background: var(--accent-soft); }
+  .agent b { display: block; font-size: 14px; }
+  .agent .line { color: var(--muted); }
+  .new { color: var(--accent); font-size: 12px; font-weight: 700; margin-left: 4px; }
+  .detail { display: grid; gap: 14px; align-content: start; }
+  .head { display: flex; justify-content: space-between; align-items: center; }
+  .head h2 { margin: 0; font-size: 20px; }
+  .ghost { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+
+  .status { background: var(--card); border: 1.5px solid var(--accent); border-radius: 14px; padding: 18px 20px; box-shadow: 0 0 0 4px var(--accent-soft); }
+  .status h3 { margin: 0 0 12px; font-size: 15px; }
+  .row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; gap: 2px; } }
+  .key { color: var(--muted); font-size: 13px; padding-top: 1px; }
+  .val b { font-weight: 600; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dot.ok { background: #16a34a; }
+  .dot.warn { background: #f59e0b; }
+  .dot.off { background: #9ca3af; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-top: 8px; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 8px; }
+  .cmd code { flex: 1; min-width: 0; width: 0; overflow-x: auto; white-space: nowrap; }
+  .cmd button { font: 12px system-ui; background: #334155; color: #fff; border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  .link { color: var(--accent); font-size: 13px; cursor: pointer; margin-left: 8px; white-space: nowrap; }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--accent); background: var(--card); color: var(--accent); margin-top: 8px; }
+  ul.log { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+  ul.log li { font-size: 14px; }
+  ul.log time { color: var(--muted); font-size: 12px; margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .ok-t { color: var(--ok); font-weight: 600; }
+  .q-t { color: var(--warn); font-weight: 600; }
+
+  .rest { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 14px 18px; color: var(--muted); font-size: 13px; }
+  .rest div { padding: 6px 0; border-top: 1px dashed var(--line); }
+  .rest div:first-child { border-top: 0; }
+
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+
+  .url { display: flex; align-items: center; gap: 10px; background: var(--accent-soft); border: 1px solid #c7d7fe; border-radius: 10px; padding: 9px 12px; margin-top: 8px; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .url code { flex: 1; min-width: 0; width: 0; overflow-x: auto; white-space: nowrap; }
+  .url button { font: 12px system-ui; background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  ol.steps { margin: 10px 0 0; padding-left: 20px; font-size: 14px; }
+  ol.steps li { margin: 4px 0; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .dialog { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 10px; background: #fbfcfe; }
+  .dialog h4 { margin: 0 0 8px; font-size: 15px; }
+  .dialog ul { margin: 0; padding-left: 18px; font-size: 14px; }
+  .dialog li { margin: 4px 0; }
+  .dialog .actions { display: flex; gap: 8px; }
+  .okline { color: var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>クラウドの AI からつなぐ（画面案）</h1>
+    <p class="lead">エージェント設定の「いまの状態」に 1 行足す案です（docs/33 §7 の段階 4）。上のボタンで状態を切り替えて見られます。</p>
+
+    <div class="scenes" role="tablist">
+      <button class="on" data-scene="off">使っていない</button>
+      <button data-scene="confirm">「使えるようにする」を押した</button>
+      <button data-scene="preparing">準備中</button>
+      <button data-scene="ready">使える</button>
+      <button data-scene="stopped">パソコンが止まっている</button>
+      <button data-scene="browser">このブラウザだけ</button>
+    </div>
+
+    <div class="page">
+      <div class="list">
+        <div class="agent sel">
+          <b>秘書</b>
+          <span class="line" data-show="off confirm preparing ready"><span class="dot ok"></span>パソコンで動作中</span>
+          <span class="line" data-show="stopped"><span class="dot warn"></span>パソコンが止まっています</span>
+          <span class="line" data-show="browser"><span class="dot off"></span>このブラウザ</span>
+        </div>
+        <div class="agent">
+          <b>経理アシスタント</b>
+          <span class="line"><span class="dot off"></span>このブラウザ</span>
+        </div>
+      </div>
+
+      <div class="detail">
+        <div class="head">
+          <h2>秘書</h2>
+          <button class="ghost">名前を編集</button>
+        </div>
+
+        <section class="status">
+          <h3>いまの状態</h3>
+
+          <div class="row">
+            <div class="key">動いている場所</div>
+            <div class="val">
+              <div data-show="off confirm preparing ready">
+                <span class="dot ok"></span><b>パソコン（macOS）</b>　つながっています
+                <div class="sub">30 秒前に確認。ブラウザを閉じていても、届いた依頼に対応します。</div>
+              </div>
+              <div data-show="stopped">
+                <span class="dot warn"></span><b>パソコン（macOS）</b>　2 時間前から応答がありません
+                <div class="sub">パソコンのプログラムが止まっているようです。止まっている間は、自動返信も止まります。</div>
+              </div>
+              <div data-show="browser">
+                <span class="dot off"></span><b>このブラウザ</b>
+                <div class="sub">メッセージはこの画面で読み書きします。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="key">自動返信</div>
+            <div class="val"><b>日程調整は、自動で承諾する</b><span class="link">変更</span></div>
+          </div>
+
+          <!-- The new row -->
+          <div class="row">
+            <div class="key">クラウドの AI <span class="new">NEW</span></div>
+            <div class="val">
+              <div data-show="off">
+                <b>使っていません</b>
+                <div class="sub">Meta の Muse や Claude など、クラウドで動く AI から、このエージェントの受信箱を読んで下書きを作れるようにします。送信はできません。</div>
+                <button class="btn">使えるようにする</button>
+              </div>
+
+              <div data-show="confirm">
+                <b>使っていません</b>
+                <div class="dialog">
+                  <h4>クラウドの AI から使えるようにしますか</h4>
+                  <ul>
+                    <li>つないだ AI は、受信箱を読み、下書きを作れます。<b>送信はできません</b>。下書きは「確認が必要」に入り、あなたが見て送ります</li>
+                    <li>AI に渡した本文は、<b>その AI の事業者（Meta や Anthropic など）が読めます</b>。運営者（NexusInbox）は通り道を用意するだけで、中身は見えません</li>
+                    <li>どの AI につなぐかは、AI ごとにあなたが許可します。いつでも切れます</li>
+                    <li>このパソコンが動いている間だけ使えます</li>
+                  </ul>
+                  <div class="actions">
+                    <button class="btn primary">使えるようにする</button>
+                    <button class="btn">やめる</button>
+                  </div>
+                </div>
+              </div>
+
+              <div data-show="preparing">
+                <span class="dot warn"></span><b>パソコンが準備しています</b>
+                <div class="sub">1 分ほどで、つなぐための URL がここに出ます。この画面は開いたままで構いません。</div>
+              </div>
+
+              <div data-show="ready">
+                <span class="dot ok"></span><b>使えます</b>　<span class="sub">つながっている AI: 2</span><span class="link">見る</span>
+                <div class="url"><code>https://vxf3r9rnba.mcp.agent-inbox.ai/mcp</code><button>コピー</button></div>
+                <ol class="steps">
+                  <li>AI のアプリで「コネクタを追加」（カスタムの MCP サーバ）を開き、この URL を貼る</li>
+                  <li>NexusInbox の許可の画面が開くので、アプリ名とできることを確かめて「許可する」</li>
+                  <li>使い終わったら、下の「つながっている AI」から切る</li>
+                </ol>
+                <div class="sub" style="margin-top: 6px;">この URL を知っていても、あなたの許可がなければ何もできません。</div>
+                <span class="link" style="margin-left: 0;">使うのをやめる</span>
+              </div>
+
+              <div data-show="stopped">
+                <span class="dot warn"></span><b>止まっています</b>
+                <div class="sub">パソコンのプログラムが止まっているので、クラウドの AI からもつながりません。再開すると、同じ URL のまま使えます。</div>
+              </div>
+
+              <div data-show="browser">
+                <span class="dot off"></span><b>パソコンで動かすと使えます</b>
+                <div class="sub">クラウドの AI は、あなたのパソコンを通して受信箱を読みます。このブラウザだけのエージェントでは使えません。</div>
+                <span class="link" style="margin-left: 0;">パソコンでも動かす</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="key">最近の対応</div>
+            <div class="val"><ul class="log"><li><time>11/8 11:34</time>接続テスト からの日程調整に <span class="ok-t">承諾の返事を送りました</span></li></ul></div>
+          </div>
+        </section>
+
+        <section class="rest">
+          <div>ここから下は今の画面のまま</div>
+          <div>詳細 → つながっている AI（AI ごとに「切る」）</div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>変わるところ</h3>
+      <ul>
+        <li>「いまの状態」に「クラウドの AI」の行を足す</li>
+        <li>オン・オフはこの画面だけで切り替える。<b>ターミナルでの操作は要らない</b></li>
+        <li>URL は 1 台のパソコンに 1 つ。オフにしてまたオンにしても変わらない</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>しくみ（作るときのメモ）</h3>
+      <ul>
+        <li>オン・オフは API に保存する（パソコンごと、初期値はオフ）</li>
+        <li>パソコンのプログラムは、30 秒ごとの問い合わせでこの設定を受け取り、オンなら中継につなぐ。オフなら中継から抜ける</li>
+        <li>「準備中」は、オンにしてから、パソコンが中継につながるまで（初回は証明書の取得も含む）。パソコンが中継につながったことを API に知らせたら「使えます」</li>
+        <li>起動の仕組み（<code>nexusinbox connect</code> / <code>start</code>）は、中継と証明書の置き場所の指定を常に渡す。使うかどうかは上の設定で決まる</li>
+        <li>オフにした時点で入口が閉じるので、許可が残っていても届かない</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ol>
+        <li>オン・オフを画面から切り替える方式でよいか（パソコン側でコマンドを打つ方式より簡単。代わりに、Web にログインできる人がオンにできる）</li>
+        <li>「使うのをやめる」で、つながっている AI の許可もまとめて切るか（推奨: 切る。またオンにしたら、AI ごとに許可し直す）</li>
+        <li>行の名前は「クラウドの AI」でよいか</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.scenes button');
+  function show(scene) {
+    buttons.forEach((b) => b.classList.toggle('on', b.dataset.scene === scene));
+    document.querySelectorAll('[data-show]').forEach((el) => {
+      el.hidden = !el.dataset.show.split(' ').includes(scene);
+    });
+  }
+  buttons.forEach((b) => b.addEventListener('click', () => show(b.dataset.scene)));
+  show('off');
+</script>
+</body>
+</html>

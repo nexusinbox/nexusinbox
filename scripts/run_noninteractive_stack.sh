@@ -66,6 +66,13 @@ SIGNER_SOCKET="${AGENT_INBOX_SIGNER_SOCKET:-/tmp/nexusinbox-signer.sock}"
 GATEWAY_SOCKET="${AGENT_INBOX_GATEWAY_SOCKET:-/tmp/nexusinbox-gateway.sock}"
 API_URL="${AGENT_INBOX_API_URL:-http://localhost:8080}"
 KEY_FILE="${AGENT_INBOX_KEY_FILE:-$ROOT_DIR/.local/nexusinbox-signer.key.enc}"
+# Cloud AIs reach the agent through this relay, but only after the person
+# turns cloud access on in the app (docs/33 §12); until then the gateway
+# just asks. Needs the agent's directory for the certificate. "off" opts out.
+MCP_RELAY="${AGENT_INBOX_MCP_RELAY:-relay.agent-inbox.ai}"
+if [ -z "$AGENT_DIR" ] || [ "$MCP_RELAY" = off ]; then
+  MCP_RELAY=""
+fi
 # Optional X25519 key for opening incoming messages. Required for the
 # auto-reply executor (AGENT_INBOX_MODE_A_EXECUTOR=on, docs/19 §7).
 ENCRYPTION_KEY_FILE="${AGENT_INBOX_ENCRYPTION_KEY_FILE:-}"
@@ -80,6 +87,8 @@ Usage:
 
   $SELF_NAME start|stop|status <dir>
       <dir> is what \`connect\` (or \`nexusinbox-signer --enroll --dir <dir>\`) wrote.
+      Started this way, the agent can also serve cloud AIs once that is
+      turned on in the app (AGENT_INBOX_MCP_RELAY=off to opt out).
 
   Or with the settings spelled out:
   AGENT_INBOX_AID=aid:ai:... \\
@@ -191,7 +200,8 @@ start() {
     exec_gateway \
       --llm-socket "$GATEWAY_SOCKET" \
       --signer-socket "$SIGNER_SOCKET" \
-      --api-url "$API_URL"
+      --api-url "$API_URL" \
+      ${MCP_RELAY:+--mcp-relay "$MCP_RELAY" --mcp-acme-cache "$AGENT_DIR/acme"}
   ) >"$GATEWAY_LOG" 2>&1 &
   echo $! >"$GATEWAY_PID_FILE"
 

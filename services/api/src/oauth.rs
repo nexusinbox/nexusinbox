@@ -723,6 +723,19 @@ pub(crate) async fn relay_ticket(
         .filter(|j| j != "none")
         .ok_or_else(|| forbidden_error("the relay needs a DPoP-bound token"))?;
 
+    let enabled: Option<bool> = sqlx::query_scalar(
+        "SELECT cloud_access_enabled_at IS NOT NULL FROM agent_credentials WHERE id = $1",
+    )
+    .bind(credential_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| internal_error("failed to look up cloud access", error))?;
+    if enabled != Some(true) {
+        return Err(forbidden_error(
+            "cloud access is off for this computer; the person turns it on in the app",
+        ));
+    }
+
     let resource: Option<String> =
         sqlx::query_scalar("SELECT resource FROM mcp_resources WHERE credential_id = $1")
             .bind(credential_id)
@@ -742,6 +755,113 @@ pub(crate) async fn relay_ticket(
         "relay": relay_host(),
         "host": host,
         "expires_in": RELAY_TICKET_TTL_SECS,
+    })))
+}
+
+/// Whether an assigned MCP URL is served through the relay.
+pub(crate) fn is_relay_resource(resource: &str) -> bool {
+    relay_hostname(resource).is_some()
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RelayStatusRequest {
+    #[serde(default)]
+    serving: bool,
+}
+
+/// POST /mcp-resources/relay-status — a computer set up for the relay asks
+/// every 30 s whether the person has turned cloud access on, and says
+/// whether it is reachable through the relay right now (docs/33 §12).
+pub(crate) async fn relay_status(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<RelayStatusRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    let AuthContext::Agent { credential_id, .. } = &ctx else {
+        return Err(forbidden_error("the computer reports its relay status"));
+    };
+    ctx.require_scope("messages.read")?;
+    let pool = oauth_pool(&state).await?;
+    let enabled: Option<bool> = sqlx::query_scalar(
+        "UPDATE agent_credentials SET cloud_serving_at = \
+           CASE WHEN $2 AND cloud_access_enabled_at IS NOT NULL THEN NOW() ELSE NULL END \
+         WHERE id = $1 RETURNING cloud_access_enabled_at IS NOT NULL",
+    )
+    .bind(credential_id)
+    .bind(payload.serving)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| internal_error("failed to update the relay status", error))?;
+    let enabled = enabled == Some(true) && relay_ticket_key().is_some();
+    Ok(Json(serde_json::json!({ "enabled": enabled })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CloudAccessRequest {
+    enabled: bool,
+}
+
+/// PUT /agent-credentials/:id/cloud-access — the person lets cloud AIs reach
+/// this computer through the relay, or stops it. Stopping also disconnects
+/// every AI app that was allowed in through this computer (docs/33 §12).
+pub(crate) async fn set_cloud_access(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    JsonBody(payload): JsonBody<CloudAccessRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = oauth_pool(&state).await?;
+    if payload.enabled && relay_ticket_key().is_none() {
+        return Err(relay_unavailable());
+    }
+    let aid: String = sqlx::query_scalar(
+        "UPDATE agent_credentials SET \
+           cloud_access_enabled_at = CASE WHEN $3 THEN COALESCE(cloud_access_enabled_at, NOW()) ELSE NULL END, \
+           cloud_serving_at = CASE WHEN $3 THEN cloud_serving_at ELSE NULL END \
+         WHERE id = $1 AND user_id = $2 AND status = 'active' AND key_holder = 'signer_daemon' \
+         RETURNING aid",
+    )
+    .bind(id)
+    .bind(user_uuid)
+    .bind(payload.enabled)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| internal_error("failed to update cloud access", error))?
+    .ok_or_else(|| not_found_error("no active computer with that id"))?;
+    let mut disconnected = 0;
+    if !payload.enabled {
+        disconnected = sqlx::query(
+            "UPDATE oauth_grants SET revoked_at = NOW() \
+             WHERE user_id = $1 AND revoked_at IS NULL \
+               AND resource IN (SELECT resource FROM mcp_resources WHERE credential_id = $2)",
+        )
+        .bind(user_uuid)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|error| internal_error("failed to disconnect AI apps", error))?
+        .rows_affected();
+    }
+    record_audit_event(
+        pool,
+        user_uuid,
+        Some(id),
+        Some(aid),
+        if payload.enabled {
+            "cloud_access_enabled"
+        } else {
+            "cloud_access_disabled"
+        },
+        serde_json::json!({ "disconnected": disconnected }),
+    );
+    Ok(Json(serde_json::json!({
+        "cloud_access": payload.enabled,
+        "disconnected": disconnected,
     })))
 }
 
@@ -1329,7 +1449,7 @@ pub(crate) async fn list_grants(
     let pool = oauth_pool(&state).await?;
     let rows = sqlx::query(
         r#"
-        SELECT g.id, g.aid, g.scope, g.created_at::text AS created_at,
+        SELECT g.id, g.aid, g.resource, g.scope, g.created_at::text AS created_at,
                g.last_used_at::text AS last_used_at, c.client_name, a.label AS agent_label
         FROM oauth_grants g
         JOIN oauth_clients c ON c.client_id = g.client_id
@@ -1351,6 +1471,7 @@ pub(crate) async fn list_grants(
             serde_json::json!({
                 "id": r.get::<Uuid, _>("id"),
                 "aid": r.get::<String, _>("aid"),
+                "resource": r.get::<String, _>("resource"),
                 "agent_label": r.get::<String, _>("agent_label"),
                 "client_name": r.get::<String, _>("client_name"),
                 "scope": r.get::<String, _>("scope").split(' ').collect::<Vec<_>>(),

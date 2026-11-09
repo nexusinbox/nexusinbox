@@ -14,10 +14,12 @@
 //      consent and a token, and drafts; a read-only grant cannot draft
 //   8. RELAY=1 (docs/33 §11): Pebble (Let's Encrypt's test CA), the relay,
 //      and a gateway with --mcp-relay that gets its own certificate through
-//      the relay; the OAuth client reaches it at https://<id>.mcp.agent-inbox.ai
+//      the relay once the person turns cloud access on; the OAuth client
+//      reaches it at https://<id>.mcp.agent-inbox.ai, and turning it off
+//      disconnects the app and takes the computer off the relay
 //
 // Needs the same local API as scripts/e2e_isolated_auto_reply.mjs (dev
-// bearer, CSRF on, migrations up to 0027) with
+// bearer, CSRF on, migrations up to 0028) with
 // AGENT_INBOX_MCP_ALLOW_LOCAL_RESOURCES=true, and a built gateway.
 //
 // Usage: API=http://localhost:8081 node scripts/e2e_remote_mcp_drafts.mjs
@@ -268,6 +270,8 @@ async function main() {
     RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(os.homedir(), ".rustup"),
     AGENT_INBOX_SIGNER_SOCKET: path.join(sockDir, "signer.sock"),
     AGENT_INBOX_GATEWAY_SOCKET: path.join(sockDir, "gateway.sock"),
+    // The relay phase runs its own gateway against the local relay.
+    AGENT_INBOX_MCP_RELAY: "off",
   };
   const agentDir = path.join(WORK, ".nexusinbox", "e2e-a-secretary");
   try {
@@ -495,7 +499,7 @@ async function main() {
   await reader.close();
 
   if (process.env.RELAY) {
-    await relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth });
+    await relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth, credentialId: cred.credential_id });
   }
 
   console.log("\nPASS: drafts from the remote MCP endpoint are sent only after approval");
@@ -568,7 +572,7 @@ function fetchViaRelay(ca) {
   };
 }
 
-async function relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth }) {
+async function relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, callOauth, credentialId }) {
   step("relay: Pebble, the relay, and a gateway that gets its own certificate");
   const gobin = path.join(os.homedir(), "go/bin");
   const pebbleSrc = path.join(execFileSync("go", ["env", "GOMODCACHE"]).toString().trim(), "github.com/letsencrypt/pebble/v2@v2.10.1");
@@ -635,7 +639,13 @@ async function relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, ca
     "--mcp-acme-ca", path.join(pebbleSrc, "test/certs/pebble.minica.pem"),
     "--mcp-acme-cache", acmeCache,
   ], logTo(gwLog)));
-  await waitForLog(gwLog, "Connected to the relay as", 30, "the gateway did not connect to the relay");
+  // Off until the person turns it on (docs/33 §12): the gateway only asks.
+  await waitForLog(gwLog, "Cloud access is off", 30, "the gateway did not ask about cloud access");
+  if (fs.readFileSync(gwLog, "utf8").includes("Connected to the relay")) fail("connected to the relay while cloud access was off");
+  const cloudAccess = `/agent-credentials/${credentialId}/cloud-access`;
+  expectStatus(await api("PUT", cloudAccess, { auth: human, body: { enabled: true } }), [200], "turn cloud access on");
+  console.log("  off by default; turned on from the person's session");
+  await waitForLog(gwLog, "Connected to the relay as", 60, "the gateway did not connect to the relay");
   const host = fs.readFileSync(gwLog, "utf8").match(/Connected to the relay as (\S+)/)[1];
   if (!/^[a-km-np-z2-9]{10}\.mcp\.agent-inbox\.ai$/.test(host)) fail("unexpected MCP host", host);
   console.log(`  connected as ${host}`);
@@ -660,6 +670,22 @@ async function relayPhase({ sockDir, human, sent, makeProvider, oauthConnect, ca
   await client.close();
   expectStatus(await api("DELETE", `/agent-drafts/${draft.value.draft_id}`, { auth: human }), [204], "discard");
   console.log("  read and drafted");
+
+  step("relay: the page sees it ready; turning it off disconnects and leaves");
+  let ready = null;
+  for (let i = 0; i < 20 && !ready; i++) {
+    const list = expectStatus(await api("GET", "/agent-credentials", { auth: human }), [200], "list credentials");
+    const mine = list.credentials.find((c) => c.credential_id === credentialId);
+    if (mine?.cloud_access && mine.cloud_url === relayUrl && mine.cloud_serving_at) ready = mine;
+    else await sleep(2000);
+  }
+  if (!ready) fail("the credential never showed the relay URL as ready");
+  const off = expectStatus(await api("PUT", cloudAccess, { auth: human, body: { enabled: false } }), [200], "turn cloud access off");
+  if (!(off.disconnected >= 1)) fail("turning it off disconnected no AI app", off);
+  await waitForLog(gwLog, "left the relay", 45, "the gateway did not leave the relay");
+  const gone = await relayFetch(`https://${host}/mcp`).then(() => false, () => true);
+  if (!gone) fail("the relay still answered for the computer after it left");
+  console.log(`  ready on the page; off disconnected ${off.disconnected} app(s), and the computer left the relay`);
 
   step("relay: names nobody holds go nowhere");
   const nobody = "abcdefghij.mcp.agent-inbox.ai";

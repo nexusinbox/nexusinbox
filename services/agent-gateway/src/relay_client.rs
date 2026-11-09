@@ -14,9 +14,11 @@ use ed25519_dalek::Signer;
 use futures::future::poll_fn;
 use futures::StreamExt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task::JoinSet;
 use tokio_rustls::{LazyConfigAcceptor, TlsConnector};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 
@@ -27,6 +29,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 /// After a session is replaced, how long it may keep carrying its streams.
 const DRAIN: Duration = Duration::from_secs(600);
 
+#[derive(Clone)]
 pub struct Options {
     /// Where to connect, `host[:port]`. The TLS name is the relay host the
     /// API names in the ticket.
@@ -40,11 +43,32 @@ pub struct Options {
     pub acme_contact: Option<String>,
 }
 
+/// Whether cloud AIs can reach this computer right now: a relay session is
+/// up and the certificate is in place.
+#[derive(Default)]
+pub struct Status {
+    connected: AtomicBool,
+    cert_ready: AtomicBool,
+}
+
+impl Status {
+    pub fn serving(&self) -> bool {
+        self.connected.load(Ordering::Relaxed) && self.cert_ready.load(Ordering::Relaxed)
+    }
+    pub fn reset(&self) {
+        self.connected.store(false, Ordering::Relaxed);
+        self.cert_ready.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Serves through the relay until dropped. Everything it starts lives in
+/// its own task sets, so aborting it closes the relay connection too.
 pub async fn run(
     gateway: Arc<GatewayState>,
     app: Router,
     resource: String,
     opts: Options,
+    status: Arc<Status>,
 ) -> Result<(), String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let host = reqwest::Url::parse(&resource)
@@ -80,23 +104,36 @@ pub async fn run(
 
     eprintln!("[INFO] Remote MCP through the relay: {resource}");
     let mut acme = Some(acme);
+    let mut background = JoinSet::new();
     let mut backoff = Duration::from_secs(1);
     loop {
         match connect(&gateway, &opts.relay, relay_client.clone()).await {
             Ok((session, ttl)) => {
                 backoff = Duration::from_secs(1);
+                status.connected.store(true, Ordering::Relaxed);
                 eprintln!("[INFO] Connected to the relay as {host}");
                 // Order the certificate only once validation can reach us.
                 if let Some(mut state) = acme.take() {
-                    tokio::spawn(async move {
+                    let status = status.clone();
+                    background.spawn(async move {
                         while let Some(event) = state.next().await {
                             match event {
-                                Ok(ok) => eprintln!("[INFO] certificate: {ok:?}"),
+                                Ok(ok) => {
+                                    if matches!(
+                                        ok,
+                                        rustls_acme::EventOk::DeployedCachedCert
+                                            | rustls_acme::EventOk::DeployedNewCert
+                                    ) {
+                                        status.cert_ready.store(true, Ordering::Relaxed);
+                                    }
+                                    eprintln!("[INFO] certificate: {ok:?}");
+                                }
                                 Err(err) => eprintln!("[WARN] certificate: {err:?}"),
                             }
                         }
                     });
                 }
+                while background.try_join_next().is_some() {}
                 let renew_at = ttl.saturating_sub(Duration::from_secs(120));
                 let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
                 let streams = StreamCtx {
@@ -104,16 +141,17 @@ pub async fn run(
                     server: server.clone(),
                     challenge: challenge.clone(),
                 };
-                let mut task = tokio::spawn(accept_streams(session, streams, stop_rx));
+                let mut task = Box::pin(accept_streams(session, streams, stop_rx));
                 tokio::select! {
                     _ = &mut task => {
+                        status.connected.store(false, Ordering::Relaxed);
                         eprintln!("[WARN] The relay connection closed; reconnecting");
                     }
                     _ = tokio::time::sleep(renew_at) => {
                         // Make before break: the next session takes over new
                         // streams; this one drains in the background.
                         let _ = stop_tx.send(());
-                        tokio::spawn(async move {
+                        background.spawn(async move {
                             let _ = tokio::time::timeout(DRAIN, task).await;
                         });
                         continue;
@@ -121,6 +159,7 @@ pub async fn run(
                 }
             }
             Err(e) => {
+                status.connected.store(false, Ordering::Relaxed);
                 eprintln!("[WARN] Could not connect to the relay: {e}");
             }
         }
@@ -250,7 +289,10 @@ async fn accept_streams(
     mut stop: tokio::sync::oneshot::Receiver<()>,
 ) {
     let mut stopped = false;
+    // Dropped with this future, which ends every stream it started.
+    let mut served = JoinSet::new();
     loop {
+        while served.try_join_next().is_some() {}
         let next = poll_fn(|cx| session.poll_next_inbound(cx));
         let stream = if stopped {
             next.await
@@ -263,7 +305,7 @@ async fn accept_streams(
         match stream {
             Some(Ok(stream)) => {
                 let ctx = ctx.clone();
-                tokio::spawn(serve_stream(stream, ctx));
+                served.spawn(serve_stream(stream, ctx));
             }
             _ => return,
         }

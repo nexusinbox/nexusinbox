@@ -8072,6 +8072,12 @@ struct AgentCredentialResponse {
     /// Standard mode for display purposes. See
     /// docs/21_message_visibility_ux_for_mcp_modes.md §7.
     key_holder: String,
+    /// Cloud AIs may reach this computer through the relay (docs/33 §12).
+    cloud_access: bool,
+    /// The computer's MCP URL under the relay's domain, once assigned.
+    cloud_url: Option<String>,
+    /// When the computer last said it is reachable through the relay.
+    cloud_serving_at: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -8367,6 +8373,9 @@ async fn create_agent_credential(
             // activation call records the real holder. `unknown` is
             // the natural "not set" state per the 0014 default.
             key_holder: "unknown".into(),
+            cloud_access: false,
+            cloud_url: None,
+            cloud_serving_at: None,
         }),
     ))
 }
@@ -8394,8 +8403,11 @@ async fn list_agent_credentials(
             activated_at::text AS activated_at,
             last_used_at::text AS last_used_at,
             enrollment_expires::text AS enrollment_expires,
-            revoked_at::text AS revoked_at
-        FROM agent_credentials
+            revoked_at::text AS revoked_at,
+            cloud_access_enabled_at IS NOT NULL AS cloud_access,
+            cloud_serving_at::text AS cloud_serving_at,
+            (SELECT resource FROM mcp_resources r WHERE r.credential_id = c.id) AS mcp_resource
+        FROM agent_credentials c
         WHERE user_id = $1
         ORDER BY created_at DESC
         "#,
@@ -8435,6 +8447,11 @@ async fn list_agent_credentials(
             last_used_at: row.get("last_used_at"),
             revoked_at: row.get("revoked_at"),
             key_holder: row.get("key_holder"),
+            cloud_access: row.get("cloud_access"),
+            cloud_url: row
+                .get::<Option<String>, _>("mcp_resource")
+                .filter(|r| oauth::is_relay_resource(r)),
+            cloud_serving_at: row.get("cloud_serving_at"),
         });
     }
 
@@ -15582,6 +15599,10 @@ fn app_with_state(state: AppState) -> Router {
             "/agent-credentials/{id}/purge",
             post(purge_agent_credential),
         )
+        .route(
+            "/agent-credentials/{id}/cloud-access",
+            axum::routing::put(oauth::set_cloud_access),
+        )
         .route("/agent-auth/token", post(agent_auth_token))
         .route("/agent-auth/refresh", post(agent_auth_refresh))
         .route("/agent-auth/revoke", post(agent_auth_revoke))
@@ -15634,6 +15655,7 @@ fn app_with_state(state: AppState) -> Router {
         )
         .route("/mcp-resources", post(oauth::register_mcp_resource))
         .route("/mcp-resources/relay-ticket", post(oauth::relay_ticket))
+        .route("/mcp-resources/relay-status", post(oauth::relay_status))
         .route("/mcp-relay/ticket-key", get(oauth::relay_ticket_public_key))
         .route(
             "/review-keys",

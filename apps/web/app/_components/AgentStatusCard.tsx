@@ -8,6 +8,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  cloudAccessStatus,
   computerStatus,
   elapsed,
   presetFromSettings,
@@ -23,7 +24,10 @@ import {
   useAuditLogQuery,
   useAutoReplyPolicyQuery,
   useContactsQuery,
+  useOAuthGrantsQuery,
+  useSetCloudAccessMutation,
 } from "../../lib/api/hooks";
+import type { CloudAccessStatus } from "../../lib/agents/agent-status";
 import type { Agent, AgentCredential } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
@@ -39,6 +43,8 @@ import {
 
 // A computer's gateway checks in every 30 s; refresh as often.
 const REFRESH_MS = 30_000;
+// While the computer gets ready for cloud AIs it reports every 5 s.
+const PREPARING_REFRESH_MS = 5_000;
 
 const DOT_COLORS = { ok: "#16a34a", warn: "#f59e0b", off: "#9ca3af" } as const;
 
@@ -82,7 +88,10 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function AgentStatusCard({ agent }: { agent: Agent }) {
   const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
-  const credentialsQuery = useAgentCredentialsQuery({ refetchInterval: REFRESH_MS });
+  const [fastRefresh, setFastRefresh] = useState(false);
+  const credentialsQuery = useAgentCredentialsQuery({
+    refetchInterval: fastRefresh ? PREPARING_REFRESH_MS : REFRESH_MS,
+  });
   const policyQuery = useAutoReplyPolicyQuery(agent.id);
   const auditQuery = useAuditLogQuery(
     { event: "auto_reply_sent", aid: agent.aid, limit: 20 },
@@ -108,6 +117,8 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
   }, [agent.id]);
 
   const computer = computerStatus(credentialsQuery.data?.credentials ?? [], agent.aid, now);
+  const cloud = cloudAccessStatus(credentialsQuery.data?.credentials ?? [], agent.aid, now);
+  useEffect(() => setFastRefresh(cloud.kind === "preparing"), [cloud.kind]);
   const preset = policyQuery.isSuccess
     ? presetFromSettings(agent.auto_reply, policyQuery.data.policy)
     : null;
@@ -310,6 +321,10 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
         )}
       </Row>
 
+      <Row label={t("cloudAccess.label")}>
+        <CloudAccess status={cloud} agentId={agent.id} />
+      </Row>
+
       <Row label={t("agentStatus.recent")}>
         {replies.length === 0 ? (
           <span className="item-sub" data-testid="agent-status-recent-empty">
@@ -337,6 +352,190 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
         )}
       </Row>
     </section>
+  );
+}
+
+const LIST: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 20, fontSize: 14 };
+
+/** The cloud-AI row (docs/33 §12): off, on, and the URL to give an AI app. */
+function CloudAccess({ status, agentId }: { status: CloudAccessStatus; agentId: string }) {
+  const { t } = useTranslation();
+  const setCloudAccess = useSetCloudAccessMutation();
+  const grantsQuery = useOAuthGrantsQuery();
+  const [stage, setStage] = useState<"idle" | "confirmOn" | "confirmOff">("idle");
+  const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setStage("idle");
+    setMessage("");
+    setFailed(false);
+  }, [agentId]);
+
+  const apply = async (credentialId: string, enabled: boolean) => {
+    setFailed(false);
+    setMessage("");
+    try {
+      const out = await setCloudAccess.mutateAsync({ credentialId, enabled });
+      setStage("idle");
+      if (!enabled) setMessage(t("cloudAccess.turnedOff", { n: out.disconnected }));
+    } catch {
+      setFailed(true);
+    }
+  };
+  const busy = setCloudAccess.isPending;
+  const sub = (text: string) => (
+    <p className="item-sub" style={{ margin: "2px 0 0" }}>
+      {text}
+    </p>
+  );
+  const done = message ? sub(message) : null;
+  const error = failed ? <ErrorLine>{t("cloudAccess.failed")}</ErrorLine> : null;
+
+  if (status.kind === "unavailable") {
+    return (
+      <div data-testid="cloud-access-unavailable">
+        <Dot tone="off" />
+        <span style={STRONG}>{t("cloudAccess.unavailable")}</span>
+        {sub(t("cloudAccess.unavailableSub"))}
+      </div>
+    );
+  }
+
+  if (status.kind === "off") {
+    return (
+      <div data-testid="cloud-access-off">
+        <span style={STRONG}>{t("cloudAccess.off")}</span>
+        {done}
+        {stage !== "confirmOn" ? (
+          <>
+            {sub(t("cloudAccess.offSub"))}
+            <button
+              className="btn"
+              type="button"
+              style={{ marginTop: 8 }}
+              onClick={() => setStage("confirmOn")}
+              data-testid="cloud-access-turn-on"
+            >
+              {t("cloudAccess.turnOn")}
+            </button>
+          </>
+        ) : (
+          <div
+            style={{
+              marginTop: 8,
+              padding: "12px 14px",
+              border: "1px solid var(--line)",
+              borderRadius: 10,
+              background: "var(--surface-alt)",
+            }}
+          >
+            <p style={{ ...STRONG, margin: 0 }}>{t("cloudAccess.confirmTitle")}</p>
+            <ul style={LIST}>
+              <li>{t("cloudAccess.confirmDraft")}</li>
+              <li>{t("cloudAccess.confirmProvider")}</li>
+              <li>{t("cloudAccess.confirmGrant")}</li>
+              <li>{t("cloudAccess.confirmComputer")}</li>
+            </ul>
+            {error}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button
+                className="btn primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void apply(status.credentialId, true)}
+                data-testid="cloud-access-turn-on-yes"
+              >
+                {t("cloudAccess.turnOn")}
+              </button>
+              <button className="btn" type="button" disabled={busy} onClick={() => setStage("idle")}>
+                {t("agentStatus.cancel")}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const turnOff =
+    stage !== "confirmOff" ? (
+      <button
+        type="button"
+        onClick={() => setStage("confirmOff")}
+        style={{
+          marginTop: 8,
+          border: 0,
+          background: "none",
+          color: "var(--primary)",
+          cursor: "pointer",
+          fontSize: 13,
+          padding: 0,
+          display: "block",
+        }}
+        data-testid="cloud-access-turn-off"
+      >
+        {t("cloudAccess.turnOff")}
+      </button>
+    ) : (
+      <div style={{ marginTop: 8 }}>
+        {sub(t("cloudAccess.turnOffConfirm"))}
+        {error}
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={busy}
+            onClick={() => void apply(status.credentialId, false)}
+            data-testid="cloud-access-turn-off-yes"
+          >
+            {t("cloudAccess.turnOff")}
+          </button>
+          <button className="btn" type="button" disabled={busy} onClick={() => setStage("idle")}>
+            {t("cloudAccess.keep")}
+          </button>
+        </div>
+      </div>
+    );
+
+  if (status.kind === "preparing") {
+    return (
+      <div data-testid="cloud-access-preparing">
+        <Dot tone="warn" />
+        <span style={STRONG}>{t("cloudAccess.preparing")}</span>
+        {sub(t("cloudAccess.preparingSub"))}
+        {sub(t("cloudAccess.preparingSlow"))}
+        {turnOff}
+      </div>
+    );
+  }
+
+  if (status.kind === "stopped") {
+    return (
+      <div data-testid="cloud-access-stopped">
+        <Dot tone="warn" />
+        <span style={STRONG}>{t("cloudAccess.stopped")}</span>
+        {sub(t("cloudAccess.stoppedSub"))}
+        {turnOff}
+      </div>
+    );
+  }
+
+  const connected = (grantsQuery.data?.grants ?? []).filter((g) => g.resource === status.url).length;
+  return (
+    <div data-testid="cloud-access-ready">
+      <Dot tone="ok" />
+      <span style={STRONG}>{t("cloudAccess.ready")}</span>{" "}
+      <span className="item-sub">{t("cloudAccess.connectedCount", { n: connected })}</span>
+      <CommandLine command={status.url} testId="cloud-access-url" />
+      <ol style={LIST}>
+        <li>{t("cloudAccess.step1")}</li>
+        <li>{t("cloudAccess.step2")}</li>
+        <li>{t("cloudAccess.step3")}</li>
+      </ol>
+      {sub(t("cloudAccess.urlNote"))}
+      {turnOff}
+    </div>
   );
 }
 

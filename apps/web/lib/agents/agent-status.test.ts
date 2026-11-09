@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCredential, AuditLogEntry } from "../api/types";
 import {
+  cloudAccessStatus,
   computerStatus,
   elapsed,
   parseServerTime,
@@ -149,5 +150,46 @@ describe("elapsed", () => {
     expect(elapsed(NOW - 50 * 3_600_000, NOW)).toEqual({ unit: "days", value: 2 });
     // A clock a little ahead of the server's never goes negative.
     expect(elapsed(NOW + 5_000, NOW)).toEqual({ unit: "seconds", value: 0 });
+  });
+});
+
+describe("cloudAccessStatus", () => {
+  const URL = "https://k3x9q7abcd.mcp.agent-inbox.ai/mcp";
+  const recent = "2026-11-08 02:59:30+00";
+
+  it("needs a computer", () => {
+    expect(cloudAccessStatus([], AID, NOW)).toEqual({ kind: "unavailable" });
+    expect(cloudAccessStatus([credential({ key_holder: "web_keystore", cloud_access: true })], AID, NOW)).toEqual({
+      kind: "unavailable",
+    });
+  });
+
+  it("is off until the person turns it on", () => {
+    const c = credential({ last_used_at: recent });
+    expect(cloudAccessStatus([c], AID, NOW)).toEqual({ kind: "off", credentialId: c.credential_id });
+  });
+
+  it("is ready only while the computer recently said it serves", () => {
+    const on = { cloud_access: true, last_used_at: recent, cloud_url: URL };
+    const ready = credential({ ...on, cloud_serving_at: "2026-11-08 02:59:55+00" });
+    expect(cloudAccessStatus([ready], AID, NOW)).toEqual({
+      kind: "ready",
+      credentialId: ready.credential_id,
+      url: URL,
+    });
+    expect(cloudAccessStatus([credential({ ...on, cloud_serving_at: null })], AID, NOW)).toMatchObject({
+      kind: "preparing",
+    });
+    expect(
+      cloudAccessStatus([credential({ ...on, cloud_serving_at: "2026-11-08 02:50:00+00" })], AID, NOW),
+    ).toMatchObject({ kind: "preparing" });
+    expect(
+      cloudAccessStatus([credential({ ...on, cloud_url: null, cloud_serving_at: recent })], AID, NOW),
+    ).toMatchObject({ kind: "preparing" });
+  });
+
+  it("is stopped while the computer is silent", () => {
+    const c = credential({ cloud_access: true, last_used_at: "2026-11-08 01:00:00+00", cloud_url: URL });
+    expect(cloudAccessStatus([c], AID, NOW)).toEqual({ kind: "stopped", credentialId: c.credential_id });
   });
 });

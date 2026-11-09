@@ -565,6 +565,20 @@ export function useOAuthGrantsQuery() {
   });
 }
 
+// docs/33 §12: let cloud AIs reach a computer through the relay, or stop it
+// (which also disconnects the AI apps let in through it).
+export function useSetCloudAccessMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ credentialId, enabled }: { credentialId: string; enabled: boolean }) =>
+      defaultApiClient.setCloudAccess(credentialId, enabled),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentCredentials() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.oauthGrants() });
+    },
+  });
+}
+
 export function useDeleteOAuthGrantMutation() {
   const queryClient = useQueryClient();
   return useMutation({

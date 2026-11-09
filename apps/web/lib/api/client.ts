@@ -623,6 +623,16 @@ export class NexusInboxApiClient {
     });
   }
 
+  async setCloudAccess(
+    credentialId: string,
+    enabled: boolean,
+  ): Promise<{ cloud_access: boolean; disconnected: number }> {
+    return this.request<{ cloud_access: boolean; disconnected: number }>(
+      "/agent-credentials/" + encodeURIComponent(credentialId) + "/cloud-access",
+      { method: "PUT", body: JSON.stringify({ enabled }) },
+    );
+  }
+
   async listOAuthGrants(): Promise<{ grants: OAuthGrant[] }> {
     return this.request<{ grants: OAuthGrant[] }>("/oauth/grants");
   }
