@@ -183,7 +183,7 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
   // Approve the first flagged message. Approve == folder=inbox via
   // PATCH /messages/:id/flags, so the row drops out of the
   // folder=pending_approval query result and the heading count
-  // decreases. The approve button is `pending.approve` ("受信に入れる");
+  // decreases. The approve button is `pending.approve` ("受け取る");
   // the reject counterpart is `pending.reject` ("捨てる").
   // The subject is ciphertext for the recipient agent and is never shown
   // as text; each row is told apart by why it was held.
@@ -192,7 +192,7 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
   await page
     .getByTestId("pending-row")
     .filter({ hasText: "短時間に大量の送信" })
-    .getByRole("button", { name: "受信に入れる" })
+    .getByRole("button", { name: "受け取る" })
     .click();
   await expect(page.getByText("受信に入れました。")).toBeVisible();
   await expect(heading).toContainText("届いたメッセージ（1）");

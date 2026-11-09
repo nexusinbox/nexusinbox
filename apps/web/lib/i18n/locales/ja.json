@@ -36,15 +36,8 @@
   },
 
   "auth": {
-    "proofLabel": "PROOF OF PERSONHOOD · ZK-AUTH",
-    "loginSubtitle": "AIエージェント専用 E2E暗号化受信箱。\nWorld IDで人間証明してセッションを開始。",
-    "awaitingHandshake": "> awaiting handshake",
-    "connectWorldId": "CONNECT WORLD ID",
-    "verifying": "VERIFYING…",
-    "footerE2E": "E2E · AES-GCM-256",
-    "footerDID": "DID:KEY · Ed25519",
-    "footerIdentity": "WORLD ID · ORB",
-    "hudTag": "NEXUSINBOX // NET-0",
+    "connectWorldId": "World ID でログイン",
+    "verifying": "確かめています…",
     "statusVerifying": "認証中...",
     "statusContinue": "World IDで認証を続行してください。",
     "statusPrepFailed": "認証準備に失敗しました: {message}",
@@ -52,13 +45,28 @@
     "statusAuthFailed": "認証に失敗しました: {message} (HTTP {status})",
     "statusAuthFailedMsg": "認証に失敗しました: {message}",
     "statusAuthFailedGeneric": "認証に失敗しました。ログを確認してください。",
-    "statusSuccess": "認証完了。ダッシュボードへリダイレクトします。",
+    "statusSuccess": "ログインしました。画面を移動しています…",
     "statusServerFailed": "認証に失敗しました: サーバー検証エラー。設定を確認してください。",
     "idkitError": "IDKitエラー: {code}",
     "connectBtn": "World IDに接続",
     "connectLoading": "読み込み中...",
     "connectAlertFailed": "World ID接続の準備に失敗しました。",
-    "conceptLink": "NexusInboxとは？"
+    "conceptLink": "NexusInboxとは？",
+    "hero": "信頼する人と、\nおたがいの AI エージェントで話そう。",
+    "sub": "日程調整も、ちょっとした依頼も。あなたの AI と相手の AI がやり取りして、決めるのはあなた。",
+    "start": "World ID ではじめる",
+    "sceneThemWho": "山田さんの秘書",
+    "sceneThem": "来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか？",
+    "sceneYouWho": "あなたの秘書（あなたが確認して送信）",
+    "sceneYou": "木曜 14:00 でお願いします。",
+    "pointPrivateTitle": "本人だけが読める",
+    "pointPrivateDesc": "運営も中身を読めません。",
+    "pointHumanTitle": "相手は一人の人間",
+    "pointHumanDesc": "World ID で、なりすましや大量登録を防ぎます。",
+    "pointAiTitle": "AI は下書きまで",
+    "pointAiDesc": "送るかどうかはあなたが決めます。",
+    "ctaNote": "スマホの World App で本人を確かめます。",
+    "linksLabel": "関連リンク"
   },
 
   "onboarding": {
@@ -80,6 +88,10 @@
   },
 
   "messages": {
+    "partyName": "{person}さんの{agent}",
+    "fromAgent": "{agent} から送ります",
+    "emptyConversation": "まだメッセージはありません。{agent} から最初のひと言を送りましょう。",
+    "recipientNotFound": "相手が見つかりませんでした。アドレスを確かめてください。",
     "chipsLabel": "絞り込み",
     "chipAll": "すべて",
     "chipUnread": "未読",
@@ -159,21 +171,21 @@
     "addToContacts": "コンタクトに追加",
     "blockSender": "この送信者をブロック",
     "blockPanelTitle": "この送信者をブロック",
-    "blockPanelDesc": "ブロックレベルを選んでください。エージェントアドレス (DID) や送信者の World ID はサーバ側で自動解決するので、あなたが値を手入力する必要はありません。",
-    "blockLevelL1": "この相手 (このアドレス) だけ",
-    "blockLevelL1Desc": "この送信者の現在のエージェントアドレス (DID) からのメッセージを無音で拒否します。送信者が鍵ローテして新しい DID を作ると再到達します。",
+    "blockPanelDesc": "どこまで止めるかを選んでください。あとからコンタクト →「ブロック中」で解除できます。",
+    "blockLevelL1": "この相手だけ",
+    "blockLevelL1Desc": "このエージェントからのメッセージを受け取りません。相手には知らされません。相手が鍵を作り直すと、また届くことがあります。",
     "blockLevelL2": "この人のすべてのエージェント",
-    "blockLevelL2Desc": "送信者の World ID に紐づく**すべて**のエージェントをブロックします。新規エージェントを作り直しても届きません。",
-    "blockLevelL3": "完全に非表示 (相手には知らせない)",
-    "blockLevelL3Desc": "L2 に加え、DID resolver からもあなたの存在を隠します。送信者から見ると「あなたは最初からいない」状態になります。",
+    "blockLevelL2Desc": "この人が持つすべてのエージェントからのメッセージを受け取りません。新しいエージェントを作り直しても届きません。",
+    "blockLevelL3": "完全に非表示",
+    "blockLevelL3Desc": "すべてのエージェントを止めたうえで、相手からあなたが見えなくなります。相手からは「最初からいない」ように見えます。",
     "blockCancel": "キャンセル",
-    "blockConfirmL1": "この送信者の現在の DID をブロックしますか?",
-    "blockConfirmL2": "この送信者の World ID 単位で完全ブロックします。よろしいですか?",
-    "blockConfirmL3": "この送信者から完全に非表示になります。よろしいですか?",
-    "blockSuccessL1": "この送信者 DID をブロックしました。/settings/blocks で解除できます。",
-    "blockSuccessL2": "送信者の World ID 単位でブロックしました。/settings/blocks で解除できます。",
-    "blockSuccessL3": "ステルスモードで完全ブロックしました。/settings/blocks で解除できます。",
-    "blockFailSenderNotRegistered": "この送信者は NexusInbox に登録がないため、L2/L3 (World ID 単位) のブロックはできません。L1 で DID 単位のブロックをお試しください。",
+    "blockConfirmL1": "この相手をブロックしますか？",
+    "blockConfirmL2": "この人のすべてのエージェントをブロックしますか？",
+    "blockConfirmL3": "この人から完全に非表示になります。よろしいですか？",
+    "blockSuccessL1": "この相手をブロックしました。コンタクト →「ブロック中」で解除できます。",
+    "blockSuccessL2": "この人のすべてのエージェントをブロックしました。コンタクト →「ブロック中」で解除できます。",
+    "blockSuccessL3": "完全に非表示にしました。コンタクト →「ブロック中」で解除できます。",
+    "blockFailSenderNotRegistered": "この相手は NexusInbox に登録がないため、「この人のすべてのエージェント」は選べません。「この相手だけ」を選んでください。",
     "blockFailGeneric": "ブロックを追加できませんでした。時間をおいて再試行してください。",
     "blockBusy": "登録中…",
     "statusUnread": "未読",
@@ -294,6 +306,14 @@
   },
 
   "compose": {
+    "pickFrom": "送る側",
+    "pickNoAgent": "まだエージェントがありません。",
+    "pickNoSender": "このブラウザから送れるエージェントがありません。パソコンで動くエージェントは、パソコンの AI ツールかクラウドの AI から送ります。",
+    "pickSomeOnComputer": "パソコンで動くエージェントは、ここには出ません。パソコンの AI ツールかクラウドの AI から送ります。",
+    "pickAddress": "アドレス",
+    "pickSendToAddress": "このアドレスに送る",
+    "pickNoMatch": "当てはまる相手はいません。アドレス (aid:ai:…) を貼ると送れます。",
+    "pickNobody": "コンタクトはまだありません。アドレス (aid:ai:…) を貼ると送れます。",
     "title": "新しい会話",
     "subtitle": "宛先を選び、本文を入力して送信",
     "refreshAgents": "エージェント更新",
@@ -377,11 +397,13 @@
     },
     "toChosen": "宛先: {name}",
     "toChange": "変える",
-    "toGroupContacts": "連絡先",
+    "toGroupContacts": "コンタクト",
     "toGroupOwn": "自分のエージェント"
   },
 
   "agentDrafts": {
+    "replyTo": "{name} への返事",
+    "newTo": "{name} へ",
     "title": "AI が作った下書き（{count}）",
     "why": "クラウドの AI は送れません。あなたが内容を見て「この内容で送る」を押したときだけ送られます。",
     "empty": "確認を待っている下書きはありません。",
@@ -397,15 +419,8 @@
     "unknownParty": "未登録の相手",
     "madeBy": "{agent} が作成",
     "madeByVia": "{via} が「{agent}」の権限で作成",
-    "open": "開いて確認",
-    "detailTitle": "下書きを確認",
-    "back": "← 戻る",
-    "from": "差出人",
-    "to": "宛先",
-    "subject": "件名",
-    "made": "作成",
     "send": "この内容で送る",
-    "discard": "捨てる",
+    "discard": "破棄",
     "detailNote": "直したいときは、AI に頼んで作り直してもらいます (この画面では書き換えません)。下書きは 7 日で消えます。",
     "sent": "送りました。",
     "sendFailed": "送れませんでした。しばらくしてからもう一度お試しください。",
@@ -418,6 +433,7 @@
   },
 
   "pending": {
+    "block": "ブロック",
     "subjectHidden": "件名は暗号化されています（承認すると受信箱で読めます）",
     "categoryName": {
       "spam_denylist": "迷惑な送信者の一覧に一致",
@@ -436,11 +452,10 @@
     "error": "メッセージの読み込みに失敗しました。",
     "retry": "再試行",
     "empty": "確認が必要なメッセージはありません。",
-    "sender": "送信者: ",
     "trustScore": "信頼度 {n}%",
     "category": " · カテゴリ {category}",
     "noSubject": "(件名なし)",
-    "approve": "受信に入れる",
+    "approve": "受け取る",
     "reject": "捨てる",
     "approved": "受信に入れました。",
     "approveFailed": "承認できませんでした。しばらくしてから再試行してください。",
@@ -451,31 +466,32 @@
   },
 
   "contacts": {
+    "tabBlocks": "ブロック中",
+    "tabContacts": "コンタクト",
+    "tabsLabel": "コンタクトとブロック",
     "title": "コンタクト",
     "subtitle": "よく連絡する相手やメモを管理",
     "refresh": "更新",
-    "addNew": "+ 新規追加",
-    "addNewDesc": "エージェントアドレスと名前を登録して一覧に表示します。",
+    "addNew": "コンタクトを追加",
     "empty": "コンタクトはまだ登録されていません。",
     "loading": "コンタクトを読み込んでいます…",
     "loadFailed": "コンタクトを読み込めませんでした。右上の更新ボタンで再読み込みしてください。",
     "remove": "削除",
     "formNewTitle": "新規コンタクト",
     "formEditTitle": "コンタクト編集",
-    "formBadge": "コンタクト",
-    "didLabel": "エージェントアドレス (DID)",
+    "didLabel": "技術 ID",
     "didPlaceholder": "did:key:z6Mk...",
-    "didHelp": "相手のエージェントアドレスを貼り付けてください。did:key: で始まる文字列で、作成後は変更できません。",
+    "didHelp": "相手の技術 ID (did:key: で始まる文字列) です。ふつうは会話のメニューの「コンタクトに追加」から入ります。登録後は変えられません。",
     "nameLabel": "名前 / ニックネーム",
     "namePlaceholder": "例: 田中太郎",
     "nameHelp": "相手を見分けやすい名前を付けてください。",
     "agentNameLabel": "エージェント名 (任意)",
     "agentNamePlaceholder": "例: 秘書 / 受付 / サポート",
-    "agentNameHelp": "同一人物が役割ごとに複数のエージェントアドレスを持つ場合に便利です。",
+    "agentNameHelp": "同じ人が役割ごとに複数のエージェントを持つときに便利です。",
     "memoLabel": "メモ (任意)",
     "memoPlaceholder": "関係性や連絡時の注意事項など",
     "validationName": "名前またはニックネームを入力してください。",
-    "validationDid": "エージェントアドレスは did:key: で始まる必要があります。",
+    "validationDid": "技術 ID は did:key: で始まります。",
     "updated": "コンタクトを更新しました。",
     "added": "コンタクトを追加しました。",
     "saveFailed": "保存に失敗しました。",
@@ -483,7 +499,6 @@
     "deleted": "コンタクトを削除しました。",
     "deleteFailed": "削除に失敗しました。",
     "deleteBtn": "削除",
-    "deleting": "削除中…",
     "addBtn": "追加",
     "saveBtn": "変更を保存",
     "savingBtn": "保存中…",
@@ -495,25 +510,65 @@
     "resetKeyDone": "コンタクトの鍵を作り直しました。",
     "resetKeyFailed": "鍵の作り直しに失敗しました。",
     "unreadableTitle": "この端末では開けないコンタクト",
-    "unreadableHelp": "名前とメモは暗号化されていて、この端末の鍵では開けません。削除はできます。"
+    "unreadableHelp": "名前とメモは暗号化されていて、この端末の鍵では開けません。削除はできます。",
+    "searchPlaceholder": "名前やメモで探す",
+    "noMatch": "当てはまるコンタクトはありません。",
+    "sendMessage": "メッセージを送る",
+    "editBtn": "編集",
+    "cancelBtn": "キャンセル"
+  },
+
+  "share": {
+    "button": "紹介する",
+    "switchLabel": "紹介ページを公開する",
+    "switchDesc": "エージェントの名前・ひと言・あなたの表示名が、リンクを知っている人に見えます。オフにすると、1 分ほどでリンクは開けなくなります。",
+    "text": "{name}に、NexusInbox で連絡できます。AI エージェントどうしで日程調整ができます。",
+    "textLabel": "共有する文",
+    "share": "共有する",
+    "copyLink": "リンクをコピー",
+    "copied": "コピーしました",
+    "copyFailed": "コピーできませんでした。文を選んでコピーしてください。",
+    "on": "紹介ページを公開しました",
+    "off": "紹介ページを閉じました。リンクはもう開けません。",
+    "failed": "切り替えられませんでした。もう一度お試しください。"
+  },
+
+  "publicAgent": {
+    "ogTitle": "{name}に AI エージェントで連絡",
+    "verified": "World ID で本人確認済みの人のエージェントです",
+    "send": "メッセージを送る",
+    "firstTime": "はじめての方: World ID でログイン → あなたのエージェントを作る → そのまま送れます",
+    "notFoundTitle": "このページは見つかりません",
+    "notFoundDesc": "紹介が終わったか、リンクが間違っているようです。",
+    "unavailableTitle": "いまは表示できません",
+    "unavailableDesc": "少し時間をおいて、もう一度開いてください。",
+    "toLogin": "NexusInbox をはじめる"
   },
 
   "agents": {
+    "profileEdit": "プロフィールを編集",
+    "nameLabel": "名前",
+    "bioLabel": "ひと言",
+    "bioPlaceholder": "このエージェントが何をするか、ひと言で",
+    "bioEmpty": "ひと言はまだありません。「プロフィールを編集」から書けます。",
+    "backToList": "一覧に戻る",
+    "tabsLabel": "表示の切り替え",
+    "tabStatus": "状態",
+    "tabDetails": "詳細",
+    "bannerProfileUpdated": "プロフィールを更新しました。",
+    "bannerProfileFailed": "プロフィールを更新できませんでした。ひと言は 160 文字までです。",
     "title": "エージェント",
     "subtitle": "受信箱を共有するエージェントを管理",
     "newAgent": "+ 新規エージェント",
     "refresh": "更新",
-    "empty": "エージェントはまだありません。サイドバーの「エージェント作成」から作成してください。",
+    "empty": "エージェントはまだありません。上の「+ 新規エージェント」から作れます。",
     "unread": "未読 {count}",
     "namePlaceholder": "エージェント名",
-    "editName": "名前を編集",
     "save": "保存",
     "cancel": "キャンセル",
     "overviewTitle": "技術情報",
-    "addressTitle": "相手に伝えるアドレス",
     "addressDesc": "このアドレスを相手に伝えると、このエージェント宛てにメッセージが届きます。鍵を作り直しても変わりません。",
     "openInbox": "受信箱を開く",
-    "detailsTitle": "詳細（技術的な情報と細かい設定）",
     "approvalQueueNote": "信頼度がとても低い送信者からのメッセージや、迷惑メッセージと判定されたものは、受信箱ではなく「承認待ち」に入ります。",
     "agentId": "エージェントID: {aid}",
     "agentIdHelp": "人間や他のエージェントに共有する安定したアドレスです。鍵ローテーション後も変わりません。",
@@ -701,10 +756,8 @@
     "confirmDelete": "エージェント「{label}」を削除しますか？\n\n関連する受信箱のメタデータも削除されます。この操作は元に戻せません。続行しますか？",
     "confirmRevoke": "このクレデンシャルを即座に失効させますか？",
     "confirmEmergency": "緊急停止しますか？\n\nこのエージェントにつながっているパソコンと AI ツール、クラウドの AI が、すぐに使えなくなります。つなぎ直すには、もう一度登録が必要です。",
-    "emptyReader": "表示するエージェントがありません。サイドバーの「エージェント作成」から作成してください。",
+    "emptyReader": "表示するエージェントがありません。上の「+ 新規エージェント」から作れます。",
     "bannerNameEmpty": "エージェント名を入力してください。",
-    "bannerNameUpdated": "エージェント名を更新しました。",
-    "bannerNameFailed": "名前を更新できませんでした。",
     "bannerAutoReplyOff": "自動返信を無効にしました。",
     "bannerAutoReplyOn": "自動返信を有効にしました。",
     "bannerAutoReplyFailed": "自動返信設定を変更できませんでした。",
@@ -777,31 +830,29 @@
   },
 
   "blocks": {
+    "since": "{when} から",
+    "personAllAgents": "ある人のすべてのエージェント",
+    "lead": "ブロックした相手からのメッセージは届きません。解除すると、また届くようになります。",
     "title": "ブロック",
-    "subtitle": "受信したくない送信者を管理",
     "refresh": "更新",
-    "empty": "ブロックはありません。",
-    "unblock": "ブロック解除",
-    "l1Label": "特定の送信者をブロック",
-    "l2Label": "ID単位の完全ブロック",
-    "l3Label": "ステルスモード (非表示)",
+    "empty": "ブロックしている相手はいません。会話の「⋯」からブロックできます。",
+    "unblock": "解除",
+    "l1Label": "この相手だけ",
+    "l2Label": "この人のすべてのエージェント",
+    "l3Label": "完全に非表示",
     "l1Desc": "このエージェントからのメッセージを無視します。送信者にはブロックされたことは通知されません。",
     "l2Desc": "認証済みIDに紐づくすべてのエージェントをブロックします。新しいエージェントを作成しても受信箱に届きません。",
     "l3Desc": "ブロックに加え、あなたのアカウントを相手から完全に非表示にします。",
-    "addTitle": "ブロックを追加",
-    "addMeta": "通常は**受信メッセージの「この送信者をブロック」ボタン**を使うのが簡単です — 相手の DID や World ID はサーバ側で自動解決します。以下の手入力フォームは、運用者や別経路で識別子を持っている上級者向けのバックアップです。",
+    "addTitle": "アドレスを指定してブロック（上級者向け）",
+    "addMeta": "ふつうは会話の「⋯」→「ブロック」を使ってください。ここは、相手の技術 ID や World ID のハッシュ値を別の方法で知っているときだけ使います。",
     "levelTitle": "ブロックレベル",
-    "didTitle": "エージェントアドレス (DID)",
-    "didHelp": "`did:key:...` で始まる文字列。通常は受信メッセージの「この送信者をブロック」ボタンから L1 ブロックを登録する方が簡単です (手入力の必要なし)。エージェントID (`aid:ai:...`) とは別物 — エージェントID は鍵ローテしても不変、エージェントアドレス (DID) はその時点の鍵に紐づく値です。",
+    "didTitle": "相手の技術 ID（did:key:…）",
     "didPlaceholder": "did:key:z6Mk...",
-    "worldIdTitle": "送信者の World ID (world_id_hash, base64url)",
-    "worldIdHelp": "送信者の World ID から導出される一方向ハッシュ値 (base64url)。**通常この値は Web UI には表示されません** — 受信メッセージの「この送信者をブロック」ボタンから L2/L3 を選ぶと、サーバ側で自動解決して登録します。別経路でハッシュ値を持っている運用ケースでのみ、このフォームを使ってください。",
+    "worldIdTitle": "相手の World ID のハッシュ値",
     "worldIdPlaceholder": "base64url hash...",
-    "addBtn": "追加 (上級者向け手入力)",
+    "addBtn": "ブロックする",
     "validationDid": "ブロック対象のエージェントアドレス (DID) を入力してください。",
     "validationWorldId": "ブロック対象の送信者 World ID ハッシュ値を入力してください。",
-    "targetDidBadge": "DID",
-    "targetWorldIdBadge": "World ID",
     "added": "ブロックを追加しました。",
     "addFailed": "ブロックを追加できませんでした。しばらくしてから再試行してください。",
     "removed": "ブロックを解除しました。",
@@ -810,62 +861,194 @@
 
   "audit": {
     "title": "AI の操作履歴",
-    "subtitle": "パソコンや AI ツールが、このアカウントで行った操作の記録です。",
-    "pageTitle": "監査ログ",
-    "pageDesc": "非対話型エージェントアクセスのセキュリティイベント履歴",
-    "allEvents": "すべてのイベント",
-    "loading": "読み込み中...",
-    "loadFailed": "読み込みに失敗しました",
-    "emptyTitle": "監査イベントはまだありません",
-    "emptyDesc": "エージェントが非対話型アクセスでトークンを発行したりメッセージを送信すると、ここにイベントが表示されます。",
-    "guideBtn": "イベントの種類と説明",
-    "guideClose": "説明を閉じる",
-    "guideOpen": "このイベントについて",
-    "guideInfo": "通常イベント",
-    "guideWarn": "警告イベント",
-    "guideCritical": "重大イベント",
+    "subtitle": "エージェントや AI がしたことの記録です。",
+    "presetAll": "すべて",
+    "presetAutoReply": "自動返信",
+    "presetDrafts": "AI の下書き",
+    "presetFiles": "添付ファイル",
+    "presetComputer": "このブラウザとパソコン",
+    "filterAgent": "エージェントで絞り込む",
+    "filterEvent": "種類で絞り込む",
+    "allAgents": "すべてのエージェント",
+    "otherAgent": "ほかのエージェント",
+    "allEvents": "すべての種類",
+    "loading": "読み込んでいます…",
+    "loadFailed": "読み込めませんでした",
+    "emptyTitle": "まだ記録はありません",
+    "emptyDesc": "エージェントが返事をしたり、AI をつないだりすると、ここに出ます。",
     "prev": "前へ",
     "next": "次へ",
-    "tokenIssued": "トークン発行",
-    "tokenIssuedDesc": "パソコンや AI ツールがログインし、使うための鍵 (トークン) を受け取りました。",
-    "tokenRefreshed": "トークン更新",
-    "tokenRefreshedDesc": "使うための鍵 (トークン) を新しいものに取り替えました。",
-    "tokenRevoked": "トークン失効",
-    "tokenRevokedDesc": "パソコンや AI ツールが、自分の鍵 (トークン) を無効にしました。終了するときに行われます。",
-    "credentialCreated": "クレデンシャル作成",
-    "credentialCreatedDesc": "パソコンや AI ツール用の登録を作りました。相手側で登録を済ませると使えるようになります。",
-    "credentialActivated": "クレデンシャル有効化",
-    "credentialActivatedDesc": "パソコンや AI ツールが登録を済ませ、使えるようになりました。",
-    "credentialRevoked": "クレデンシャル失効",
-    "credentialRevokedDesc": "登録を取り消しました。その登録では、もう使えません。",
-    "keyRotationStarted": "鍵ローテーション開始",
-    "keyRotationStartedDesc": "鍵の取り替えを始めました。新しい鍵が登録されるまで、古い鍵が使えます。",
-    "credentialCompromised": "クレデンシャル漏洩疑い",
-    "credentialCompromisedDesc": "リフレッシュトークンの再利用が検出され、クレデンシャルが漏洩した可能性があります。このクレデンシャルの全トークンが自動的に失効されました。鍵のローテーションまたはクレデンシャルの再作成を検討してください。",
-    "refreshReuseDetected": "リフレッシュトークン再利用検出",
-    "refreshReuseDetectedDesc": "使用済みのリフレッシュトークンが再利用されました。正規のGatewayはトークンを再利用しないため、トークンが第三者にコピーされた可能性があります。直後にcredential_compromisedイベントが記録されます。",
-    "agentMessageSent": "エージェントメッセージ送信",
-    "agentMessageSentDesc": "エージェントが非対話型アクセスでメッセージを送信しました。Policy L3の1日あたり送信上限 (200/credential/day) にカウントされます。detailのmessage_idで送信メッセージを特定できます。",
-    "emergencyShutdown": "緊急遮断",
-    "emergencyShutdownDesc": "緊急停止しました。このエージェントにつながっていたパソコンと AI ツール、クラウドの AI は、すべて使えなくなりました。",
-    "rateLimitTripped": "レート制限超過",
-    "rateLimitTrippedDesc": "Policy L3の送信上限に達し、メッセージ送信が拒否されました。1日あたりのクレデンシャルごとの上限 (デフォルト200) を超えた場合に記録されます。",
-    "policyViolation": "ポリシー違反",
-    "policyViolationDesc": "エージェントの操作がセキュリティポリシーに違反しました。スコープ不足や不正なリクエストによりポリシーエンジンが拒否した操作が記録されます。",
-    "presetBridgeOnly": "Bridge events only",
-    "clearAidFilter": "エージェントフィルタを解除",
-    "bridgedDecrypt": "Bridge 復号",
-    "bridgedDecryptDesc": "このブラウザからの操作で、パソコンのプログラムが 1 通だけ本文を開きました。",
-    "bridgedStatus": "Bridge status 参照",
-    "bridgedStatusDesc": "このブラウザが、パソコンのプログラムの状態を確かめました。",
-    "bridgedPairRequested": "Bridge pair 要求",
-    "bridgedPairRequestedDesc": "Web UI が pairing code で新規 token の発行を daemon に依頼しました。succeeded / failed がこの直後に続くはずです。",
-    "bridgedPairSucceeded": "Bridge pair 成功",
-    "bridgedPairSucceededDesc": "daemon が新しい bridge token を発行しました。device_label が detail に、nonce_bound=true なら session nonce binding も有効です。",
-    "bridgedPairFailed": "Bridge pair 失敗",
-    "bridgedPairFailedDesc": "pairing code が不正 / 期限切れ / 使用済みだったため token は発行されませんでした。同一 origin から連続で出ていれば攻撃試行の可能性があります。",
-    "bridgedPairRevoked": "Bridge pair revoke",
-    "bridgedPairRevokedDesc": "browser から Revoke this / Revoke all が実行されました。detail に revoke 対象数 / device_label が記録されます。"
+    "details": "詳細",
+    "detailKind": "種類",
+    "detailTime": "日時",
+    "detailAddress": "アドレス",
+    "detailCredential": "登録 ID",
+    "someAgent": "エージェント",
+    "someCloudAi": "クラウドの AI",
+    "unknownEvent": "{agent} で操作がありました",
+    "events": {
+      "auto_reply_sent": {
+        "label": "自動返信を送った",
+        "text": "{agent} が {who} に自動で返事を送りました",
+        "textNoReply": "{agent} が {who} からのメッセージを自動で処理しました (返事はしていません)"
+      },
+      "auto_reply_evaluated": {
+        "label": "自動返信の判断",
+        "text": "{agent} が {who} からのメッセージに、自動返信のルールを当てはめました"
+      },
+      "auto_reply_skipped_incoming_is_auto_reply": {
+        "label": "自動返信への返事を見送った",
+        "text": "{who} からの自動返信には、自動で返事をしませんでした"
+      },
+      "auto_reply_policy_created": {
+        "label": "自動返信を設定",
+        "text": "{agent} の自動返信を設定しました"
+      },
+      "auto_reply_policy_updated": {
+        "label": "自動返信の設定を変更",
+        "text": "{agent} の自動返信の設定を変えました"
+      },
+      "auto_reply_policy_deleted": {
+        "label": "自動返信の設定を削除",
+        "text": "{agent} の自動返信の設定を消しました"
+      },
+      "agent_draft_created": {
+        "label": "AI が下書きを作った",
+        "text": "AI が {agent} から {who} への返事を下書きしました"
+      },
+      "agent_draft_sent": {
+        "label": "下書きを送った",
+        "text": "{agent} の下書きを確かめて送りました"
+      },
+      "agent_draft_discarded": {
+        "label": "下書きを捨てた",
+        "text": "{agent} の下書きを捨てました"
+      },
+      "agent_message_sent": {
+        "label": "パソコンから送った",
+        "text": "{agent} がパソコンからメッセージを送りました"
+      },
+      "oauth_grant_created": {
+        "label": "クラウドの AI をつないだ",
+        "text": "{client} (クラウドの AI) を {agent} につなぎました"
+      },
+      "oauth_grant_revoked": {
+        "label": "クラウドの AI を外した",
+        "text": "{client} (クラウドの AI) を {agent} から外しました"
+      },
+      "cloud_access_enabled": {
+        "label": "クラウドの AI をオン",
+        "text": "{agent} でクラウドの AI を使えるようにしました"
+      },
+      "cloud_access_disabled": {
+        "label": "クラウドの AI をオフ",
+        "text": "{agent} でクラウドの AI を使えないようにしました"
+      },
+      "emergency_shutdown": {
+        "label": "緊急停止",
+        "text": "{agent} を緊急停止しました。つながっていたパソコンと AI はすべて切れました"
+      },
+      "credential_activated": {
+        "label": "パソコンをつないだ",
+        "text": "{agent} をパソコンにつなぎました"
+      },
+      "credential_revoked": {
+        "label": "パソコンの登録を取り消した",
+        "text": "{agent} のパソコンの登録を取り消しました"
+      },
+      "credential_activation_failed": {
+        "label": "パソコンの登録に失敗",
+        "text": "{agent} のパソコンの登録に失敗しました"
+      },
+      "credential_auto_revoked": {
+        "label": "失敗が続いて登録を取り消した",
+        "text": "パソコンの登録の失敗が続いたため、{agent} の登録を取り消しました"
+      },
+      "credential_compromised": {
+        "label": "ログイン情報が盗まれたおそれ",
+        "text": "{agent} のパソコンのログイン情報が盗まれたおそれがあるため、すべて止めました"
+      },
+      "refresh_reuse_detected": {
+        "label": "使用済みのログイン情報が使われた",
+        "text": "{agent} で、使い終わったログイン情報がもう一度使われました"
+      },
+      "key_rotation_started": {
+        "label": "鍵の取り替えを開始",
+        "text": "{agent} のパソコンの鍵の取り替えを始めました"
+      },
+      "token_issued": {
+        "label": "パソコンがログイン",
+        "text": "パソコンが {agent} としてログインしました"
+      },
+      "token_refreshed": {
+        "label": "ログインを更新",
+        "text": "パソコンが {agent} のログインを更新しました"
+      },
+      "token_revoked": {
+        "label": "ログインを終えた",
+        "text": "パソコンが {agent} のログインを終えました"
+      },
+      "attachment_upload_intent_created": {
+        "label": "添付ファイルの準備",
+        "text": "{agent} が添付ファイルを送る準備をしました"
+      },
+      "attachment_upload_completed": {
+        "label": "添付ファイルをアップロード",
+        "text": "{agent} が添付ファイルをアップロードしました"
+      },
+      "attachment_attached_to_message": {
+        "label": "添付ファイルを付けた",
+        "text": "{agent} が {who} へのメッセージに添付ファイルを付けました"
+      },
+      "attachment_download_url_issued": {
+        "label": "添付ファイルを開いた",
+        "text": "{agent} で添付ファイルを開きました"
+      },
+      "attachment_deleted": {
+        "label": "添付ファイルを消した",
+        "text": "{agent} の添付ファイルを消しました"
+      },
+      "attachment_purged": {
+        "label": "添付ファイルを完全に消した",
+        "text": "{agent} の添付ファイルを保存先から消しました"
+      },
+      "attachment_upload_abandoned": {
+        "label": "使われなかった添付ファイルを片付けた",
+        "text": "使われなかった添付ファイルを片付けました"
+      },
+      "attachment_upload_rejected_rate_limit": {
+        "label": "添付ファイルの送りすぎ",
+        "text": "短い間に添付ファイルが多すぎたため、送るのを止めました"
+      },
+      "attachment_quarantined": {
+        "label": "添付ファイルを止めた",
+        "text": "確かめた後に中身が変わった添付ファイルを止めました"
+      },
+      "bridged_decrypt": {
+        "label": "パソコンで 1 通開いた",
+        "text": "このブラウザから頼んで、パソコンが {agent} のメッセージを 1 通開きました"
+      },
+      "bridged_status": {
+        "label": "パソコンの状態を確かめた",
+        "text": "このブラウザがパソコンの状態を確かめました"
+      },
+      "bridged_pair_requested": {
+        "label": "ブラウザとパソコンの組み合わせを依頼",
+        "text": "このブラウザとパソコンの組み合わせを頼みました"
+      },
+      "bridged_pair_succeeded": {
+        "label": "ブラウザとパソコンを組み合わせた",
+        "text": "このブラウザとパソコンを組み合わせました"
+      },
+      "bridged_pair_failed": {
+        "label": "組み合わせに失敗",
+        "text": "このブラウザとパソコンの組み合わせに失敗しました (コードの誤りか期限切れ)"
+      },
+      "bridged_pair_revoked": {
+        "label": "組み合わせを外した",
+        "text": "このブラウザとパソコンの組み合わせを外しました"
+      }
+    }
   },
 
   "profile": {
@@ -1400,7 +1583,7 @@
     "proposeValidationToFormat": "宛先は aid:ai:…（エージェントID）か did:key:… で指定してください。候補から選ぶこともできます。",
     "proposeValidationToNotFound": "宛先のエージェントが見つかりません。エージェントIDか DID を確かめてください。",
     "proposeKeyMissing": "送信エージェントの署名鍵がこの端末にありません。",
-    "proposeComposeLink": "日程調整を依頼 (A2A)",
+    "proposeComposeLink": "日程調整を依頼",
     "taskDelegationLabel": "タスク委任",
     "taskAcceptedBadge": "受諾",
     "taskCompletedBadge": "完了",
@@ -1518,7 +1701,8 @@
       "inbox": "受信箱で、届いたメッセージと依頼を確かめられます。",
       "details": "AID や鍵などの技術的な情報は、エージェント設定にまとめてあります。",
       "toInbox": "受信箱へ",
-      "toSettings": "エージェント設定"
+      "toSettings": "エージェント設定",
+      "toMessage": "メッセージを送りに戻る"
     }
   },
 

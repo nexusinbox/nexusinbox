@@ -1,17 +1,23 @@
 "use client";
 
+// コンタクト (docs/35 step 4): a searchable list with a face per contact,
+// row actions, and the add / edit form opened in place.
+
+import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ContactsTabs } from "./ContactsTabs";
 import { AppShell } from "../_components/AppShell";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
+import { Avatar } from "../_components/messages/ConversationView";
 import {
+  useAgentsQuery,
   useContactsQuery,
   useCreateContactMutation,
   useDeleteContactMutation,
   useResetContactsKeyMutation,
   useUpdateContactMutation,
 } from "../../lib/api/hooks";
-import { useTwoColumnResize } from "../../lib/ui/useTwoColumnResize";
 import { useTranslation } from "../../lib/i18n";
 import type { ContactEntry } from "../../lib/api/types";
 
@@ -44,28 +50,27 @@ function ContactsPageInner() {
   const searchParams = useSearchParams();
   const prefillDid = searchParams?.get("add")?.trim() ?? "";
   const contactsQuery = useContactsQuery();
+  const agentsQuery = useAgentsQuery();
   const createContact = useCreateContactMutation();
   const updateContact = useUpdateContactMutation();
   const deleteContact = useDeleteContactMutation();
   const resetContactsKey = useResetContactsKeyMutation();
 
-  const { layoutStyle, startResize } = useTwoColumnResize({
-    storageKey: "nexusinbox.contacts.thread_width.v1",
-    initialWidth: 360,
-  });
-
   const contacts = useMemo<ContactEntry[]>(
     () => contactsQuery.data?.contacts ?? [],
     [contactsQuery.data],
   );
+  const agents = agentsQuery.data?.agents ?? [];
   // Names and notes are sealed with a key this device may not hold.
   const locked = contactsQuery.data?.keyState === "locked";
   const canReset = contactsQuery.data?.canReset ?? false;
 
-  const [activeId, setActiveId] = useState<string | "new">("new");
+  // null: no form open; "new": the add form; otherwise the contact being edited.
+  const [activeId, setActiveId] = useState<string | "new" | null>(null);
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [status, setStatus] = useState<StatusState>(null);
   const [appliedPrefill, setAppliedPrefill] = useState<string>("");
+  const [query, setQuery] = useState("");
 
   // When the page opens with ?add=<did>, either switch to the
   // existing contact for that DID or seed the "new" form with it.
@@ -87,13 +92,12 @@ function ContactsPageInner() {
 
   // Sync draft with the currently selected contact. Intentionally returns
   // early for activeId === "new" so this effect can never clobber a draft
-  // that Effect A just populated from `?add=<did>` (that used to race and
-  // reset the prefill — see docs/plan comments above).
+  // that the effect above just populated from `?add=<did>`.
   useEffect(() => {
-    if (activeId === "new") return;
+    if (activeId === null || activeId === "new") return;
     const selected = contacts.find((contact) => contact.id === activeId);
     if (!selected) {
-      setActiveId("new");
+      setActiveId(null);
       return;
     }
     setDraft({
@@ -104,21 +108,48 @@ function ContactsPageInner() {
     });
   }, [activeId, contacts]);
 
-  const isEditing = activeId !== "new";
+  const isEditing = activeId !== null && activeId !== "new";
   const selectedContact = isEditing ? contacts.find((contact) => contact.id === activeId) : undefined;
   const selectedUnreadable = selectedContact ? !selectedContact.readable : false;
   const formDisabled = locked || selectedUnreadable;
 
-  const handleSelect = (id: string | "new") => {
+  const displayName = (contact: ContactEntry): string => {
+    if (!contact.readable) return t("contacts.unreadableTitle");
+    const agent = contact.agent_label?.trim();
+    return agent
+      ? t("messages.partyName", { person: contact.person_name, agent })
+      : contact.person_name;
+  };
+
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? contacts.filter((contact) =>
+        [displayName(contact), contact.person_name, contact.agent_label ?? "", contact.note ?? "", contact.did]
+          .some((text) => text.toLowerCase().includes(needle)),
+      )
+    : contacts;
+
+  // One agent: open the conversation from it. Several: the 新しい会話
+  // picker, with this contact already filtered, lets the person choose.
+  const messageHref = (did: string): string =>
+    agents.length === 1
+      ? `/?with=${encodeURIComponent(did)}&as=${encodeURIComponent(agents[0].did)}`
+      : `/compose?with=${encodeURIComponent(did)}`;
+
+  const openNew = () => {
     setStatus(null);
-    // When the user explicitly switches from an existing contact back to
-    // the "new" tile, clear the draft. Effect B no longer does this so we
-    // do it here — but only on user interaction, never for URL-driven
-    // prefills.
-    if (id === "new" && activeId !== "new") {
-      setDraft(emptyDraft);
-    }
+    setDraft(emptyDraft);
+    setActiveId("new");
+  };
+
+  const openEdit = (id: string) => {
+    setStatus(null);
     setActiveId(id);
+  };
+
+  const closeForm = () => {
+    setActiveId(null);
+    setDraft(emptyDraft);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -152,15 +183,15 @@ function ContactsPageInner() {
         });
         setStatus({ kind: "success", message: t("contacts.updated") });
       } else {
-        const created = await createContact.mutateAsync({
+        await createContact.mutateAsync({
           did,
           person_name: personName,
           agent_label: agentLabel.length > 0 ? agentLabel : null,
           note: note.length > 0 ? note : null,
         });
         setStatus({ kind: "success", message: t("contacts.added") });
-        setActiveId(created.id);
       }
+      closeForm();
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("contacts.saveFailed");
       setStatus({ kind: "error", message: msg });
@@ -177,18 +208,106 @@ function ContactsPageInner() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!isEditing) return;
+  const handleDelete = async (id: string) => {
     if (!window.confirm(t("contacts.confirmDelete"))) return;
+    setStatus(null);
     try {
-      await deleteContact.mutateAsync(activeId);
+      await deleteContact.mutateAsync(id);
       setStatus({ kind: "success", message: t("contacts.deleted") });
-      setActiveId("new");
+      if (activeId === id) closeForm();
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("contacts.deleteFailed");
       setStatus({ kind: "error", message: msg });
     }
   };
+
+  const saving = createContact.isPending || updateContact.isPending;
+
+  const form = (
+    <form className="ct-form" onSubmit={handleSubmit}>
+      <h2 className="ct-form-title">
+        {isEditing ? t("contacts.formEditTitle") : t("contacts.formNewTitle")}
+      </h2>
+      <p className="ct-help">
+        {selectedUnreadable ? t("contacts.unreadableHelp") : t("contacts.sealedHelp")}
+      </p>
+
+      <label className="ap-field" htmlFor="contact-name">
+        {t("contacts.nameLabel")}
+        <input
+          id="contact-name"
+          className="input"
+          value={draft.person_name}
+          onChange={(event) => setDraft((prev) => ({ ...prev, person_name: event.target.value }))}
+          placeholder={t("contacts.namePlaceholder")}
+          maxLength={64}
+          disabled={formDisabled}
+        />
+        <span className="ct-help">{t("contacts.nameHelp")}</span>
+      </label>
+
+      <label className="ap-field" htmlFor="contact-agent-label">
+        {t("contacts.agentNameLabel")}
+        <input
+          id="contact-agent-label"
+          className="input"
+          value={draft.agent_label}
+          onChange={(event) => setDraft((prev) => ({ ...prev, agent_label: event.target.value }))}
+          placeholder={t("contacts.agentNamePlaceholder")}
+          maxLength={64}
+          disabled={formDisabled}
+        />
+        <span className="ct-help">{t("contacts.agentNameHelp")}</span>
+      </label>
+
+      <label className="ap-field" htmlFor="contact-note">
+        {t("contacts.memoLabel")}
+        <textarea
+          id="contact-note"
+          className="input"
+          value={draft.note}
+          onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))}
+          placeholder={t("contacts.memoPlaceholder")}
+          maxLength={500}
+          rows={2}
+          disabled={formDisabled}
+        />
+      </label>
+
+      <label className="ap-field" htmlFor="contact-did">
+        {t("contacts.didLabel")}
+        <input
+          id="contact-did"
+          className="input ct-mono"
+          value={draft.did}
+          onChange={(event) => setDraft((prev) => ({ ...prev, did: event.target.value }))}
+          placeholder={t("contacts.didPlaceholder")}
+          disabled={isEditing || formDisabled}
+          autoComplete="off"
+        />
+        <span className="ct-help">{t("contacts.didHelp")}</span>
+      </label>
+
+      {status?.kind === "error" ? (
+        <p className="ct-status error" role="status">
+          {status.message}
+        </p>
+      ) : null}
+
+      <div className="dm-btns">
+        <button type="submit" className="dm-btn accent" disabled={saving || formDisabled}>
+          {saving
+            ? t("contacts.savingBtn")
+            : isEditing
+              ? t("contacts.saveBtn")
+              : t("contacts.addBtn")}
+        </button>
+        <button type="button" className="dm-btn" onClick={closeForm}>
+          {t("contacts.cancelBtn")}
+        </button>
+      </div>
+    </form>
+  );
 
   return (
     <AppShell
@@ -201,189 +320,120 @@ function ContactsPageInner() {
         />
       }
     >
-      <section className="mail-layout" style={layoutStyle}>
-        <aside className="thread-list">
-          <article
-            className={"card-item" + (activeId === "new" ? " active" : "")}
-            onClick={() => handleSelect("new")}
+      <div className="ct">
+        <ContactsTabs active="contacts" />
+        <div className="ct-top">
+          <input
+            className="nc-input"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("contacts.searchPlaceholder")}
+            aria-label={t("contacts.searchPlaceholder")}
+            autoComplete="off"
+            data-testid="contacts-search"
+          />
+          <button
+            type="button"
+            className="dm-btn accent"
+            onClick={openNew}
+            disabled={activeId === "new"}
+            data-testid="contacts-add"
           >
-            <p className="card-title">{t("contacts.addNew")}</p>
-            <p className="card-sub">{t("contacts.addNewDesc")}</p>
-          </article>
-          {locked ? (
-            <div className="form-status info" role="status" style={{ margin: "8px 0" }}>
-              <p>{t("contacts.lockedNotice")}</p>
-              {canReset ? (
-                <>
-                  <p style={{ marginTop: 6 }}>{t("contacts.lockedResetHint")}</p>
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{ marginTop: 6 }}
-                    onClick={handleResetKey}
-                    disabled={resetContactsKey.isPending}
-                  >
-                    {t("contacts.resetKeyBtn")}
-                  </button>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-          {contactsQuery.isPending ? (
-            <div className="empty-state">{t("contacts.loading")}</div>
-          ) : contactsQuery.isError ? (
-            <div className="empty-state">{t("contacts.loadFailed")}</div>
-          ) : contacts.length === 0 ? (
-            <div className="empty-state">{t("contacts.empty")}</div>
-          ) : (
-            contacts.map((contact) => {
-              const className = "card-item" + (activeId === contact.id ? " active" : "");
-              return (
-                <article
-                  className={className}
-                  key={contact.id}
-                  onClick={() => handleSelect(contact.id)}
+            {t("contacts.addNew")}
+          </button>
+        </div>
+
+        {locked ? (
+          <div className="ct-notice" role="status">
+            <p>{t("contacts.lockedNotice")}</p>
+            {canReset ? (
+              <>
+                <p>{t("contacts.lockedResetHint")}</p>
+                <button
+                  type="button"
+                  className="dm-btn"
+                  onClick={handleResetKey}
+                  disabled={resetContactsKey.isPending}
                 >
-                  <p className="card-title">
-                    {contact.readable ? contact.person_name : t("contacts.unreadableTitle")}
-                  </p>
-                  <p className="card-sub">
-                    {contact.agent_label ? contact.agent_label + " · " : ""}
-                    {contact.did}
-                  </p>
-                  {contact.note ? <p className="card-meta">{contact.note}</p> : null}
-                </article>
-              );
-            })
-          )}
-        </aside>
+                  {t("contacts.resetKeyBtn")}
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="mail-resizer" onMouseDown={startResize} />
+        {status && status.kind !== "error" ? (
+          <p className="ct-status" role="status">
+            {status.message}
+          </p>
+        ) : status && activeId === null ? (
+          <p className="ct-status error" role="status">
+            {status.message}
+          </p>
+        ) : null}
 
-        <article className="reader-pane" style={{ borderRight: "none" }}>
-          <div className="compose-scroll">
-            <section className="compose-frame">
-              <header className="compose-head">
-                <span>{isEditing ? t("contacts.formEditTitle") : t("contacts.formNewTitle")}</span>
-                <span className="badge">{t("contacts.formBadge")}</span>
-              </header>
-              <div className="compose-body">
-                <p className="field-help" style={{ marginBottom: 8 }}>
-                  {selectedUnreadable ? t("contacts.unreadableHelp") : t("contacts.sealedHelp")}
-                </p>
-                <form className="form-grid" onSubmit={handleSubmit}>
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-did">
-                      {t("contacts.didLabel")}
-                    </label>
-                    <input
-                      id="contact-did"
-                      className="input"
-                      value={draft.did}
-                      onChange={(event) =>
-                        setDraft((prev) => ({ ...prev, did: event.target.value }))
-                      }
-                      placeholder={t("contacts.didPlaceholder")}
-                      disabled={isEditing || formDisabled}
-                      autoComplete="off"
-                    />
-                    <p className="field-help">
-                      {t("contacts.didHelp")}
-                    </p>
+        {activeId === "new" ? <div className="ct-form-wrap">{form}</div> : null}
+
+        {contactsQuery.isPending ? (
+          <p className="dm-empty">{t("contacts.loading")}</p>
+        ) : contactsQuery.isError ? (
+          <p className="dm-empty">{t("contacts.loadFailed")}</p>
+        ) : contacts.length === 0 ? (
+          <p className="dm-empty">{t("contacts.empty")}</p>
+        ) : visible.length === 0 ? (
+          <p className="dm-empty">{t("contacts.noMatch")}</p>
+        ) : (
+          visible.map((contact) => {
+            const name = displayName(contact);
+            return (
+              <div key={contact.id}>
+                <div className="ct-row" data-testid="contact-row">
+                  <Avatar did={contact.did} name={contact.readable ? contact.person_name : "?"} />
+                  <div className="dm-row-body">
+                    <span className="dm-name">{name}</span>
+                    <span className="ct-addr">{contact.did}</span>
+                    {contact.note ? <span className="ct-note">{contact.note}</span> : null}
                   </div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-name">
-                      {t("contacts.nameLabel")}
-                    </label>
-                    <input
-                      id="contact-name"
-                      className="input"
-                      value={draft.person_name}
-                      onChange={(event) =>
-                        setDraft((prev) => ({ ...prev, person_name: event.target.value }))
-                      }
-                      placeholder={t("contacts.namePlaceholder")}
-                      maxLength={64}
-                      disabled={formDisabled}
-                    />
-                    <p className="field-help">
-                      {t("contacts.nameHelp")}
-                    </p>
-                  </div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-agent-label">
-                      {t("contacts.agentNameLabel")}
-                    </label>
-                    <input
-                      id="contact-agent-label"
-                      className="input"
-                      value={draft.agent_label}
-                      onChange={(event) =>
-                        setDraft((prev) => ({ ...prev, agent_label: event.target.value }))
-                      }
-                      placeholder={t("contacts.agentNamePlaceholder")}
-                      maxLength={64}
-                      disabled={formDisabled}
-                    />
-                    <p className="field-help">
-                      {t("contacts.agentNameHelp")}
-                    </p>
-                  </div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-note">
-                      {t("contacts.memoLabel")}
-                    </label>
-                    <textarea
-                      id="contact-note"
-                      className="textarea"
-                      value={draft.note}
-                      onChange={(event) =>
-                        setDraft((prev) => ({ ...prev, note: event.target.value }))
-                      }
-                      placeholder={t("contacts.memoPlaceholder")}
-                      maxLength={500}
-                      disabled={formDisabled}
-                    />
-                  </div>
-
-                  {status ? (
-                    <div className={`form-status ${status.kind}`} role="status">
-                      {status.message}
-                    </div>
-                  ) : null}
-
-                  <div className="form-actions">
-                    {isEditing ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={handleDelete}
-                        disabled={deleteContact.isPending}
-                      >
-                        {deleteContact.isPending ? t("contacts.deleting") : t("contacts.deleteBtn")}
-                      </button>
-                    ) : null}
+                  <div className="ct-actions">
+                    <Link href={messageHref(contact.did)} className="dm-btn accent ct-send">
+                      {t("contacts.sendMessage")}
+                    </Link>
                     <button
-                      type="submit"
-                      className="btn primary"
-                      disabled={createContact.isPending || updateContact.isPending || formDisabled}
+                      type="button"
+                      className="dm-icon-btn"
+                      onClick={() => (activeId === contact.id ? closeForm() : openEdit(contact.id))}
+                      aria-label={t("contacts.editBtn")}
+                      aria-expanded={activeId === contact.id}
+                      title={t("contacts.editBtn")}
                     >
-                      {createContact.isPending || updateContact.isPending
-                        ? t("contacts.savingBtn")
-                        : isEditing
-                          ? t("contacts.saveBtn")
-                          : t("contacts.addBtn")}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="dm-icon-btn ct-danger"
+                      onClick={() => handleDelete(contact.id)}
+                      disabled={deleteContact.isPending}
+                      aria-label={t("contacts.deleteBtn")}
+                      title={t("contacts.deleteBtn")}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                      </svg>
                     </button>
                   </div>
-                </form>
+                </div>
+                {activeId === contact.id ? <div className="ct-form-wrap">{form}</div> : null}
               </div>
-            </section>
-          </div>
-        </article>
-      </section>
+            );
+          })
+        )}
+      </div>
     </AppShell>
   );
 }

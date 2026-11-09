@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { AppShell } from "../_components/AppShell";
+import { BlockSenderPanel, type BlockStatus } from "../_components/ConversationThread";
+import { Avatar } from "../_components/messages/ConversationView";
 import { AgentDrafts } from "./AgentDrafts";
 import { agentForDid } from "../_components/InboxAgentBar";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
@@ -11,7 +13,11 @@ import {
   useMessagesQuery,
   useUpdateMessageFlagsMutation,
 } from "../../lib/api/hooks";
-import { indexContactsByDid, resolveParticipantLabel } from "../../lib/api/labels";
+import {
+  formatPartyLabel,
+  indexContactsByDid,
+  resolveParticipantLabel,
+} from "../../lib/api/labels";
 import { useTranslation } from "../../lib/i18n";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 
@@ -25,6 +31,9 @@ export default function PendingApprovalPage() {
   const agentsQuery = useAgentsQuery();
   const agents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  // The held message whose sender is being blocked (BlockSenderPanel).
+  const [blockingId, setBlockingId] = useState<string | null>(null);
+  const [blockStatus, setBlockStatus] = useState<BlockStatus | null>(null);
 
   // Server-side folder filter: only messages the AI spam pipeline or
   // low trust routing put into the pending_approval bucket show up here.
@@ -71,91 +80,115 @@ export default function PendingApprovalPage() {
         />
       }
     >
-      <section style={{ padding: "8px 16px 32px", maxWidth: 880 }}>
+      <div className="rv">
         <AgentDrafts />
 
-        <section className="panel" style={{ marginTop: 16 }} data-testid="pending-messages">
-          <h3 style={{ margin: "4px 0 2px", fontSize: 16, fontWeight: 700 }}>
-            {t("pending.heading", { count: pending.length })}
-          </h3>
-          <p style={{ margin: "0 0 8px", fontSize: 13, color: "#6b7280" }}>
-            {t("pending.descSelected")}
-          </p>
+        <section className="rv-section" data-testid="pending-messages">
+          <h3 className="rv-title">{t("pending.heading", { count: pending.length })}</h3>
+          <p className="rv-why">{t("pending.descSelected")}</p>
           {messagesQuery.isLoading ? (
-            <div className="empty-state">{t("pending.loading")}</div>
+            <p className="rv-empty">{t("pending.loading")}</p>
           ) : messagesQuery.isError ? (
-            <div className="empty-state" style={{ color: "#ef4444" }}>
+            <div className="rv-empty" style={{ color: "var(--danger)" }}>
               {t("pending.error")}
-              <button
-                className="btn"
-                type="button"
-                onClick={() => messagesQuery.refetch()}
-                style={{ marginTop: 8 }}
-              >
-                {t("pending.retry")}
-              </button>
+              <div className="dm-btns" style={{ justifyContent: "center" }}>
+                <button className="dm-btn" type="button" onClick={() => messagesQuery.refetch()}>
+                  {t("pending.retry")}
+                </button>
+              </div>
             </div>
           ) : pending.length === 0 ? (
-            <p className="item-sub">{t("pending.empty")}</p>
+            <p className="rv-empty">{t("pending.empty")}</p>
           ) : (
-            pending.map((message) => (
-              <div
-                key={message.id}
-                data-testid="pending-row"
-                style={{ borderTop: "1px solid #e5e7eb", padding: "10px 0" }}
-              >
-                {/* The subject is encrypted for the recipient agent; it can be
-                    read in the inbox once approved. */}
-                <p className="item-title">{t("pending.subjectHidden")}</p>
-                <p className="item-sub">
-                  {t("pending.sender")}
-                  {resolveParticipantLabel(message.sender_did, message.sender_label, contactsByDid)}
-                  {" · "}
-                  {t("pending.recipient")}
-                  {agentForDid(agents, message.recipient_did)?.label ?? t("pending.unknownAgent")}
-                </p>
-                <p className="item-sub">
-                  {t("pending.trustScore", { n: Math.round(message.trust_score * 100) })}
-                  {message.ai_category
-                    ? t("pending.category", {
-                        category: t(
-                          message.ai_category === "spam_denylist" || message.ai_category === "spam_burst"
-                            ? `pending.categoryName.${message.ai_category}`
-                            : "pending.categoryName.other",
-                        ),
-                      })
-                    : ""}
-                  {" · "}
-                  {formatListTimestamp(message.created_at, { locale })}
-                </p>
-                <div className="row" style={{ marginTop: 8, gap: 8 }}>
-                  <button
-                    className="btn primary"
-                    type="button"
-                    onClick={() => handleApprove(message.id)}
-                    disabled={updateFlags.isPending}
-                  >
-                    {t("pending.approve")}
-                  </button>
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() => handleReject(message.id)}
-                    disabled={updateFlags.isPending}
-                  >
-                    {t("pending.reject")}
-                  </button>
+            pending.map((message) => {
+              const name = formatPartyLabel(
+                resolveParticipantLabel(message.sender_did, message.sender_label, contactsByDid),
+                t,
+              );
+              return (
+                <div key={message.id} className="rv-row" data-testid="pending-row">
+                  <Avatar did={message.sender_did} name={name} />
+                  <div className="dm-row-body">
+                    <div className="dm-line1">
+                      <span className="dm-name">{name}</span>
+                      <span className="dm-time">
+                        {formatListTimestamp(message.created_at, { locale })}
+                      </span>
+                    </div>
+                    {/* The subject is encrypted for the recipient agent; it can be
+                        read in the conversation once accepted. */}
+                    <p className="rv-text">{t("pending.subjectHidden")}</p>
+                    <p className="rv-meta">
+                      {t("pending.recipient")}
+                      {agentForDid(agents, message.recipient_did)?.label ?? t("pending.unknownAgent")}
+                      {" · "}
+                      {t("pending.trustScore", { n: Math.round(message.trust_score * 100) })}
+                      {message.ai_category
+                        ? t("pending.category", {
+                            category: t(
+                              message.ai_category === "spam_denylist" || message.ai_category === "spam_burst"
+                                ? `pending.categoryName.${message.ai_category}`
+                                : "pending.categoryName.other",
+                            ),
+                          })
+                        : ""}
+                    </p>
+                    <div className="dm-btns">
+                      <button
+                        className="dm-btn primary"
+                        type="button"
+                        onClick={() => handleApprove(message.id)}
+                        disabled={updateFlags.isPending}
+                      >
+                        {t("pending.approve")}
+                      </button>
+                      <button
+                        className="dm-btn"
+                        type="button"
+                        onClick={() => {
+                          setBlockStatus(null);
+                          setBlockingId(blockingId === message.id ? null : message.id);
+                        }}
+                        aria-expanded={blockingId === message.id}
+                      >
+                        {t("pending.block")}
+                      </button>
+                      <button
+                        className="dm-btn"
+                        type="button"
+                        onClick={() => handleReject(message.id)}
+                        disabled={updateFlags.isPending}
+                      >
+                        {t("pending.reject")}
+                      </button>
+                    </div>
+                    {blockingId === message.id ? (
+                      <BlockSenderPanel
+                        messageId={message.id}
+                        onClose={() => setBlockingId(null)}
+                        onResult={setBlockStatus}
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
+          {blockStatus ? (
+            <p
+              className={"rv-status" + (blockStatus.kind === "error" ? " error" : "")}
+              role="status"
+            >
+              {blockStatus.text}
+            </p>
+          ) : null}
           {statusMessage ? (
-            <p className="item-sub" style={{ marginTop: 12 }}>
+            <p className="rv-status" role="status">
               {statusMessage}
             </p>
           ) : null}
         </section>
-      </section>
+      </div>
     </AppShell>
   );
 }

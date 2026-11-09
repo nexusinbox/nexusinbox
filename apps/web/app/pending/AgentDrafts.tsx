@@ -15,6 +15,7 @@ import {
   useSendAgentDraftMutation,
 } from "../../lib/api/hooks";
 import type { AgentDraft, ReviewKey } from "../../lib/api/types";
+import { formatPartyLabel } from "../../lib/api/labels";
 import {
   findThisBrowsersReviewKey,
   forgetReviewKey,
@@ -24,26 +25,7 @@ import {
 } from "../../lib/crypto/review-key";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
-
-const sectionTitle: React.CSSProperties = { margin: "4px 0 2px", fontSize: 16, fontWeight: 700 };
-const why: React.CSSProperties = { margin: "0 0 8px", fontSize: 13, color: "#6b7280" };
-const bodyBox: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 10,
-  padding: "12px 14px",
-  background: "#fbfcfe",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  fontSize: 14,
-  margin: "10px 0",
-};
-const metaGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "6em minmax(0, 1fr)",
-  gap: "4px 10px",
-  fontSize: 14,
-};
-const muted: React.CSSProperties = { color: "#6b7280", fontSize: 13 };
+import { Avatar } from "../_components/messages/ConversationView";
 
 export function AgentDrafts() {
   const { t, locale } = useTranslation();
@@ -60,7 +42,6 @@ export function AgentDrafts() {
   const [myKey, setMyKey] = useState<ReviewKey | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -91,8 +72,6 @@ export function AgentDrafts() {
     };
   }, [drafts, myKey, opened]);
 
-  const selected = drafts.find((d) => d.id === selectedId) ?? null;
-
   const handleSetUp = async () => {
     setStatus("");
     try {
@@ -113,7 +92,6 @@ export function AgentDrafts() {
         agentsQuery.data?.agents ?? [],
       );
       await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey });
-      setSelectedId(null);
       setStatus(t("agentDrafts.sent"));
     } catch {
       setStatus(t("agentDrafts.sendFailed"));
@@ -124,7 +102,6 @@ export function AgentDrafts() {
     setStatus("");
     try {
       await deleteDraft.mutateAsync(draft.id);
-      setSelectedId(null);
       setStatus(t("agentDrafts.discarded"));
     } catch {
       setStatus(t("agentDrafts.discardFailed"));
@@ -141,75 +118,27 @@ export function AgentDrafts() {
     }
   };
 
-  const recipientName = (d: AgentDraft) => d.recipient_label ?? t("agentDrafts.unknownParty");
+  const recipientName = (d: AgentDraft) =>
+    d.recipient_label ? formatPartyLabel(d.recipient_label, t) : t("agentDrafts.unknownParty");
   const senderName = (d: AgentDraft) => d.sender_label ?? t("agentDrafts.unknownParty");
   const madeBy = (d: AgentDraft) =>
     d.via
       ? t("agentDrafts.madeByVia", { via: d.via, agent: senderName(d) })
       : t("agentDrafts.madeBy", { agent: senderName(d) });
 
-  if (selected) {
-    const plain = opened[selected.id];
-    return (
-      <section className="panel" style={{ marginTop: 10 }} data-testid="agent-draft-detail">
-        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
-          <h3 style={sectionTitle}>{t("agentDrafts.detailTitle")}</h3>
-          <button className="btn" type="button" onClick={() => setSelectedId(null)}>
-            {t("agentDrafts.back")}
-          </button>
-        </div>
-        <div style={{ ...metaGrid, marginTop: 8 }}>
-          <span style={muted}>{t("agentDrafts.from")}</span>
-          <span>{senderName(selected)}</span>
-          <span style={muted}>{t("agentDrafts.to")}</span>
-          <span>{recipientName(selected)}</span>
-          <span style={muted}>{t("agentDrafts.subject")}</span>
-          <span>{plain ? plain.subject : t("agentDrafts.unreadable")}</span>
-          <span style={muted}>{t("agentDrafts.made")}</span>
-          <span>
-            {madeBy(selected)} · {formatListTimestamp(selected.created_at, { locale })}
-          </span>
-        </div>
-        <div style={bodyBox}>{plain ? plain.body : t("agentDrafts.unreadableBody")}</div>
-        <div className="row" style={{ gap: 8 }}>
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => handleSend(selected)}
-            disabled={!plain || sendDraft.isPending}
-          >
-            {t("agentDrafts.send")}
-          </button>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => handleDiscard(selected)}
-            disabled={deleteDraft.isPending}
-          >
-            {t("agentDrafts.discard")}
-          </button>
-        </div>
-        <p style={{ ...muted, marginTop: 8 }}>{t("agentDrafts.detailNote")}</p>
-        {status ? <p className="item-sub">{status}</p> : null}
-      </section>
-    );
-  }
-
   return (
-    <section className="panel" style={{ marginTop: 10 }} data-testid="agent-drafts">
-      <h3 style={sectionTitle}>{t("agentDrafts.title", { count: drafts.length })}</h3>
-      <p style={why}>{t("agentDrafts.why")}</p>
+    <section className="rv-section" data-testid="agent-drafts">
+      <h3 className="rv-title">{t("agentDrafts.title", { count: drafts.length })}</h3>
+      <p className="rv-why">{t("agentDrafts.why")}</p>
 
       {keyChecked && !myKey ? (
-        <div
-          style={{ background: "#fff6e0", borderRadius: 10, padding: "10px 12px", margin: "8px 0" }}
-        >
-          <p style={{ margin: 0, fontSize: 14 }}>
+        <div className="rv-setup">
+          <p style={{ margin: 0 }}>
             {drafts.length > 0 ? t("agentDrafts.notSetUpWithDrafts") : t("agentDrafts.notSetUp")}
           </p>
-          <p style={{ ...muted, margin: "4px 0 8px" }}>{t("agentDrafts.setUpHow")}</p>
+          <p className="dm-muted" style={{ margin: "4px 0 8px" }}>{t("agentDrafts.setUpHow")}</p>
           <button
-            className="btn primary"
+            className="dm-btn accent"
             type="button"
             onClick={handleSetUp}
             disabled={createKey.isPending}
@@ -220,52 +149,78 @@ export function AgentDrafts() {
       ) : null}
 
       {draftsQuery.isError ? (
-        <p className="item-sub" style={{ color: "#b3261e" }}>
+        <p className="rv-empty" style={{ color: "var(--danger)" }}>
           {t("agentDrafts.loadFailed")}
         </p>
       ) : drafts.length === 0 ? (
-        <p className="item-sub">{t("agentDrafts.empty")}</p>
+        <p className="rv-empty">{t("agentDrafts.empty")}</p>
       ) : (
         drafts.map((draft) => {
           const plain = opened[draft.id];
+          const name = recipientName(draft);
           return (
-            <div
-              key={draft.id}
-              className="row"
-              style={{
-                justifyContent: "space-between",
-                gap: 8,
-                borderTop: "1px solid #e5e7eb",
-                padding: "10px 0",
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <strong style={{ display: "block", overflowWrap: "anywhere" }}>
-                  {plain ? plain.subject : t("agentDrafts.unreadable")}
-                </strong>
-                <span style={muted}>
-                  {t("agentDrafts.to")}: {recipientName(draft)} · {madeBy(draft)} ·{" "}
-                  {formatListTimestamp(draft.created_at, { locale })}
-                </span>
+            <div key={draft.id} className="rv-row" data-testid="agent-draft-row">
+              <Avatar did={draft.recipient_did} name={name} />
+              <div className="dm-row-body">
+                <div className="dm-line1">
+                  <span className="dm-name">
+                    {draft.in_reply_to
+                      ? t("agentDrafts.replyTo", { name })
+                      : t("agentDrafts.newTo", { name })}
+                  </span>
+                  <span className="dm-time">
+                    {formatListTimestamp(draft.created_at, { locale })}
+                  </span>
+                </div>
+                <div className="dm-draft rv-card">
+                  <div className="dm-muted">✍︎ {madeBy(draft)}</div>
+                  {plain === undefined && myKey ? (
+                    <p className="dm-muted">{t("messages.loadingBody")}</p>
+                  ) : plain ? (
+                    <>
+                      {plain.subject ? <div className="dm-subject">{plain.subject}</div> : null}
+                      <p className="dm-draft-body">{plain.body}</p>
+                    </>
+                  ) : (
+                    <p className="dm-muted">
+                      {myKey ? t("agentDrafts.unreadableBody") : t("agentDrafts.unreadable")}
+                    </p>
+                  )}
+                  <div className="dm-btns">
+                    <button
+                      className="dm-btn accent"
+                      type="button"
+                      onClick={() => handleSend(draft)}
+                      disabled={!plain || sendDraft.isPending}
+                    >
+                      {t("agentDrafts.send")}
+                    </button>
+                    <button
+                      className="dm-btn"
+                      type="button"
+                      onClick={() => handleDiscard(draft)}
+                      disabled={deleteDraft.isPending}
+                    >
+                      {t("agentDrafts.discard")}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <button className="btn primary" type="button" onClick={() => setSelectedId(draft.id)}>
-                {t("agentDrafts.open")}
-              </button>
             </div>
           );
         })
       )}
+      {drafts.length > 0 ? <p className="rv-why">{t("agentDrafts.detailNote")}</p> : null}
 
       {keys.length > 0 ? (
-        <details style={{ marginTop: 10 }}>
-          <summary style={{ cursor: "pointer", fontSize: 13 }}>
+        <details className="rv-browsers">
+          <summary>
             {t("agentDrafts.browsers", { count: keys.length })}
           </summary>
           {keys.map((key) => (
             <div
               key={key.id}
-              className="row"
-              style={{ justifyContent: "space-between", gap: 8, padding: "6px 0", fontSize: 13 }}
+              className="rv-browser"
             >
               <span>
                 {key.label}
@@ -273,7 +228,7 @@ export function AgentDrafts() {
                 {formatListTimestamp(key.created_at, { locale })}
               </span>
               <button
-                className="btn"
+                className="dm-btn"
                 type="button"
                 onClick={() => handleRemoveKey(key)}
                 disabled={deleteKey.isPending}
@@ -284,7 +239,11 @@ export function AgentDrafts() {
           ))}
         </details>
       ) : null}
-      {status ? <p className="item-sub">{status}</p> : null}
+      {status ? (
+        <p className="rv-status" role="status">
+          {status}
+        </p>
+      ) : null}
     </section>
   );
 }

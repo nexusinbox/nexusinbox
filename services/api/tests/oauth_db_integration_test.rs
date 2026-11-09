@@ -1069,3 +1069,60 @@ async fn emergency_shutdown_disconnects_ai_apps_and_cloud_access() {
     .unwrap();
     assert_eq!(cloud_on, 0);
 }
+
+#[tokio::test]
+#[serial]
+async fn public_agent_pages_show_only_shared_agents() {
+    let pool = db!();
+    let app = common::test_app();
+    let me = seed_user_with_agent(&pool, "0xpublic-agent", "秘書", 0x74).await;
+    sqlx::query("UPDATE users SET display_name = '水本' WHERE id = $1")
+        .bind(me.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let agent_id: Uuid = sqlx::query_scalar("SELECT agent_id FROM agent_identities WHERE aid = $1")
+        .bind(&me.aid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let page = format!("/public/agents/{}", me.aid);
+
+    // Not shared: indistinguishable from an address that does not exist.
+    let (status, _) = call(&app, "GET", &page, "", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, "GET", "/public/agents/aid:ai:nobody", "", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = call(
+        &app,
+        "PATCH",
+        &format!("/agents/{agent_id}"),
+        &me.auth,
+        Some(json!({ "share_enabled": true, "bio": "日程調整をします" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["share_enabled"], true);
+
+    let (status, body) = call(&app, "GET", &page, "", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["label"], "秘書");
+    assert_eq!(body["bio"], "日程調整をします");
+    assert_eq!(body["owner_display_name"], "水本");
+    // Only these fields: no DIDs, keys or ids.
+    let keys: Vec<&String> = body.as_object().unwrap().keys().collect();
+    assert_eq!(keys.len(), 4, "{body}");
+
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        &format!("/agents/{agent_id}"),
+        &me.auth,
+        Some(json!({ "share_enabled": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&app, "GET", &page, "", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

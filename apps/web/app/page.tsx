@@ -10,11 +10,19 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "./_components/AppShell";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
-import { Avatar, ConversationView } from "./_components/messages/ConversationView";
+import {
+  Avatar,
+  ConversationView,
+  EmptyConversationView,
+} from "./_components/messages/ConversationView";
 import { parseProtocolBody } from "./_components/protocol/parseProtocolBody";
 import { useTranslation } from "../lib/i18n";
 import { formatListTimestamp } from "../lib/format/messageTime";
-import { indexContactsByDid, resolveParticipantLabel } from "../lib/api/labels";
+import {
+  formatPartyLabel,
+  indexContactsByDid,
+  resolveParticipantLabel,
+} from "../lib/api/labels";
 import { defaultApiClient } from "../lib/api/client";
 import {
   queryKeys as apiQueryKeys,
@@ -265,12 +273,18 @@ function MessagesPageInner() {
   const searchParams = useSearchParams();
   const { t, locale } = useTranslation();
   const archiveView = searchParams.get("view") === "archive";
+  // /?with=<DID or AID>&as=<own agent DID>: open that conversation (from
+  // 新しい会話), or an empty one when there are no messages yet.
+  const withParam = archiveView ? "" : (searchParams.get("with") ?? "").trim();
+  const asParam = searchParams.get("as") ?? "";
 
   // "all", "unread", or an own agent's DID.
   const [chip, setChip] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeKey, setActiveKey] = useState<string>("");
-  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+  const [mobileView, setMobileView] = useState<"list" | "detail">(
+    withParam ? "detail" : "list",
+  );
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
 
   // Received messages (by folder) and everything the person's agents sent;
@@ -314,10 +328,12 @@ function MessagesPageInner() {
     [receivedQuery.data, sentQuery.data, archiveView, agentList],
   );
 
+  // "Name(Agent)" → "Name さんの Agent" (docs/35 §3); a contact's own
+  // name still wins inside resolveParticipantLabel.
   const nameFor = useMemo(
     () => (did: string, serverLabel: string | null) =>
-      resolveParticipantLabel(did, serverLabel, contactsByDid, agentList),
-    [contactsByDid, agentList],
+      formatPartyLabel(resolveParticipantLabel(did, serverLabel, contactsByDid, agentList), t),
+    [contactsByDid, agentList, t],
   );
 
   // The counterpart's name, from the newest row that carries a server label.
@@ -375,6 +391,65 @@ function MessagesPageInner() {
   }, [conversations, chip, searchQuery, previews, nameFor]);
 
   const active = conversations.find((c) => c.key === activeKey) ?? null;
+
+  // The `with` counterpart as a DID: as given, an own agent's AID, or
+  // resolved on the server (an AID, to its current DID).
+  const [withTarget, setWithTarget] = useState<
+    { input: string; did: string | null; label: string | null; failed: boolean } | null
+  >(null);
+  useEffect(() => {
+    if (!withParam) {
+      setWithTarget(null);
+      return;
+    }
+    if (withParam.startsWith("did:")) {
+      setWithTarget({ input: withParam, did: withParam, label: null, failed: false });
+      return;
+    }
+    const own = agentList.find((a) => a.aid === withParam);
+    if (own) {
+      setWithTarget({ input: withParam, did: own.did, label: own.label, failed: false });
+      return;
+    }
+    let cancelled = false;
+    setWithTarget({ input: withParam, did: null, label: null, failed: false });
+    defaultApiClient
+      .resolveRecipient(withParam)
+      .then((resolved) => {
+        if (!cancelled) {
+          setWithTarget({ input: withParam, did: resolved.did, label: resolved.label, failed: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setWithTarget({ input: withParam, did: null, label: null, failed: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [withParam, agentList]);
+
+  const withOwnAgent = withParam
+    ? (agentList.find((a) => a.did === asParam || a.dids?.includes(asParam)) ?? agentList[0])
+    : undefined;
+  const withDid = withTarget?.did ?? null;
+  const withConversation =
+    withDid && withOwnAgent
+      ? (conversations.find((c) => {
+          if (c.ownAgent?.did !== withOwnAgent.did) return false;
+          if (c.counterpartDid === withDid) return true;
+          // Another of the person's agents: grouping folds its DIDs.
+          const agent = agentList.find((a) => a.did === c.counterpartDid);
+          return Boolean(agent?.dids?.includes(withDid));
+        }) ?? null)
+      : null;
+
+  // Select it once found (also right after the first message is sent).
+  useEffect(() => {
+    if (withConversation) {
+      setActiveKey(withConversation.key);
+      setMobileView("detail");
+    }
+  }, [withConversation?.key]);
 
   // The conversation went away (archived, or moved to another view).
   useEffect(() => {
@@ -479,6 +554,7 @@ function MessagesPageInner() {
   const showWelcomeNoAgents = !archiveView && agentCount === 0;
   const showWelcomeNoMessages =
     !archiveView &&
+    !withParam &&
     !loading &&
     !fetchError &&
     agentCount !== null &&
@@ -634,6 +710,28 @@ function MessagesPageInner() {
                   setMobileView("list");
                 }}
               />
+            ) : withParam ? (
+              withTarget?.failed ? (
+                <div className="dm-empty" role="alert">
+                  {t("messages.recipientNotFound")}
+                </div>
+              ) : loading || !withDid || !withOwnAgent ? (
+                <div className="dm-empty">{t("inbox.loading")}</div>
+              ) : (
+                <EmptyConversationView
+                  key={withOwnAgent.did + "|" + withParam}
+                  ownAgent={withOwnAgent}
+                  counterpart={withDid}
+                  avatarDid={withDid}
+                  name={nameFor(withDid, withTarget?.label ?? null)}
+                  subLine={
+                    agentList.length >= 2
+                      ? t("messages.fromAgent", { agent: withOwnAgent.label })
+                      : null
+                  }
+                  onBack={() => setMobileView("list")}
+                />
+              )
             ) : (
               <div className="dm-empty">{t("messages.selectPrompt")}</div>
             )}

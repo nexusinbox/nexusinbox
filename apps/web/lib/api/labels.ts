@@ -46,3 +46,23 @@ export function indexContactsByDid(contacts: ContactEntry[] | undefined): Map<st
   }
   return map;
 }
+
+/**
+ * Turn a party label of the form "Name(AgentLabel)" (server rows and
+ * contacts alike) into the conversational form, e.g. "山田さんの秘書" /
+ * "Yamada's 秘書" (docs/35 §3). Falls back to whichever part exists, and
+ * returns any other label unchanged. `t` supplies the `messages.partyName`
+ * template so both locales stay in the locale files.
+ */
+export function formatPartyLabel(
+  label: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  const trimmed = label.trim();
+  const match = trimmed.match(/^(.*?)[(（]([^()（）]*)[)）]$/);
+  if (!match) return trimmed;
+  const person = match[1].trim();
+  const agent = match[2].trim();
+  if (person && agent) return t("messages.partyName", { person, agent });
+  return person || agent || trimmed;
+}

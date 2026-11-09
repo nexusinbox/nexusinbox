@@ -993,6 +993,727 @@ button, input, textarea, select {
   }
 }
 
+/* ============================================================
+ * docs/35 step 3: the agent profile, 確認が必要 and 新しい会話.
+ * Built from the messages pieces above (.dm-row, .dm-av, .dm-btn,
+ * .dm-draft, .dm-chip).
+ * ============================================================ */
+.dm-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.dm-row .card-sub {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.dm-btn.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+.dm-av.lg {
+  width: 80px;
+  height: 80px;
+  border: 4px solid var(--bg);
+  font-size: 32px; /* a face, not text */
+}
+.dm-av.lg .dm-bot {
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+}
+
+/* Agent profile */
+.ap-profile {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.ap-back {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  margin-left: 0;
+  background: var(--bg);
+}
+.ap-cover {
+  height: 120px;
+  background: linear-gradient(
+    135deg,
+    var(--primary) 0%,
+    color-mix(in srgb, var(--primary) 45%, var(--bg)) 100%
+  );
+}
+.ap-head {
+  padding: 0 16px 12px;
+}
+.ap-avwrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: -40px;
+}
+.ap-name {
+  margin: 8px 0 0;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.ap-bio {
+  margin: 6px 0 0;
+  font-size: var(--fs-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ap-bio.muted,
+.ap-hint {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.ap-hint {
+  margin: 4px 0 0;
+}
+.ap-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.ap-edit {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.ap-field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.ap-field .input {
+  min-height: 44px;
+  font-size: var(--fs-md);
+  font-weight: 400;
+  background: var(--bg);
+  border-color: var(--line-strong);
+  resize: vertical;
+}
+.ap-count {
+  justify-self: end;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.ap-tabs {
+  display: flex;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.ap-tabs button {
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+.ap-tabs button:hover {
+  background: var(--surface-hover);
+}
+.ap-tabs button.on {
+  color: var(--text);
+  box-shadow: inset 0 -4px 0 var(--primary);
+}
+/* Under the tabs everything is one flat column: sections divided by
+   full-width lines, 16px side padding, no boxes inside boxes. Only the
+   emergency stop keeps a (red) card. */
+.reader-body.ap-body {
+  padding: 0 0 24px;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.ap-body .panel,
+.ap-body [data-testid="agent-status"] {
+  margin: 0 !important;
+  padding: 16px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+/* The tab already says 状態. */
+.ap-body [data-testid="agent-status"] > h3 {
+  display: none;
+}
+.ap-body [data-testid="agent-status"] > div:first-of-type {
+  border-top: 0 !important;
+  padding-top: 0 !important;
+}
+.ap-body .item-title {
+  margin: 0 0 6px;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.ap-body .item-sub {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.ap-body .panel.ap-danger {
+  margin: 16px !important;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent) !important;
+  border-radius: var(--radius) !important;
+}
+.ap-body .panel.ap-danger .item-title {
+  color: var(--danger);
+}
+.ap-body > p {
+  margin: 12px 16px 0;
+}
+/* The reader pane gets side padding on very narrow phones; the cover
+   still runs edge to edge. */
+@media (max-width: 480px) {
+  .ap-profile {
+    margin: 0 -12px;
+  }
+}
+
+/* 確認が必要 */
+.rv {
+  max-width: 680px;
+  padding-bottom: 32px;
+}
+.rv-section {
+  border-bottom: 1px solid var(--line);
+}
+.rv-title {
+  margin: 0;
+  padding: 16px 16px 2px;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+.rv-why {
+  margin: 0;
+  padding: 0 16px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.rv-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.rv-setup {
+  margin: 4px 16px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  font-size: var(--fs-sm);
+}
+.rv-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.rv-card {
+  margin-top: 6px;
+}
+.rv-text {
+  margin: 2px 0 0;
+}
+.rv-meta {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.rv-row .conversation-block-panel {
+  margin-top: 4px;
+}
+.rv-status {
+  margin: 0;
+  padding: 8px 16px 12px;
+  color: var(--ok);
+  font-size: var(--fs-sm);
+}
+.rv-status.error {
+  color: var(--danger);
+}
+.rv-browsers {
+  padding: 4px 16px 12px;
+  font-size: var(--fs-sm);
+}
+.rv-browsers summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.rv-browser {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* 新しい会話 */
+.nc {
+  max-width: 680px;
+  padding-bottom: 32px;
+}
+.nc-block {
+  display: block;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.nc-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.nc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 8px;
+  padding: 5px 0;
+}
+.nc-note {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.nc-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+  outline: none;
+}
+.nc-input:focus {
+  border-color: var(--primary);
+  background: var(--bg);
+}
+.nc-group {
+  padding: 14px 16px 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.nc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  padding: 8px 16px;
+}
+
+/* ============================================================
+ * docs/35 step 4: コンタクト, AI の操作履歴 and the login screen.
+ * ============================================================ */
+
+/* コンタクト */
+.ct {
+  max-width: 680px;
+  padding-bottom: 32px;
+}
+.ct-top {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.ct-top .dm-btn {
+  flex: none;
+}
+.ct-notice {
+  margin: 12px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  font-size: var(--fs-sm);
+}
+.ct-notice p {
+  margin: 0 0 8px;
+}
+.ct-status {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--ok);
+  font-size: var(--fs-sm);
+}
+.ct-status.error {
+  color: var(--danger);
+}
+.ct-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ct-addr,
+.ct-note {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ct-note {
+  font-size: var(--fs-sm);
+}
+.ct-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ct-send {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.ct-danger {
+  color: var(--danger);
+}
+.ct-form-wrap {
+  padding: 4px 16px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+.ct-form {
+  display: grid;
+  gap: 12px;
+}
+.ct-form-title {
+  margin: 12px 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+.ct-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.ct-mono {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: var(--fs-sm) !important;
+}
+@media (max-width: 560px) {
+  /* Phones: the actions go under the name. */
+  .ct-row {
+    flex-wrap: wrap;
+  }
+  .ct-row .dm-row-body {
+    flex: 1 1 calc(100% - 56px);
+  }
+  .ct-actions {
+    width: 100%;
+    padding-left: 56px;
+  }
+  .ct-send {
+    margin-right: auto;
+  }
+}
+
+/* AI の操作履歴 */
+.al {
+  max-width: 720px;
+  padding-bottom: 32px;
+}
+.al-intro {
+  margin: 0;
+  padding: 12px 16px 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.al-chips {
+  position: static;
+  border-bottom: 0;
+}
+.al-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.al-select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.al-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.al-error {
+  color: var(--danger);
+}
+.al-empty-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-weight: 700;
+}
+.al-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.al-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.al-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-alt);
+  font-size: 18px; /* an icon, not text */
+}
+.al-row.critical .al-icon {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.al-row.critical .al-text {
+  color: var(--danger);
+  font-weight: 700;
+}
+.al-body {
+  flex: 1;
+  min-width: 0;
+}
+.al-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.al-text {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.al-time {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.al-details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.al-details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 4px 0 8px;
+  font-size: var(--fs-xs);
+}
+.al-details dt {
+  color: var(--text-muted);
+}
+.al-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.al-details pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  font-size: var(--fs-xs);
+}
+.al-pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+.al-pager .al-count {
+  margin-left: 0;
+}
+
+/* Login */
+.lg-root {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 64px 16px 32px;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+.lg-lang {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.lg-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px 28px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.lg-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.lg-brand b {
+  color: var(--primary);
+}
+.lg-points {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+.lg-points li {
+  display: flex;
+  gap: 12px;
+}
+.lg-points b {
+  display: block;
+  font-size: var(--fs-md);
+}
+.lg-points li > span:last-child > span {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.lg-point-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary-soft);
+  font-size: 17px; /* an icon, not text */
+}
+.lg-cta {
+  width: 100%;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+.lg-cta:hover:not(:disabled) {
+  opacity: 0.88;
+}
+.lg-cta:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lg-cta-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.lg-status {
+  min-height: 20px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.lg-status[data-kind="error"] {
+  color: var(--danger);
+}
+.lg-status[data-kind="ok"] {
+  color: var(--ok);
+}
+.lg-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.lg-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.lg-links a:hover {
+  color: var(--primary);
+}
+@media (max-width: 480px) {
+  .lg-card {
+    padding: 24px 20px 12px;
+  }
+}
+
 /* Action Buttons */
 .btn {
   border: 1px solid #747775;
@@ -2706,81 +3427,9 @@ details[open] .help-accordion-chevron {
   100% { opacity: 1; filter: blur(0.4px); }
 }
 
-/* --- Rotating agent network SVG --- */
-.ai-login-network {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.ai-login-network svg {
-  width: min(92vmin, 720px);
-  height: min(92vmin, 720px);
-  opacity: 0.9;
-  filter: drop-shadow(0 0 18px rgba(120, 140, 255, 0.35));
-}
-
-.ai-login-network .ring-outer {
-  animation: ai-rotate 60s linear infinite;
-  transform-origin: 50% 50%;
-}
-.ai-login-network .ring-inner {
-  animation: ai-rotate 40s linear infinite reverse;
-  transform-origin: 50% 50%;
-}
-.ai-login-network .ring-core {
-  animation: ai-rotate 24s linear infinite;
-  transform-origin: 50% 50%;
-}
-
 @keyframes ai-rotate {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-.ai-login-network .node {
-  fill: #8ec5ff;
-  filter: drop-shadow(0 0 6px #6aa5ff);
-  animation: ai-node-pulse 3.2s ease-in-out infinite;
-}
-.ai-login-network .node.n2 { animation-delay: -0.8s; fill: #b694ff; }
-.ai-login-network .node.n3 { animation-delay: -1.6s; fill: #78e9ff; }
-.ai-login-network .node.n4 { animation-delay: -2.4s; fill: #ff9ee0; }
-.ai-login-network .node.n5 { animation-delay: -1.2s; }
-.ai-login-network .node.n6 { animation-delay: -2.0s; fill: #b694ff; }
-
-@keyframes ai-node-pulse {
-  0%, 100% { r: 3.2; opacity: 0.9; }
-  50%      { r: 5.2; opacity: 1; }
-}
-
-.ai-login-network .link {
-  stroke: url(#ai-link-gradient);
-  stroke-width: 1;
-  fill: none;
-  stroke-dasharray: 4 6;
-  animation: ai-link-dash 6s linear infinite;
-}
-
-@keyframes ai-link-dash {
-  0%   { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -60; }
-}
-
-.ai-login-network .sweep {
-  stroke: rgba(140, 200, 255, 0.8);
-  stroke-width: 1.5;
-  fill: none;
-  stroke-dasharray: 1 900;
-  animation: ai-sweep 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-@keyframes ai-sweep {
-  0%   { stroke-dashoffset: 900; opacity: 0; }
-  10%  { opacity: 1; }
-  100% { stroke-dashoffset: 0;   opacity: 0; }
 }
 
 /* --- Center content card --- */
@@ -3061,36 +3710,6 @@ details[open] .help-accordion-chevron {
 @keyframes ai-cta-ring {
   0%   { transform: scale(1);    opacity: 0.7; }
   100% { transform: scale(1.15); opacity: 0;   }
-}
-
-.ai-login-status {
-  margin: 14px 0 0;
-  font-size: 12px;
-  color: #9aa7d9;
-  min-height: 16px;
-  font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
-}
-.ai-login-status[data-kind="error"] { color: #ff88a8; }
-.ai-login-status[data-kind="ok"]    { color: #5df0a5; }
-
-.ai-login-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(140, 160, 255, 0.12);
-  font-size: 11px;
-  color: #8190c4;
-  letter-spacing: 0.05em;
-}
-.ai-login-foot span { display: inline-flex; align-items: center; gap: 6px; }
-.ai-login-foot .marker {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #7dd7ff;
-  box-shadow: 0 0 8px #7dd7ff;
 }
 
 /* Corner glyphs to evoke a HUD */
@@ -3379,48 +3998,6 @@ details[open] .help-accordion-chevron {
   border-color: rgba(160, 180, 255, 0.5);
   color: #e8ecff;
   background: rgba(120, 140, 255, 0.15);
-}
-
-/* Login page: link to concept */
-.ai-login-concept-link {
-  display: block;
-  margin-top: 16px;
-  text-align: center;
-  font-size: 12px;
-  color: #7d8ab8;
-  letter-spacing: 0.05em;
-  text-decoration: none;
-  transition: color 0.2s;
-}
-.ai-login-concept-link:hover {
-  color: #a9b8ff;
-}
-.ai-login-concept-link svg {
-  display: inline-block;
-  vertical-align: -1px;
-  margin-left: 4px;
-}
-
-/* Login page: legal links */
-.ai-login-legal-links {
-  margin-top: 14px;
-  text-align: center;
-}
-.ai-login-legal-link {
-  color: #5a6590;
-  font-size: 11px;
-  text-decoration: none;
-  letter-spacing: 0.04em;
-  transition: color 0.2s;
-}
-.ai-login-legal-link:hover {
-  color: #a9b8ff;
-}
-.ai-login-legal-sep {
-  display: inline-block;
-  margin: 0 8px;
-  color: #3a4260;
-  font-size: 11px;
 }
 
 @media (max-width: 560px) {
@@ -3801,4 +4378,287 @@ details[open] .help-accordion-chevron {
 .help-signin-button:hover {
   background: var(--primary-hover);
   transform: translateY(-1px);
+}
+
+/* ============================================================
+ * コンタクト / ブロック中 tabs and the blocked list.
+ * ============================================================ */
+.ct-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.ct-tabs a {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+.ct-tabs a:hover {
+  background: var(--surface-hover);
+}
+.ct-tabs a.on {
+  color: var(--text);
+  box-shadow: inset 0 -4px 0 var(--primary);
+}
+.ct-tab-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  text-align: center;
+}
+.bl-lead {
+  margin: 12px 16px 4px;
+}
+.bl-empty {
+  margin: 24px 16px;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
+.bl-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.bl-row {
+  align-items: center;
+  cursor: default;
+}
+.bl-row .dm-btn {
+  flex: none;
+}
+.bl-av {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: var(--fs-xl);
+}
+.bl-meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.bl-manual {
+  margin: 24px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+}
+.bl-manual[open] {
+  gap: 12px;
+}
+.bl-manual summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.bl-manual .dm-btn {
+  justify-self: start;
+}
+
+/* ============================================================
+ * docs/36: the sign-in copy, 紹介する on the agent profile, and the
+ * public intro page /to/<aid>.
+ * ============================================================ */
+
+/* Sign-in: headline, sub and a two-bubble scene */
+.lg-hero {
+  margin: 18px 0 8px;
+  font-size: var(--fs-2xl);
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  white-space: pre-line;
+  /* Japanese wraps at the spaces, not mid-word ("話そ/う。"). */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.lg-sub {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
+.lg-scene {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-alt);
+  font-size: var(--fs-xs);
+}
+.lg-scene-who {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.lg-bubble {
+  max-width: 82%;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 14px 4px;
+  background: var(--bg);
+  justify-self: start;
+}
+.lg-scene-who.mine,
+.lg-bubble.mine {
+  justify-self: end;
+}
+.lg-bubble.mine {
+  border-color: var(--primary);
+  border-radius: 14px 14px 4px 14px;
+  background: var(--primary);
+  color: #fff;
+}
+
+/* 紹介する (agent profile) */
+.ap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ap-actions .dm-btn.on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.sh-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.sh-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.sh-switch:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.sh-track {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.15s;
+}
+.sh-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+.sh-switch[aria-checked="true"] .sh-track {
+  background: var(--primary);
+}
+.sh-switch[aria-checked="true"] .sh-track::after {
+  transform: translateX(18px);
+}
+.sh-desc,
+.sh-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.sh-note:empty {
+  display: none;
+}
+.sh-note.error {
+  color: var(--danger);
+}
+.sh-field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.sh-text {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  resize: vertical;
+}
+
+/* Public intro page /to/<aid> */
+.pa-brand {
+  font-size: var(--fs-xl);
+}
+.pa-body {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  text-align: center;
+}
+.pa-name {
+  margin: 4px 0 0;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.pa-bio {
+  margin: 0;
+  font-size: var(--fs-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pa-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.pa-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin: 8px 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+.pa-cta:hover {
+  background: var(--primary-hover);
 }

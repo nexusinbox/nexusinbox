@@ -73,6 +73,10 @@ export type Agent = {
   encryption_key?: string;
   is_active: boolean;
   auto_reply: boolean;
+  /** One-line profile text (≤160 chars); empty when not set. */
+  bio?: string;
+  /** The public intro page /to/<aid> is on (docs/36); off by default. */
+  share_enabled?: boolean;
   unread_count: number;
   created_at: string;
   // Every DID the agent answers on (created-with and computer keys).
@@ -176,12 +180,25 @@ export type AgentAuthRefreshRequest = {
 export type UpdateAgentRequest = {
   label?: string;
   auto_reply?: boolean;
+  /** Trimmed by the server; at most 160 characters. */
+  bio?: string;
+  share_enabled?: boolean;
 };
 
 export type UpdateAgentResponse = {
   id: string;
   label: string;
   auto_reply: boolean;
+  bio?: string;
+  share_enabled?: boolean;
+};
+
+/** GET /public/agents/{aid} (no session): only agents shared by their owner. */
+export type PublicAgent = {
+  aid: string;
+  label: string;
+  bio: string;
+  owner_display_name: string | null;
 };
 
 export type AutoReplyDecision =

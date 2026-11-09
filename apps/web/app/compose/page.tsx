@@ -37,6 +37,8 @@ import type {
   RecipientResolutionResponse,
 } from "../../lib/api/types";
 import { useTranslation } from "../../lib/i18n";
+import { buildRecipientOptions } from "../../lib/contacts/recipient-options";
+import { NewConversation } from "./NewConversation";
 import { getLLMKey } from "../../lib/llm/llmAuth";
 import { sanitiseUuidParam } from "../../lib/url/uuid-param";
 import {
@@ -99,9 +101,18 @@ async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 export default function ComposePage() {
   return (
     <Suspense fallback={null}>
-      <ComposePageInner />
+      <ComposeRoute />
     </Suspense>
   );
+}
+
+// A bare /compose is 新しい会話 (docs/35 §2): pick who sends and to whom,
+// then write in the conversation. Replies, forwards, AI drafts, a given
+// recipient, or ?full=1 (「件名や添付をつける」) get the full form.
+function ComposeRoute() {
+  const searchParams = useSearchParams();
+  const full = ["reply", "forward", "ai", "to", "full"].some((key) => searchParams?.has(key));
+  return full ? <ComposePageInner /> : <NewConversation />;
 }
 
 function ComposePageInner() {
@@ -113,6 +124,9 @@ function ComposePageInner() {
   const replyToId = sanitiseUuidParam(searchParams?.get("reply"));
   const forwardFromId = sanitiseUuidParam(searchParams?.get("forward"));
   const aiDraft = searchParams?.get("ai") === "1";
+  // Carried over from 新しい会話 and the conversation's 「件名や添付をつける」.
+  const toParam = searchParams?.get("to")?.trim() ?? "";
+  const asParam = searchParams?.get("as") ?? "";
   const composeMode: "new" | "reply" | "forward" = replyToId
     ? "reply"
     : forwardFromId
@@ -135,34 +149,14 @@ function ComposePageInner() {
     () => contactsQuery.data?.contacts ?? [],
     [contactsQuery.data],
   );
-  // Build the recipient picker options: every known agent + every
-  // contact whose DID is not already covered by an agent entry, so
-  // the user can pick from either list without duplicates. Own agents
-  // are offered by AID: the server then picks the agent's newest key,
-  // which is the one a daemon-held (Isolated) agent can open — their
-  // original DID is the browser key they were created with.
-  const recipientOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: Array<{ address: string; label: string; kind: "contact" | "own" }> = [];
-    for (const agent of apiAgents) {
-      if (seen.has(agent.did)) continue;
-      seen.add(agent.did);
-      for (const did of agent.dids ?? []) seen.add(did);
-      options.push({ address: agent.aid || agent.did, label: agent.label, kind: "own" });
-    }
-    for (const contact of contacts) {
-      if (!contact.readable || seen.has(contact.did)) continue;
-      seen.add(contact.did);
-      const label = contact.agent_label
-        ? `${contact.person_name}(${contact.agent_label})`
-        : contact.person_name;
-      options.push({ address: contact.did, label, kind: "contact" });
-    }
-    return options;
-  }, [apiAgents, contacts]);
+  // Own agents, then contacts (lib/contacts/recipient-options).
+  const recipientOptions = useMemo(
+    () => buildRecipientOptions(apiAgents, contacts),
+    [apiAgents, contacts],
+  );
 
   const [senderDid, setSenderDid] = useState<string>("");
-  const [recipientDid, setRecipientDid] = useState<string>("");
+  const [recipientDid, setRecipientDid] = useState<string>(toParam);
   // Compose-time hint: auto-resolve the recipient on valid
   // aid / did:key inputs and surface the aggregate key_holder the API
   // returns (docs/21 §4.4). `null` means "no resolved recipient yet"
@@ -339,9 +333,10 @@ function ComposePageInner() {
     }
     setSenderDid((current) => {
       if (current && apiAgents.some((agent) => agent.did === current)) return current;
-      return apiAgents[0].did;
+      const asked = apiAgents.find((agent) => agent.did === asParam || agent.dids?.includes(asParam));
+      return (asked ?? apiAgents[0]).did;
     });
-  }, [apiAgents]);
+  }, [apiAgents, asParam]);
 
   useEffect(() => {
     let cancelled = false;

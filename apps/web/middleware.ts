@@ -18,6 +18,9 @@ function isPublicPath(pathname: string): boolean {
   // Help is public-readable, both the guide and the developer reference
   // (the same material is in the public repository). See app/help/.
   if (pathname === "/help" || pathname === "/help/developers") return true;
+  // An agent's public intro page (docs/36): one segment under /to/, shown
+  // only when the owner turned sharing on (the API decides).
+  if (/^\/to\/[^/]+$/.test(pathname)) return true;
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;

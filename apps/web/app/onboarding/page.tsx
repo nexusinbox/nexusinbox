@@ -67,6 +67,12 @@ function OnboardingFlow() {
   // After a reload, carry on with the agent created before it rather than
   // creating another one.
   const resumeId = searchParams.get("agent");
+  // An address to write to once the agent exists (from 新しい会話 opened
+  // by a shared intro page, docs/36). Only agent addresses are kept.
+  const withParam = searchParams.get("with")?.trim() ?? "";
+  const returnTo = withParam.startsWith("aid:ai:")
+    ? `/compose?with=${encodeURIComponent(withParam)}`
+    : null;
   useEffect(() => {
     if (agent || !resumeId) return;
     const found = agentsQuery.data?.agents.find((a) => a.id === resumeId);
@@ -92,7 +98,10 @@ function OnboardingFlow() {
           <NameStep
             onCreated={(created) => {
               setAgent(created);
-              router.replace(`/onboarding?agent=${encodeURIComponent(created.id)}`);
+              router.replace(
+                `/onboarding?agent=${encodeURIComponent(created.id)}` +
+                  (returnTo ? `&with=${encodeURIComponent(withParam)}` : ""),
+              );
               setStep("where");
             }}
           />
@@ -135,6 +144,7 @@ function OnboardingFlow() {
             agent={agent}
             onInbox={() => router.push(`/agent/${encodeURIComponent(agent.did)}`)}
             onSettings={() => router.push("/settings/agents")}
+            onReturn={returnTo ? () => router.push(returnTo) : undefined}
           />
         ) : null}
       </section>
@@ -482,10 +492,13 @@ function DoneStep({
   agent,
   onInbox,
   onSettings,
+  onReturn,
 }: {
   agent: NewAgent;
   onInbox: () => void;
   onSettings: () => void;
+  /** Back to the message that brought them here, when there is one. */
+  onReturn?: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -501,9 +514,19 @@ function DoneStep({
         <button className="btn" type="button" onClick={onSettings}>
           {t("firstRun.done.toSettings")}
         </button>
-        <button className="btn primary" type="button" onClick={onInbox} data-testid="first-run-to-inbox">
+        <button
+          className={onReturn ? "btn" : "btn primary"}
+          type="button"
+          onClick={onInbox}
+          data-testid="first-run-to-inbox"
+        >
           {t("firstRun.done.toInbox")}
         </button>
+        {onReturn ? (
+          <button className="btn primary" type="button" onClick={onReturn} data-testid="first-run-return">
+            {t("firstRun.done.toMessage")}
+          </button>
+        ) : null}
       </Actions>
     </div>
   );

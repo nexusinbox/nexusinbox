@@ -338,8 +338,9 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   const plainSubject = "E2E統合テスト件名";
   const plainBody = "E2E統合テスト本文";
 
-  await page.goto("/compose");
-  await expect(page).toHaveURL(/\/compose$/);
+  // The full form (a bare /compose is the 新しい会話 picker).
+  await page.goto("/compose?full=1");
+  await expect(page).toHaveURL(/\/compose\?full=1$/);
   await page.locator("select.select").selectOption(senderDid);
   await page.locator("input.input").first().fill(recipientDid);
   await page.locator("input.input").nth(1).fill(plainSubject);

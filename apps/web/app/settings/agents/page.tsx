@@ -47,8 +47,11 @@ import {
   daemonStartCommand,
 } from "../../../lib/agents/enroll-command";
 import { ConnectedAIs } from "../../_components/ConnectedAIs";
+import { AgentSharePanel } from "../../_components/AgentSharePanel";
+import { Avatar } from "../../_components/messages/ConversationView";
 
-const DETAILS_OPEN_KEY = "nexusinbox-agent-details-open";
+// The server's limit for an agent's bio (PATCH /agents/{id}).
+const BIO_MAX = 160;
 
 type Banner = { tone: "info" | "error" | "success"; text: string } | null;
 type CreatedCredentialNotice = {
@@ -1365,16 +1368,10 @@ export default function AgentsSettingsPage() {
   const deleteAgent = useDeleteAgentMutation();
   const credentialsQuery = useAgentCredentialsQuery();
   const now = useNow(15_000);
-  // The details start closed; whether they were left open is remembered
-  // on this device.
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  useEffect(() => {
-    try {
-      setDetailsOpen(window.localStorage.getItem(DETAILS_OPEN_KEY) === "1");
-    } catch {
-      // Storage unavailable: start closed.
-    }
-  }, []);
+  // Below the profile: the status card, or everything else.
+  const [tab, setTab] = useState<"status" | "details">("status");
+  // On phones the list and the profile take turns, as on the messages screen.
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
   const createCredential = useCreateAgentCredentialMutation();
   const revokeCredential = useRevokeAgentCredentialMutation();
   const purgeCredential = usePurgeAgentCredentialMutation();
@@ -1386,9 +1383,11 @@ export default function AgentsSettingsPage() {
 
   const [activeDid, setActiveDid] = useState<string>("");
   const [editingLabel, setEditingLabel] = useState<string>("");
+  const [editingBio, setEditingBio] = useState<string>("");
   const [credLabel, setCredLabel] = useState<string>("");
   const [createdCredential, setCreatedCredential] = useState<CreatedCredentialNotice | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isSharing, setIsSharing] = useState<boolean>(false);
   const [banner, setBanner] = useState<Banner>(null);
   const [showRevoked, setShowRevoked] = useState<boolean>(false);
   // Ticking clock so the pending-activation countdown re-renders without
@@ -1420,7 +1419,7 @@ export default function AgentsSettingsPage() {
 
   // Reset per-agent transient state whenever the selection changes so
   // nothing visibly bleeds across agents:
-  //   - rename buffer (would clobber the new agent's label)
+  //   - profile edit buffer (would clobber the new agent's name and bio)
   //   - one-shot credential notice (the credentialId / enrollmentSecret
   //     panel is bound to the agent it was created for; keeping it
   //     visible after the user switches agents is confusing and looks
@@ -1428,26 +1427,32 @@ export default function AgentsSettingsPage() {
   useEffect(() => {
     setIsEditing(false);
     setEditingLabel(activeAgent?.label ?? "");
+    setEditingBio(activeAgent?.bio ?? "");
     setCreatedCredential(null);
-  }, [activeAgent?.did, activeAgent?.label]);
+  }, [activeAgent?.did, activeAgent?.label, activeAgent?.bio]);
+  // The 紹介する panel belongs to the agent it was opened for.
+  useEffect(() => {
+    setIsSharing(false);
+  }, [activeAgent?.did]);
 
-  const handleSaveRename = async () => {
+  const handleSaveProfile = async () => {
     if (!activeAgent) return;
     const label = editingLabel.trim();
+    const bio = editingBio.trim();
     if (!label) {
       setBanner({ tone: "error", text: t("agents.bannerNameEmpty") });
       return;
     }
-    if (label === activeAgent.label) {
+    if (label === activeAgent.label && bio === (activeAgent.bio ?? "")) {
       setIsEditing(false);
       return;
     }
     try {
-      await updateAgent.mutateAsync({ id: activeAgent.id, body: { label } });
+      await updateAgent.mutateAsync({ id: activeAgent.id, body: { label, bio } });
       setIsEditing(false);
-      setBanner({ tone: "success", text: t("agents.bannerNameUpdated") });
+      setBanner({ tone: "success", text: t("agents.bannerProfileUpdated") });
     } catch {
-      setBanner({ tone: "error", text: t("agents.bannerNameFailed") });
+      setBanner({ tone: "error", text: t("agents.bannerProfileFailed") });
     }
   };
 
@@ -1519,7 +1524,7 @@ export default function AgentsSettingsPage() {
           {t("agents.newAgent")}
         </Link>
       </section>
-      <section className="mail-layout" style={layoutStyle}>
+      <section className={`mail-layout mobile-${mobileView}`} style={layoutStyle}>
         <aside className="thread-list">
           {agents.length === 0 ? (
             <div className="empty-state" style={{ padding: 16 }}>
@@ -1530,23 +1535,33 @@ export default function AgentsSettingsPage() {
               const isActive = activeAgent
                 ? activeAgent.did === agent.did
                 : index === 0;
-              const className = "card-item" + (isActive ? " active" : "");
               return (
-                <article
-                  className={className}
+                <button
+                  type="button"
+                  className={"dm-row" + (isActive ? " active" : "")}
                   key={agent.id + "-" + agent.did}
-                  onClick={() => setActiveDid(agent.did)}
+                  onClick={() => {
+                    setActiveDid(agent.did);
+                    setMobileView("detail");
+                  }}
                 >
-                  <p className="card-title">{agent.label}</p>
-                  <AgentStatusLine
-                    aid={agent.aid}
-                    credentials={credentialsQuery.data?.credentials ?? []}
-                    now={now}
-                  />
-                  <p className="card-meta">
-                    <span>{t("agents.unread", { count: agent.unread_count })}</span>
-                  </p>
-                </article>
+                  <Avatar did={agent.did} name={agent.label} />
+                  <span className="dm-row-body">
+                    <span className="dm-line1">
+                      <span className="dm-name">{agent.label}</span>
+                      {agent.unread_count > 0 ? (
+                        <span className="dm-time">
+                          {t("agents.unread", { count: agent.unread_count })}
+                        </span>
+                      ) : null}
+                    </span>
+                    <AgentStatusLine
+                      aid={agent.aid}
+                      credentials={credentialsQuery.data?.credentials ?? []}
+                      now={now}
+                    />
+                  </span>
+                </button>
               );
             })
           )}
@@ -1557,120 +1572,170 @@ export default function AgentsSettingsPage() {
         <article className="reader-pane" style={{ borderRight: "none" }}>
           {activeAgent ? (
             <>
-              <header className="reader-header">
-                <div
-                  className="row"
-                  style={{
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
+              {/* Profile (docs/35 §2 "エージェント"): cover, face, name, bio,
+                  address and where it runs; the tabs below hold the rest. */}
+              <header className="ap-profile">
+                <button
+                  type="button"
+                  className="dm-icon-btn dm-back ap-back"
+                  onClick={() => setMobileView("list")}
+                  aria-label={t("agents.backToList")}
                 >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {isEditing ? (
-                      <input
-                        className="input"
-                        value={editingLabel}
-                        onChange={(event) => setEditingLabel(event.target.value)}
-                        placeholder={t("agents.namePlaceholder")}
-                        autoFocus
-                      />
-                    ) : (
-                      <h2 className="reader-subject">{activeAgent.label}</h2>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="19" y1="12" x2="5" y2="12" />
+                    <polyline points="12 19 5 12 12 5" />
+                  </svg>
+                </button>
+                <div className="ap-cover" aria-hidden="true" />
+                <div className="ap-head">
+                  <div className="ap-avwrap">
+                    <Avatar did={activeAgent.did} name={activeAgent.label} large />
+                    {isEditing ? null : (
+                      <div className="ap-actions">
+                        <button
+                          className={"dm-btn" + (isSharing ? " on" : "")}
+                          type="button"
+                          aria-expanded={isSharing}
+                          onClick={() => setIsSharing((open) => !open)}
+                          data-testid="agent-share"
+                        >
+                          {t("share.button")}
+                        </button>
+                        <button
+                          className="dm-btn"
+                          type="button"
+                          onClick={() => {
+                            setIsEditing(true);
+                            setIsSharing(false);
+                            setEditingLabel(activeAgent.label);
+                            setEditingBio(activeAgent.bio ?? "");
+                            setBanner(null);
+                          }}
+                          data-testid="agent-profile-edit"
+                        >
+                          {t("agents.profileEdit")}
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <div className="row" style={{ gap: 8, flexShrink: 0 }}>
-                    {isEditing ? (
-                      <>
+                  {isEditing ? (
+                    <form
+                      className="ap-edit"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleSaveProfile();
+                      }}
+                    >
+                      <label className="ap-field">
+                        <span>{t("agents.nameLabel")}</span>
+                        <input
+                          className="input"
+                          value={editingLabel}
+                          onChange={(event) => setEditingLabel(event.target.value)}
+                          placeholder={t("agents.namePlaceholder")}
+                          autoFocus
+                        />
+                      </label>
+                      <label className="ap-field">
+                        <span>{t("agents.bioLabel")}</span>
+                        <textarea
+                          className="input"
+                          rows={2}
+                          value={editingBio}
+                          maxLength={BIO_MAX}
+                          onChange={(event) => setEditingBio(event.target.value)}
+                          placeholder={t("agents.bioPlaceholder")}
+                        />
+                        <span className="ap-count">
+                          {editingBio.length}/{BIO_MAX}
+                        </span>
+                      </label>
+                      <div className="dm-btns">
                         <button
-                          className="btn primary"
-                          type="button"
-                          onClick={handleSaveRename}
+                          className="dm-btn accent"
+                          type="submit"
                           disabled={updateAgent.isPending}
                         >
                           {t("agents.save")}
                         </button>
                         <button
-                          className="btn"
+                          className="dm-btn"
                           type="button"
                           onClick={() => {
                             setIsEditing(false);
                             setEditingLabel(activeAgent.label);
+                            setEditingBio(activeAgent.bio ?? "");
                           }}
                           disabled={updateAgent.isPending}
                         >
                           {t("agents.cancel")}
                         </button>
-                      </>
-                    ) : (
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={() => {
-                          setIsEditing(true);
-                          setEditingLabel(activeAgent.label);
-                          setBanner(null);
-                        }}
-                      >
-                        {t("agents.editName")}
-                      </button>
-                    )}
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <h2 className="ap-name">{activeAgent.label}</h2>
+                      {activeAgent.bio ? (
+                        <p className="ap-bio">{activeAgent.bio}</p>
+                      ) : (
+                        <p className="ap-bio muted">{t("agents.bioEmpty")}</p>
+                      )}
+                      {isSharing ? <AgentSharePanel agent={activeAgent} /> : null}
+                    </>
+                  )}
+                  <div data-testid="agent-address">
+                    <CommandLine command={activeAgent.aid || activeAgent.did} testId="agent-address-value" />
+                    <p className="ap-hint">{t("agents.addressDesc")}</p>
                   </div>
+                  <div className="ap-facts">
+                    <AgentStatusLine
+                      aid={activeAgent.aid}
+                      credentials={credentialsQuery.data?.credentials ?? []}
+                      now={now}
+                    />
+                    <span>{t("agents.unread", { count: activeAgent.unread_count })}</span>
+                    <Link
+                      className="dm-link"
+                      href={`/agent/${encodeURIComponent(activeAgent.did)}`}
+                    >
+                      {t("agents.openInbox")}
+                    </Link>
+                  </div>
+                </div>
+                <div className="ap-tabs" role="tablist" aria-label={t("agents.tabsLabel")}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === "status"}
+                    className={tab === "status" ? "on" : ""}
+                    onClick={() => setTab("status")}
+                  >
+                    {t("agents.tabStatus")}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === "details"}
+                    className={tab === "details" ? "on" : ""}
+                    onClick={() => setTab("details")}
+                    data-testid="agent-details-tab"
+                  >
+                    {t("agents.tabDetails")}
+                  </button>
                 </div>
               </header>
 
-              <div className="reader-body">
+              <div className="reader-body ap-body">
                 {banner ? (
                   <p className={bannerClass} style={{ marginBottom: 12 }}>
                     {banner.text}
                   </p>
                 ) : null}
 
-                <AgentStatusCard agent={activeAgent} />
+                {tab === "status" ? <AgentStatusCard agent={activeAgent} /> : null}
 
-                <div className="panel" data-testid="agent-address">
-                  <p style={{ margin: 0, fontWeight: 600 }}>{t("agents.addressTitle")}</p>
-                  <p className="item-sub" style={{ marginTop: 4 }}>
-                    {t("agents.addressDesc")}
-                  </p>
-                  <CommandLine command={activeAgent.aid || activeAgent.did} testId="agent-address-value" />
-                  <Link
-                    className="btn"
-                    href={`/agent/${encodeURIComponent(activeAgent.did)}`}
-                    style={{ display: "inline-block", marginTop: 10 }}
-                  >
-                    {t("agents.openInbox")}
-                  </Link>
-                </div>
-
-                <details
-                  open={detailsOpen}
-                  onToggle={(event) => {
-                    const open = event.currentTarget.open;
-                    setDetailsOpen(open);
-                    try {
-                      window.localStorage.setItem(DETAILS_OPEN_KEY, open ? "1" : "0");
-                    } catch {
-                      // Private mode: it just will not be remembered.
-                    }
-                  }}
-                  style={{ marginTop: 12 }}
-                  data-testid="agent-details"
-                >
-                  <summary
-                    style={{
-                      cursor: "pointer",
-                      padding: "12px 16px",
-                      border: "1px solid var(--line)",
-                      borderRadius: 12,
-                      background: "var(--surface)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {t("agents.detailsTitle")}
-                  </summary>
-
+                {tab === "details" ? (
+                <div data-testid="agent-details">
                 {activeAgent.aid ? <ConnectedAIs aid={activeAgent.aid} /> : null}
 
                 <div className="panel" style={{ marginTop: 10 }}>
@@ -2170,18 +2235,11 @@ export default function AgentsSettingsPage() {
                     </div>
                   ) : null}
                 </div>
-                </details>
+                </div>
+                ) : null}
 
-                <div
-                  className="panel"
-                  style={{
-                    marginTop: 12,
-                    borderColor: "rgba(220, 38, 38, 0.35)",
-                  }}
-                >
-                  <p className="item-title" style={{ color: "#dc2626" }}>
-                    {t("agents.dangerTitle")}
-                  </p>
+                <div className="panel ap-danger">
+                  <p className="item-title">{t("agents.dangerTitle")}</p>
 
                   <div style={{ marginTop: 8 }}>
                     <p className="item-sub">

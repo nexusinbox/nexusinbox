@@ -172,6 +172,15 @@ describe("web security headers", () => {
     }
   });
 
+  it("serves an agent's intro page (/to/<aid>) without a session, and nothing else under /to", () => {
+    const open = middleware(new NextRequest("https://app.nexusinbox.ai/to/aid%3Aai%3A01ABC"));
+    expect(open.headers.get("location")).toBeNull();
+    for (const path of ["/to", "/to/", "/to/aid%3Aai%3A01ABC/more", "/topics"]) {
+      const gated = middleware(new NextRequest("https://app.nexusinbox.ai" + path));
+      expect(gated.headers.get("location"), path).toContain("/login?next=");
+    }
+  });
+
   it("sets X-Frame-Options: SAMEORIGIN on /login/idkit", () => {
     const request = new NextRequest("https://app.nexusinbox.ai/login/idkit");
     const response = middleware(request);

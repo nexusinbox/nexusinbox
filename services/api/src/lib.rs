@@ -182,6 +182,8 @@ struct AppState {
     attachment_intent_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     /// Per-IP budget for POST /agent-pairing/resolve (docs/31).
     pairing_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
+    /// Per-IP budget for public agent pages (docs/36).
+    public_agent_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     /// Per-IP budgets for OAuth registration and tokens (docs/33 §10).
     oauth_ip_budgets: Arc<Mutex<HashMap<String, RequestBudget>>>,
     ws_connections_per_user: Arc<Mutex<HashMap<String, usize>>>,
@@ -383,6 +385,7 @@ impl AppState {
             caller_budgets: Arc::new(Mutex::new(HashMap::new())),
             attachment_intent_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             pairing_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
+            public_agent_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             oauth_ip_budgets: Arc::new(Mutex::new(HashMap::new())),
             ws_connections_per_user: Arc::new(Mutex::new(HashMap::new())),
             blocks_by_user: Arc::new(Mutex::new(HashMap::new())),
@@ -523,6 +526,10 @@ struct Agent {
     /// all to tell which agent a message row belongs to. Agent lists only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     dids: Vec<String>,
+    /// One line the person wrote about this agent (docs/35 step 3).
+    bio: String,
+    /// Shown on the public page /to/<aid> (docs/36). Off by default.
+    share_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -2208,6 +2215,8 @@ async fn agent_owned_by_user_in_db(
         unread_count: row.get("unread_count"),
         created_at: row.get("created_at"),
         dids: Vec::new(),
+        bio: String::new(),
+        share_enabled: false,
     }))
 }
 
@@ -6833,6 +6842,8 @@ async fn list_agents(
               a.auto_reply,
               a.unread_count,
               a.created_at::text AS created_at,
+              a.bio,
+              a.share_enabled,
               COALESCE(
                 (SELECT array_agg(k.did ORDER BY k.activated_at)
                    FROM agent_identity_keys k WHERE k.aid = ai.aid),
@@ -6865,6 +6876,8 @@ async fn list_agents(
                 unread_count: row.get("unread_count"),
                 created_at: row.get("created_at"),
                 dids: row.get("dids"),
+                bio: row.get("bio"),
+                share_enabled: row.get("share_enabled"),
             });
         }
         out
@@ -7018,6 +7031,8 @@ async fn create_agent(
             unread_count: 0,
             created_at: Utc::now().to_rfc3339(),
             dids: Vec::new(),
+            bio: String::new(),
+            share_enabled: false,
         };
 
         let mut lock = state
@@ -7043,6 +7058,8 @@ async fn create_agent(
 struct UpdateAgentRequest {
     label: Option<String>,
     auto_reply: Option<bool>,
+    bio: Option<String>,
+    share_enabled: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -7050,6 +7067,22 @@ struct UpdateAgentResponse {
     id: Uuid,
     label: String,
     auto_reply: bool,
+    bio: String,
+    share_enabled: bool,
+}
+
+const MAX_AGENT_BIO_CHARS: usize = 160;
+
+fn validate_agent_bio(bio: &str) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if bio.chars().count() > MAX_AGENT_BIO_CHARS {
+        return Err(validation_error(&format!(
+            "bio exceeds {MAX_AGENT_BIO_CHARS} characters"
+        )));
+    }
+    if !bio.is_empty() && !is_clean_text(bio) {
+        return Err(validation_error("bio contains invalid characters"));
+    }
+    Ok(())
 }
 
 /// PATCH /agents/{id}
@@ -7072,13 +7105,21 @@ async fn update_agent(
         return Err(database_required_but_unavailable_error());
     }
 
-    if payload.label.is_none() && payload.auto_reply.is_none() {
+    if payload.label.is_none()
+        && payload.auto_reply.is_none()
+        && payload.bio.is_none()
+        && payload.share_enabled.is_none()
+    {
         return Err(validation_error(
-            "at least one of label or auto_reply must be provided",
+            "at least one of label, auto_reply, bio or share_enabled must be provided",
         ));
     }
     if let Some(label) = payload.label.as_deref() {
         validate_agent_label(label)?;
+    }
+    let bio = payload.bio.as_deref().map(str::trim);
+    if let Some(bio) = bio {
+        validate_agent_bio(bio)?;
     }
 
     if let Some(pool) = maybe_pool {
@@ -7088,15 +7129,19 @@ async fn update_agent(
             UPDATE agents
             SET
               label      = COALESCE($1, label),
-              auto_reply = COALESCE($2, auto_reply)
+              auto_reply = COALESCE($2, auto_reply),
+              bio        = COALESCE($5, bio),
+              share_enabled = COALESCE($6, share_enabled)
             WHERE id = $3 AND user_id = $4
-            RETURNING label, auto_reply
+            RETURNING label, auto_reply, bio, share_enabled
             "#,
         )
         .bind(payload.label.as_deref())
         .bind(payload.auto_reply)
         .bind(agent_id)
         .bind(user_uuid)
+        .bind(bio)
+        .bind(payload.share_enabled)
         .fetch_optional(&pool)
         .await
         .map_err(|error| internal_error("failed to update agent", error))?;
@@ -7105,6 +7150,8 @@ async fn update_agent(
                 id: agent_id,
                 label: row.get("label"),
                 auto_reply: row.get("auto_reply"),
+                bio: row.get("bio"),
+                share_enabled: row.get("share_enabled"),
             }));
         }
     } else {
@@ -7120,10 +7167,18 @@ async fn update_agent(
             if let Some(auto_reply) = payload.auto_reply {
                 agent.auto_reply = auto_reply;
             }
+            if let Some(bio) = bio {
+                agent.bio = bio.to_string();
+            }
+            if let Some(share) = payload.share_enabled {
+                agent.share_enabled = share;
+            }
             return Ok(Json(UpdateAgentResponse {
                 id: agent.id,
                 label: agent.label.clone(),
                 auto_reply: agent.auto_reply,
+                bio: agent.bio.clone(),
+                share_enabled: agent.share_enabled,
             }));
         }
     }
@@ -8200,6 +8255,67 @@ struct ResolvePairingResponse {
     credential_id: Uuid,
     aid: String,
     agent_label: String,
+}
+
+// In production the caller is usually the web server (one address for
+// every visitor and link preview, which the web side caches for 60 s), so
+// this only stops a single direct caller from hammering the endpoint.
+const PUBLIC_AGENT_LIMIT_PER_IP: u64 = 1200;
+const PUBLIC_AGENT_WINDOW_SECS: i64 = 600;
+
+/// GET /public/agents/{aid} — the public page of an agent whose owner
+/// turned sharing on (docs/36): its name, bio and the owner's display
+/// name. Nothing else, and 404 for every agent that is not shared, so the
+/// answer does not tell whether an address exists.
+async fn public_agent_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(aid): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let client_ip = extract_client_ip(&headers);
+    if !consume_keyed_budget(
+        &state.public_agent_ip_budgets,
+        &client_ip,
+        PUBLIC_AGENT_LIMIT_PER_IP,
+        PUBLIC_AGENT_WINDOW_SECS,
+    ) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "rate_limited".to_string(),
+                message: "too many requests from this IP; wait a few minutes".to_string(),
+            }),
+        ));
+    }
+    let not_found = || not_found_error("no shared agent at this address");
+    if aid.len() > 64 || !aid.starts_with("aid:ai:") {
+        return Err(not_found());
+    }
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(not_found)?;
+    let row = sqlx::query(
+        r#"
+        SELECT a.label, a.bio, u.display_name
+        FROM agent_identities ai
+        JOIN agents a ON a.id = ai.agent_id
+        JOIN users u ON u.id = a.user_id
+        WHERE ai.aid = $1 AND a.share_enabled AND a.is_active
+        "#,
+    )
+    .bind(&aid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("failed to look up the shared agent", e))?
+    .ok_or_else(not_found)?;
+    Ok(Json(serde_json::json!({
+        "aid": aid,
+        "label": row.get::<String, _>("label"),
+        "bio": row.get::<String, _>("bio"),
+        "owner_display_name": row.get::<Option<String>, _>("display_name"),
+    })))
 }
 
 /// POST /agent-pairing/resolve — which pending credential a pairing code
@@ -15647,6 +15763,7 @@ fn app_with_state(state: AppState) -> Router {
             post(activate_agent_credential),
         )
         .route("/agent-pairing/resolve", post(resolve_pairing_code))
+        .route("/public/agents/{aid}", get(public_agent_profile))
         .route(
             "/agent-credentials/{id}/rotate",
             post(rotate_agent_credential),
@@ -16809,6 +16926,8 @@ mod internal_tests {
             unread_count: 0,
             created_at: Utc::now().to_rfc3339(),
             dids: Vec::new(),
+            bio: String::new(),
+            share_enabled: false,
         });
     }
 

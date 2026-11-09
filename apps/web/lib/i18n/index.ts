@@ -10,45 +10,11 @@ import {
 } from "react";
 import React from "react";
 
-import en from "./locales/en.json";
-import ja from "./locales/ja.json";
+import { translate, translations, type Locale } from "./translate";
 
-// Supported locales
-export type Locale = "en" | "ja";
-
-const translations: Record<Locale, Record<string, unknown>> = { en, ja };
+export type { Locale };
 
 const STORAGE_KEY = "nexusinbox-locale";
-
-// ----- helpers -----
-
-/**
- * Resolve a dot-separated key from a nested object.
- * e.g. resolve("inbox.title", { inbox: { title: "Inbox" } }) => "Inbox"
- */
-function resolve(key: string, obj: Record<string, unknown>): string | undefined {
-  const parts = key.split(".");
-  let cur: unknown = obj;
-  for (const p of parts) {
-    if (cur == null || typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[p];
-  }
-  return typeof cur === "string" ? cur : undefined;
-}
-
-/**
- * Interpolate {variable} placeholders.
- * e.g. interpolate("Hello {name}", { name: "Alice" }) => "Hello Alice"
- */
-function interpolate(
-  template: string,
-  vars?: Record<string, string | number>,
-): string {
-  if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (_, k) =>
-    vars[k] !== undefined ? String(vars[k]) : `{${k}}`,
-  );
-}
 
 // ----- context -----
 
@@ -91,15 +57,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: string, vars?: Record<string, string | number>): string => {
-      const val = resolve(key, translations[locale] as Record<string, unknown>);
-      if (val !== undefined) return interpolate(val, vars);
-      // Fallback to English
-      const fallback = resolve(key, translations.en as Record<string, unknown>);
-      if (fallback !== undefined) return interpolate(fallback, vars);
-      // Return the key itself as last resort
-      return key;
-    },
+    (key: string, vars?: Record<string, string | number>): string =>
+      translate(locale, key, vars),
     [locale],
   );
 

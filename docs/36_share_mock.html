@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>訴求と共有（案）</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+    --ink: #0f1419; --muted: #536471; --line: #eff3f4; --line-strong: #cfd9de; --soft: #f7f9f9;
+    --accent: #2f5bea; --accent-soft: #e8eeff; --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 var(--font); color: var(--ink); background: #eef1f4; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; }
+  @media (max-width: 960px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .opts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .opts button { font: 13px var(--font); border: 1px solid #cfd6dd; background: #fff; border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .opts button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .stage { background: #f6f8fa; border-radius: 18px; padding: 28px; display: grid; place-items: center; }
+  .card { width: min(440px, 100%); background: #fff; border-radius: 20px; padding: 26px 26px 20px; box-shadow: 0 6px 30px rgba(15,20,25,.08); }
+  .brand { font-weight: 800; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+  .brand b { color: var(--accent); }
+  .logo { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #2f5bea, #7048e8); }
+  .hero { font-size: 26px; font-weight: 800; line-height: 1.35; margin: 18px 0 8px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .scene { background: var(--soft); border-radius: 14px; padding: 12px; display: grid; gap: 6px; margin: 0 0 16px; font-size: 13px; }
+  .b { max-width: 78%; padding: 7px 11px; border-radius: 14px; }
+  .b.l { background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .b.r { background: var(--accent); color: #fff; justify-self: end; border-bottom-right-radius: 4px; }
+  .who { font-size: 11px; color: var(--muted); }
+  .who.r { justify-self: end; }
+  .cta { display: grid; place-items: center; min-height: 48px; border-radius: 999px; background: var(--ink); color: #fff; font-weight: 700; margin-top: 4px; }
+  .points { display: grid; gap: 8px; margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+  .points b { color: var(--ink); }
+  .links { margin-top: 14px; text-align: center; font-size: 12px; color: var(--muted); }
+
+  .share { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .panel { background: #fff; border-radius: 18px; padding: 18px; box-shadow: 0 2px 12px rgba(15,20,25,.05); }
+  .panel h3 { margin: 0 0 4px; font-size: 15px; }
+  .panel .note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .og { border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; }
+  .og .img { height: 150px; background: linear-gradient(135deg, #2f5bea 0%, #7048e8 100%); color: #fff; padding: 18px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .og .img .t { font-size: 20px; font-weight: 800; line-height: 1.3; }
+  .og .img .s { font-size: 12px; opacity: .9; }
+  .og .meta { padding: 10px 12px; font-size: 12px; color: var(--muted); }
+  .av { width: 64px; height: 64px; border-radius: 50%; background: #0c8599; color: #fff; display: grid; place-items: center; font-size: 26px; font-weight: 800; }
+  .prof { text-align: center; display: grid; justify-items: center; gap: 6px; }
+  .prof .n { font-size: 19px; font-weight: 800; }
+  .prof .bio { color: var(--muted); font-size: 14px; }
+  .btn { display: inline-grid; place-items: center; min-height: 42px; padding: 0 18px; border-radius: 999px; font-weight: 700; font-size: 14px; border: 1px solid var(--line-strong); background: #fff; }
+  .btn.p { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .sheet { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
+  .msgbox { background: var(--soft); border-radius: 10px; padding: 10px; font-size: 13px; }
+  aside .box { background: #fff; border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; } aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>訴求と共有（画面案）</h1>
+    <p class="lead">ログイン画面で「何がうれしいか」を一言で伝え、使っている人が自分のエージェントを人に紹介したくなる仕組みを足す案です（docs/36）。</p>
+
+    <h2>1. ログイン画面のことば（3 案）</h2>
+    <div class="opts" id="copy">
+      <button class="on" data-c="a">A: 信頼する人と、AI どうしで</button>
+      <button data-c="b">B: あなたの AI に、連絡先を</button>
+      <button data-c="c">C: AI が話す時代の受信箱</button>
+    </div>
+    <div class="stage">
+      <div class="card">
+        <div class="brand"><span class="logo"></span>Nexus<b>Inbox</b></div>
+        <div data-copy="a">
+          <div class="hero">信頼する人と、<br>おたがいの AI エージェントで話そう。</div>
+          <p class="sub">日程調整も、ちょっとした依頼も。あなたの AI と相手の AI がやり取りして、決めるのはあなた。</p>
+        </div>
+        <div data-copy="b" hidden>
+          <div class="hero">あなたの AI エージェントに、<br>信頼できる連絡先を。</div>
+          <p class="sub">相手はみんな World ID で確かめた一人の人間。中身は暗号化され、運営も読めません。</p>
+        </div>
+        <div data-copy="c" hidden>
+          <div class="hero">AI どうしが話す時代の、<br>人のための受信箱。</div>
+          <p class="sub">あなたの AI が受け取り、下書きし、あなたが確かめて送る。迷惑メールも、なりすましもない場所で。</p>
+        </div>
+        <div class="scene" aria-hidden="true">
+          <div class="who">山田さんの秘書</div>
+          <div class="b l">来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか？</div>
+          <div class="who r">あなたの秘書（あなたが確認して送信）</div>
+          <div class="b r">木曜 14:00 でお願いします。</div>
+        </div>
+        <div class="cta">World ID ではじめる</div>
+        <div class="points">
+          <div><b>本人だけが読める</b> — 運営も中身を読めません</div>
+          <div><b>相手は一人の人間</b> — なりすましや大量登録を防ぎます</div>
+          <div><b>AI は下書きまで</b> — 送るかどうかはあなたが決めます</div>
+        </div>
+        <div class="links">NexusInbox とは？ · ヘルプ · 利用規約 · プライバシー</div>
+      </div>
+    </div>
+
+    <h2>2. 広めたくなる仕立て</h2>
+    <div class="share">
+      <div class="panel">
+        <h3>① エージェントを「紹介」する</h3>
+        <p class="note">プロフィールの「紹介する」から、共有用のリンクと一言を作ります。スマホでは共有シート（LINE・X・メールなど）が開きます。</p>
+        <div class="sheet">
+          <div class="msgbox">水本の秘書に、NexusInbox で連絡できます。AI エージェントどうしで日程調整ができます。<br><b>https://nexusinbox.ai/to/01M6…Q6Z0</b></div>
+          <div class="row"><span class="btn p">共有する</span><span class="btn">リンクをコピー</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>② 共有したときの見え方</h3>
+        <p class="note">X や LINE に貼ると、名前と「何ができるか」が大きく出ます（個人の情報は出しません）。</p>
+        <div class="og">
+          <div class="img"><div class="t">水本の秘書に<br>AI エージェントで連絡</div><div class="s">NexusInbox — 信頼する人と、おたがいの AI で話そう</div></div>
+          <div class="meta">nexusinbox.ai</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>③ リンクを開いた人の画面</h3>
+        <p class="note">ログインしていなくても見られる、エージェントの紹介ページ。始め方まで 1 画面で案内します。</p>
+        <div class="prof">
+          <div class="av">秘</div>
+          <div class="n">水本の秘書</div>
+          <div class="bio">日程調整とメールの整理をします。</div>
+          <div class="note" style="margin:0">World ID で本人確認済みの人のエージェントです</div>
+          <div class="row"><span class="btn p">メッセージを送る</span></div>
+          <div class="note" style="margin:6px 0 0">はじめての方: World ID でログイン → あなたのエージェントを作る → そのまま送れます</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>ねらい</h3>
+      <ul>
+        <li>ログイン画面で「誰と・何のために」を一言で伝える（いまは仕組みの説明が先に来ている）</li>
+        <li>使っている人が自分のエージェントを紹介するたびに、新しい人が「メッセージを送る」から始められる（紹介が広がる道）</li>
+        <li>共有リンクの見た目（OG 画像）で、貼った先でも何のサービスか伝わる</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>守ること</h3>
+      <ul>
+        <li>紹介ページに出すのは、エージェントの名前・一言・表示名だけ。紹介を「オン」にしたエージェントだけ出す（初期値はオフ）</li>
+        <li>紹介ページから送れるのは、ログインした一人の人間だけ（いまと同じ）</li>
+        <li>紹介をやめると、リンクは「見つかりません」になる</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ol>
+        <li>ログイン画面のことばは A / B / C のどれにするか（推奨: A。あなたの言葉に一番近く、場面が浮かぶ）</li>
+        <li>①〜③（紹介する・共有の見え方・紹介ページ）を作るか（推奨: 作る。紹介ページは公開の範囲を絞って、オンにした人だけ）</li>
+        <li>紹介ページに持ち主の表示名（例: 水本）を出してよいか（推奨: 出す。「誰の」エージェントかが信頼の手がかりになる。出したくない人は一言だけにできる）</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+<script>
+  document.querySelectorAll('#copy button').forEach((b) => b.onclick = () => {
+    document.querySelectorAll('#copy button').forEach((x) => x.classList.toggle('on', x === b));
+    document.querySelectorAll('[data-copy]').forEach((el) => { el.hidden = el.dataset.copy !== b.dataset.c; });
+  });
+</script>
+</body>
+</html>

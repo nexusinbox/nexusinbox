@@ -70,10 +70,21 @@ import { useTranslation, type Locale } from "../../../lib/i18n";
 const DECRYPT_CONCURRENCY = 4;
 
 /** Round face: initial on a colour from the DID, with a small 🤖. */
-export function Avatar({ did, name, small }: { did: string; name: string; small?: boolean }) {
+export function Avatar({
+  did,
+  name,
+  small,
+  large,
+}: {
+  did: string;
+  name: string;
+  small?: boolean;
+  /** The agent profile's big face. */
+  large?: boolean;
+}) {
   return (
     <span
-      className={`dm-av dm-c${avatarColorIndex(did)}${small ? " sm" : ""}`}
+      className={`dm-av dm-c${avatarColorIndex(did)}${small ? " sm" : ""}${large ? " lg" : ""}`}
       aria-hidden="true"
     >
       {avatarInitial(name)}
@@ -496,7 +507,67 @@ export function ConversationView({
         <ConversationDrafts conversation={conversation} agents={agents} />
       </div>
 
-      <Composer conversation={conversation} />
+      <Composer
+        ownDid={conversation.ownDid}
+        ownDids={conversation.ownDids}
+        ownAgent={conversation.ownAgent}
+        counterpart={conversation.counterpartDid}
+        threadId={conversation.threadId ?? conversation.latest.entry.id}
+        replyToId={conversation.latestReceived?.id ?? null}
+      />
+    </div>
+  );
+}
+
+/**
+ * A conversation with no messages yet (new conversation, docs/35 §2):
+ * the header and the composer. `counterpart` may be an AID; the composer
+ * resolves it before sending.
+ */
+export function EmptyConversationView({
+  ownAgent,
+  counterpart,
+  avatarDid,
+  name,
+  subLine,
+  onBack,
+}: {
+  ownAgent: Agent;
+  counterpart: string;
+  /** DID for the avatar colour, once known. */
+  avatarDid: string;
+  name: string;
+  subLine: string | null;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="dm-conv">
+      <header className="dm-conv-head">
+        <button type="button" className="dm-icon-btn dm-back" onClick={onBack} aria-label={t("messages.back")}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+        </button>
+        <Avatar did={avatarDid} name={name} small />
+        <div className="dm-conv-who">
+          <h2 title={name}>{name}</h2>
+          {subLine ? <div className="dm-sub">{subLine}</div> : null}
+        </div>
+      </header>
+      <div className="dm-thread">
+        <div className="dm-sys">{t("messages.encryptedNotice")}</div>
+        <div className="dm-empty">{t("messages.emptyConversation", { agent: ownAgent.label })}</div>
+      </div>
+      <Composer
+        ownDid={ownAgent.did}
+        ownDids={Array.from(new Set([ownAgent.did, ...(ownAgent.dids ?? [])]))}
+        ownAgent={ownAgent}
+        counterpart={counterpart}
+        threadId={null}
+        replyToId={null}
+      />
     </div>
   );
 }
@@ -648,7 +719,24 @@ function ConversationDrafts({
  * Plain-text reply from the conversation's own agent. Only for agents whose
  * signing key is in this browser; subject and attachments stay on /compose.
  */
-function Composer({ conversation }: { conversation: Conversation }) {
+function Composer({
+  ownDid,
+  ownDids,
+  ownAgent,
+  counterpart,
+  threadId,
+  replyToId,
+}: {
+  ownDid: string;
+  ownDids: string[];
+  ownAgent: Agent | undefined;
+  /** The counterpart's DID, or an AID to resolve before sending. */
+  counterpart: string;
+  /** Thread to continue; null starts a new one. */
+  threadId: string | null;
+  /** Newest received message, for the full form's reply. */
+  replyToId: string | null;
+}) {
   const { t } = useTranslation();
   const sendMessage = useSendMessageMutation();
   const [text, setText] = useState("");
@@ -657,9 +745,6 @@ function Composer({ conversation }: { conversation: Conversation }) {
   // undefined: still checking; null: no signing key here.
   const [senderDid, setSenderDid] = useState<string | null | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const { ownDid, ownDids, ownAgent, counterpartDid, threadId, latest, latestReceived } =
-    conversation;
 
   useEffect(() => {
     let cancelled = false;
@@ -685,9 +770,9 @@ function Composer({ conversation }: { conversation: Conversation }) {
     el.style.height = el.scrollHeight + "px";
   }, [text]);
 
-  const composeHref = latestReceived
-    ? `/compose?reply=${encodeURIComponent(latestReceived.id)}`
-    : `/compose?to=${encodeURIComponent(counterpartDid)}`;
+  const composeHref = replyToId
+    ? `/compose?reply=${encodeURIComponent(replyToId)}`
+    : `/compose?to=${encodeURIComponent(counterpart)}&as=${encodeURIComponent(ownDid)}`;
 
   const send = async () => {
     const body = text.trim();
@@ -695,7 +780,7 @@ function Composer({ conversation }: { conversation: Conversation }) {
     setSending(true);
     setError(false);
     try {
-      const resolved = await defaultApiClient.resolveRecipient(counterpartDid);
+      const resolved = await defaultApiClient.resolveRecipient(counterpart);
       const recipientEncryptionKey = resolved.encryption_public_key;
       if (!recipientEncryptionKey || !isValidX25519PublicKeyB64Url(recipientEncryptionKey)) {
         throw new Error("recipient has no usable encryption key");
@@ -724,7 +809,7 @@ function Composer({ conversation }: { conversation: Conversation }) {
         encryptedKey: wrapped.wrappedKey,
         nonce: encryptedBody.nonce,
         signature,
-        threadId: threadId ?? latest.entry.id,
+        threadId,
         senderEncryptedKey,
       });
       setText("");

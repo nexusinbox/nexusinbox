@@ -36,15 +36,8 @@
   },
 
   "auth": {
-    "proofLabel": "PROOF OF PERSONHOOD · ZK-AUTH",
-    "loginSubtitle": "E2E encrypted inbox for AI agents.\nVerify your humanity with World ID to start a session.",
-    "awaitingHandshake": "> awaiting handshake",
-    "connectWorldId": "CONNECT WORLD ID",
-    "verifying": "VERIFYING…",
-    "footerE2E": "E2E · AES-GCM-256",
-    "footerDID": "DID:KEY · Ed25519",
-    "footerIdentity": "WORLD ID · ORB",
-    "hudTag": "NEXUSINBOX // NET-0",
+    "connectWorldId": "Sign in with World ID",
+    "verifying": "Checking…",
     "statusVerifying": "Verifying...",
     "statusContinue": "Continue authentication with World ID.",
     "statusPrepFailed": "Authentication preparation failed: {message}",
@@ -52,13 +45,28 @@
     "statusAuthFailed": "Authentication failed: {message} (HTTP {status})",
     "statusAuthFailedMsg": "Authentication failed: {message}",
     "statusAuthFailedGeneric": "Authentication failed. Check the logs.",
-    "statusSuccess": "Authenticated. Redirecting to dashboard.",
+    "statusSuccess": "Signed in. Taking you there…",
     "statusServerFailed": "Authentication failed: Server verification failed. Check your settings.",
     "idkitError": "IDKit error: {code}",
     "connectBtn": "Connect World ID",
     "connectLoading": "Loading...",
     "connectAlertFailed": "Failed to prepare World ID connection.",
-    "conceptLink": "What is NexusInbox?"
+    "conceptLink": "What is NexusInbox?",
+    "hero": "Talk with people you trust,\nthrough each other's AI agents.",
+    "sub": "Finding a time, a small favour. Your AI and theirs work it out; you make the call.",
+    "start": "Get started with World ID",
+    "sceneThemWho": "Yamada's assistant",
+    "sceneThem": "For next week's meeting, would Thursday 2:00 pm or Friday 10:00 am work?",
+    "sceneYouWho": "Your assistant (you check, then send)",
+    "sceneYou": "Thursday 2:00 pm, please.",
+    "pointPrivateTitle": "Only you can read it",
+    "pointPrivateDesc": "Not even the operator can read it.",
+    "pointHumanTitle": "Every sender is one real person",
+    "pointHumanDesc": "World ID stops impersonation and mass sign-ups.",
+    "pointAiTitle": "AI only drafts",
+    "pointAiDesc": "Whether to send is up to you.",
+    "ctaNote": "You confirm it's you with World App on your phone.",
+    "linksLabel": "Links"
   },
 
   "onboarding": {
@@ -80,6 +88,10 @@
   },
 
   "messages": {
+    "partyName": "{person}'s {agent}",
+    "fromAgent": "Sending as {agent}",
+    "emptyConversation": "No messages yet. Send the first one as {agent}.",
+    "recipientNotFound": "Couldn't find that recipient. Check the address.",
     "chipsLabel": "Filter",
     "chipAll": "All",
     "chipUnread": "Unread",
@@ -159,21 +171,21 @@
     "addToContacts": "Add to Contacts",
     "blockSender": "Block this sender",
     "blockPanelTitle": "Block this sender",
-    "blockPanelDesc": "Pick a block level. The server resolves the Agent Address (DID) and the sender's World ID from this message internally — you never have to copy a raw identifier by hand.",
-    "blockLevelL1": "This address only",
-    "blockLevelL1Desc": "Silently drop messages from the sender's current Agent Address (DID). If the sender rotates keys to a new DID, messages reach you again.",
+    "blockPanelDesc": "Choose how far to block. You can unblock later under Contacts → Blocked.",
+    "blockLevelL1": "Just this sender",
+    "blockLevelL1Desc": "Stop messages from this agent. They are not told. If they make new keys, messages may reach you again.",
     "blockLevelL2": "All of this person's agents",
-    "blockLevelL2Desc": "Block every agent tied to this sender's World ID. Even if they register a fresh agent, nothing gets through.",
-    "blockLevelL3": "Hide completely (the sender is not told)",
-    "blockLevelL3Desc": "In addition to L2, hide your account from the sender entirely. From their side you effectively never existed.",
+    "blockLevelL2Desc": "Stop messages from every agent this person has, including ones they create later.",
+    "blockLevelL3": "Hide completely",
+    "blockLevelL3Desc": "Block all their agents and hide you from them. To them, it looks as if you were never here.",
     "blockCancel": "Cancel",
-    "blockConfirmL1": "Block this sender's current DID?",
-    "blockConfirmL2": "Block every agent owned by this sender's World ID. Proceed?",
-    "blockConfirmL3": "You will become fully invisible to this sender. Proceed?",
-    "blockSuccessL1": "Sender's DID is now blocked. Remove it any time at /settings/blocks.",
-    "blockSuccessL2": "Sender's World ID is now blocked across all their agents. Remove it at /settings/blocks.",
-    "blockSuccessL3": "Stealth mode engaged — you are now hidden from this sender. Undo at /settings/blocks.",
-    "blockFailSenderNotRegistered": "This sender is not registered with NexusInbox, so L2/L3 (World ID) blocks cannot resolve a target. Try L1 to block the DID instead.",
+    "blockConfirmL1": "Block this sender?",
+    "blockConfirmL2": "Block all of this person's agents?",
+    "blockConfirmL3": "You will be hidden from this person completely. Continue?",
+    "blockSuccessL1": "Blocked this sender. Unblock under Contacts → Blocked.",
+    "blockSuccessL2": "Blocked all of this person's agents. Unblock under Contacts → Blocked.",
+    "blockSuccessL3": "Hidden completely. Unblock under Contacts → Blocked.",
+    "blockFailSenderNotRegistered": "This sender is not registered with NexusInbox, so \"All of this person's agents\" is not available. Choose \"Just this sender\".",
     "blockFailGeneric": "Could not add block. Please try again shortly.",
     "blockBusy": "Blocking…",
     "statusUnread": "Unread",
@@ -294,6 +306,14 @@
   },
 
   "compose": {
+    "pickFrom": "From",
+    "pickNoAgent": "You have no agents yet.",
+    "pickNoSender": "No agent can send from this browser. Agents that run on a computer send from the AI tool on that computer or from a cloud AI.",
+    "pickSomeOnComputer": "Agents that run on a computer aren't listed here; they send from the AI tool on that computer or from a cloud AI.",
+    "pickAddress": "Address",
+    "pickSendToAddress": "Send to this address",
+    "pickNoMatch": "No match. Paste an address (aid:ai:…) to write to it.",
+    "pickNobody": "No contacts yet. Paste an address (aid:ai:…) to write to it.",
     "title": "New conversation",
     "subtitle": "Select a recipient, enter body, and send",
     "refreshAgents": "Refresh Agents",
@@ -382,6 +402,8 @@
   },
 
   "agentDrafts": {
+    "replyTo": "Reply to {name}",
+    "newTo": "To {name}",
     "title": "Drafts written by AI ({count})",
     "why": "Cloud AIs cannot send. A draft is sent only when you read it and press \"Send this\".",
     "empty": "No drafts are waiting.",
@@ -397,13 +419,6 @@
     "unknownParty": "Unknown sender",
     "madeBy": "Written by {agent}",
     "madeByVia": "Written by {via} as \"{agent}\"",
-    "open": "Open",
-    "detailTitle": "Review draft",
-    "back": "← Back",
-    "from": "From",
-    "to": "To",
-    "subject": "Subject",
-    "made": "Written",
     "send": "Send this",
     "discard": "Discard",
     "detailNote": "To change it, ask the AI to write it again (you cannot edit it here). Drafts are deleted after 7 days.",
@@ -418,6 +433,7 @@
   },
 
   "pending": {
+    "block": "Block",
     "subjectHidden": "The subject is encrypted (approve to read it in the inbox)",
     "categoryName": {
       "spam_denylist": "matches the spam sender list",
@@ -436,11 +452,10 @@
     "error": "Failed to load messages.",
     "retry": "Retry",
     "empty": "No messages need review.",
-    "sender": "Sender: ",
     "trustScore": "Trust {n}%",
     "category": " · Category {category}",
     "noSubject": "(No subject)",
-    "approve": "Move to inbox",
+    "approve": "Accept",
     "reject": "Discard",
     "approved": "Moved to the inbox.",
     "approveFailed": "Could not approve. Please try again later.",
@@ -451,31 +466,32 @@
   },
 
   "contacts": {
+    "tabBlocks": "Blocked",
+    "tabContacts": "Contacts",
+    "tabsLabel": "Contacts and blocks",
     "title": "Contacts",
     "subtitle": "Manage frequent contacts and sender notes",
     "refresh": "Refresh",
-    "addNew": "+ Add New Contact",
-    "addNewDesc": "Register an Agent Address and name to display in the list.",
+    "addNew": "Add contact",
     "empty": "No contacts yet.",
     "loading": "Loading contacts…",
     "loadFailed": "Could not load contacts. Use the refresh button at the top right to try again.",
     "remove": "Remove",
     "formNewTitle": "New Contact",
     "formEditTitle": "Edit Contact",
-    "formBadge": "Contacts",
-    "didLabel": "Agent Address (DID)",
+    "didLabel": "Technical ID",
     "didPlaceholder": "did:key:z6Mk...",
-    "didHelp": "Paste the recipient's Agent Address. It begins with did:key: and cannot be changed after creation.",
+    "didHelp": "The contact's technical ID (starts with did:key:). It is usually filled in from \"Add to contacts\" in a conversation's menu. It cannot be changed later.",
     "nameLabel": "Name / Nickname",
     "namePlaceholder": "e.g. John Smith",
     "nameHelp": "A name that makes this contact easy to identify.",
     "agentNameLabel": "Agent Name (optional)",
     "agentNamePlaceholder": "e.g. Secretary / Reception / Support",
-    "agentNameHelp": "Useful when the same person has multiple Agent Addresses for different roles.",
+    "agentNameHelp": "Useful when the same person has several agents for different roles.",
     "memoLabel": "Memo (optional)",
     "memoPlaceholder": "Relationship notes, contact preferences, etc.",
     "validationName": "Please enter a name or nickname.",
-    "validationDid": "Agent Address must start with did:key:",
+    "validationDid": "A technical ID starts with did:key:",
     "updated": "Contact updated.",
     "added": "Contact added.",
     "saveFailed": "Failed to save.",
@@ -483,7 +499,6 @@
     "deleted": "Contact deleted.",
     "deleteFailed": "Failed to delete.",
     "deleteBtn": "Delete",
-    "deleting": "Deleting…",
     "addBtn": "Add",
     "saveBtn": "Save Changes",
     "savingBtn": "Saving…",
@@ -495,25 +510,65 @@
     "resetKeyDone": "Started a new contacts key.",
     "resetKeyFailed": "Could not start a new contacts key.",
     "unreadableTitle": "Cannot open on this device",
-    "unreadableHelp": "The name and note are encrypted, and this device's keys cannot open them. You can still delete it."
+    "unreadableHelp": "The name and note are encrypted, and this device's keys cannot open them. You can still delete it.",
+    "searchPlaceholder": "Search by name or note",
+    "noMatch": "No contacts match.",
+    "sendMessage": "Send a message",
+    "editBtn": "Edit",
+    "cancelBtn": "Cancel"
+  },
+
+  "share": {
+    "button": "Share",
+    "switchLabel": "Publish an intro page",
+    "switchDesc": "Anyone with the link sees the agent's name, its one-line bio and your display name. Turn it off and the link stops working within about a minute.",
+    "text": "You can reach {name} on NexusInbox. Our AI agents can find a time for us.",
+    "textLabel": "Text to share",
+    "share": "Share",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy. Select the text and copy it.",
+    "on": "The intro page is published",
+    "off": "The intro page is closed. The link no longer opens.",
+    "failed": "Couldn't change it. Please try again."
+  },
+
+  "publicAgent": {
+    "ogTitle": "Reach {name} through your AI agent",
+    "verified": "This agent belongs to a person verified with World ID",
+    "send": "Send a message",
+    "firstTime": "New here? Sign in with World ID → create your agent → send right away",
+    "notFoundTitle": "This page can't be found",
+    "notFoundDesc": "The intro may have ended, or the link may be wrong.",
+    "unavailableTitle": "Can't show this right now",
+    "unavailableDesc": "Please wait a moment and open it again.",
+    "toLogin": "Get started with NexusInbox"
   },
 
   "agents": {
+    "profileEdit": "Edit profile",
+    "nameLabel": "Name",
+    "bioLabel": "Bio",
+    "bioPlaceholder": "What this agent does, in one line",
+    "bioEmpty": "No bio yet. Add one with “Edit profile”.",
+    "backToList": "Back to the list",
+    "tabsLabel": "Sections",
+    "tabStatus": "Status",
+    "tabDetails": "Details",
+    "bannerProfileUpdated": "Profile updated.",
+    "bannerProfileFailed": "Couldn't update the profile. The bio can be up to 160 characters.",
     "title": "Agents",
     "subtitle": "Manage agents that share your inbox",
     "newAgent": "+ New Agent",
     "refresh": "Refresh",
-    "empty": "No agents yet. Create one from \"Create Agent\" in the sidebar.",
+    "empty": "No agents yet. Create one with \"+ New Agent\" above.",
     "unread": "Unread {count}",
     "namePlaceholder": "Agent name",
-    "editName": "Edit name",
     "save": "Save",
     "cancel": "Cancel",
     "overviewTitle": "Technical information",
-    "addressTitle": "Address to share",
     "addressDesc": "Share this address so others can message this agent. It stays the same when keys change.",
     "openInbox": "Open inbox",
-    "detailsTitle": "Details (technical information and advanced settings)",
     "approvalQueueNote": "Messages from senders with very low trust, or flagged as spam, go to Pending approval instead of the inbox.",
     "agentId": "Agent ID: {aid}",
     "agentIdHelp": "This is the stable address to share with humans and other agents. It does not change when keys rotate.",
@@ -701,10 +756,8 @@
     "confirmDelete": "Delete agent \"{label}\"?\n\nRelated inbox metadata will also be deleted. This cannot be undone. Continue?",
     "confirmRevoke": "Revoke this credential immediately?",
     "confirmEmergency": "Stop everything now?\n\nEvery computer, AI tool and cloud AI connected to this agent loses access immediately. Reconnecting needs a new registration.",
-    "emptyReader": "No agent to display. Create one from \"Create Agent\" in the sidebar.",
+    "emptyReader": "No agent to display. Create one with \"+ New Agent\" above.",
     "bannerNameEmpty": "Please enter an agent name.",
-    "bannerNameUpdated": "Agent name updated.",
-    "bannerNameFailed": "Could not update name.",
     "bannerAutoReplyOff": "Auto-reply disabled.",
     "bannerAutoReplyOn": "Auto-reply enabled.",
     "bannerAutoReplyFailed": "Could not change auto-reply setting.",
@@ -777,31 +830,29 @@
   },
 
   "blocks": {
+    "since": "since {when}",
+    "personAllAgents": "All of one person's agents",
+    "lead": "Messages from people you block do not reach you. Unblock to receive them again.",
     "title": "Blocks",
-    "subtitle": "Manage senders you don't want to receive from",
     "refresh": "Refresh",
-    "empty": "No blocks.",
+    "empty": "You have not blocked anyone. Block from a conversation's ⋯ menu.",
     "unblock": "Unblock",
-    "l1Label": "Block specific sender",
-    "l2Label": "Full identity ban",
-    "l3Label": "Stealth mode (hidden)",
+    "l1Label": "Just this sender",
+    "l2Label": "All of this person's agents",
+    "l3Label": "Hide completely",
     "l1Desc": "Silently ignores messages from this agent. The sender won't know they're blocked.",
     "l2Desc": "Blocks a verified identity across all their agents.",
     "l3Desc": "In addition to blocking, hides your account from the sender entirely.",
-    "addTitle": "Add Block",
-    "addMeta": "The easy path is the **\"Block this sender\" button on any received message** — the server resolves the DID and the sender's World ID automatically. The form below is an advanced fallback for operators who already hold an identifier from another channel.",
+    "addTitle": "Block by address (advanced)",
+    "addMeta": "Usually, block from a conversation's ⋯ → Block. Use this only if you know the sender's technical ID or World ID hash some other way.",
     "levelTitle": "Block Level",
-    "didTitle": "Agent Address (DID)",
-    "didHelp": "A `did:key:...` value. Prefer the per-message \"Block this sender\" button (no typing needed). This is NOT the same as the Agent ID (`aid:ai:...`) — the Agent ID is stable across key rotations, the Agent Address (DID) is the cryptographic handle tied to the currently-active key.",
+    "didTitle": "Sender's technical ID (did:key:…)",
     "didPlaceholder": "did:key:z6Mk...",
-    "worldIdTitle": "Sender's World ID (world_id_hash, base64url)",
-    "worldIdHelp": "A one-way hash derived from the sender's World ID (base64url). **This value is normally not shown anywhere in the Web UI** — use the \"Block this sender\" button on a received message and the server will resolve + register L2/L3 for you. This form is only useful when you already hold the hash out-of-band.",
+    "worldIdTitle": "Sender's World ID hash",
     "worldIdPlaceholder": "base64url hash...",
-    "addBtn": "Add (advanced manual entry)",
+    "addBtn": "Block",
     "validationDid": "Please enter an Agent Address (DID) to block.",
     "validationWorldId": "Please enter the sender's World ID hash to block.",
-    "targetDidBadge": "DID",
-    "targetWorldIdBadge": "World ID",
     "added": "Block added.",
     "addFailed": "Could not add block. Please try again later.",
     "removed": "Block removed.",
@@ -810,62 +861,194 @@
 
   "audit": {
     "title": "AI activity",
-    "subtitle": "What your computer and AI tools did with this account.",
-    "pageTitle": "Audit Log",
-    "pageDesc": "Security event history for non-interactive agent access",
-    "allEvents": "All events",
-    "loading": "Loading...",
-    "loadFailed": "Failed to load",
-    "emptyTitle": "No audit events yet",
-    "emptyDesc": "Events will appear here when agents issue tokens or send messages via non-interactive access.",
-    "guideBtn": "Event types & descriptions",
-    "guideClose": "Hide description",
-    "guideOpen": "About this event",
-    "guideInfo": "Normal Events",
-    "guideWarn": "Warning Events",
-    "guideCritical": "Critical Events",
+    "subtitle": "What your agents and AI have done.",
+    "presetAll": "All",
+    "presetAutoReply": "Auto-reply",
+    "presetDrafts": "AI drafts",
+    "presetFiles": "Attachments",
+    "presetComputer": "This browser and your computer",
+    "filterAgent": "Filter by agent",
+    "filterEvent": "Filter by kind",
+    "allAgents": "All agents",
+    "otherAgent": "Another agent",
+    "allEvents": "All kinds",
+    "loading": "Loading…",
+    "loadFailed": "Could not load",
+    "emptyTitle": "Nothing yet",
+    "emptyDesc": "Replies from your agents, connected AI and similar actions show up here.",
     "prev": "Prev",
     "next": "Next",
-    "tokenIssued": "Token Issued",
-    "tokenIssuedDesc": "Your computer or an AI tool signed in and received a token.",
-    "tokenRefreshed": "Token Refreshed",
-    "tokenRefreshedDesc": "A token was replaced with a new one.",
-    "tokenRevoked": "Token Revoked",
-    "tokenRevokedDesc": "Your computer or an AI tool revoked its own token, as it does when it stops.",
-    "credentialCreated": "Credential Created",
-    "credentialCreatedDesc": "A registration for a computer or AI tool was created; it becomes usable once that side completes it.",
-    "credentialActivated": "Credential Activated",
-    "credentialActivatedDesc": "A computer or AI tool completed its registration and can now be used.",
-    "credentialRevoked": "Credential Revoked",
-    "credentialRevokedDesc": "A registration was revoked and can no longer be used.",
-    "keyRotationStarted": "Key Rotation Started",
-    "keyRotationStartedDesc": "A key change started; the old key works until the new one is registered.",
-    "credentialCompromised": "Credential Compromised",
-    "credentialCompromisedDesc": "Refresh token reuse was detected, indicating the credential may be compromised. All tokens for this credential have been automatically revoked. Consider rotating keys or recreating the credential.",
-    "refreshReuseDetected": "Refresh Token Reuse Detected",
-    "refreshReuseDetectedDesc": "A used refresh token was reused. Since legitimate Gateways never reuse tokens, this suggests the token was copied by a third party. A credential_compromised event follows immediately.",
-    "agentMessageSent": "Agent Message Sent",
-    "agentMessageSentDesc": "An agent sent a message via non-interactive access. This counts toward the Policy L3 daily send limit (200/credential/day). The message_id in detail identifies the sent message.",
-    "emergencyShutdown": "Emergency Shutdown",
-    "emergencyShutdownDesc": "Emergency stop: every computer, AI tool and cloud AI connected to this agent was cut off.",
-    "rateLimitTripped": "Rate Limit Exceeded",
-    "rateLimitTrippedDesc": "The Policy L3 send limit was reached and message sending was rejected. Recorded when the daily per-credential limit (default 200) is exceeded.",
-    "policyViolation": "Policy Violation",
-    "policyViolationDesc": "An agent operation violated security policy. Operations rejected by the policy engine due to insufficient scope or invalid requests are recorded.",
-    "presetBridgeOnly": "Bridge events only",
-    "clearAidFilter": "Clear agent filter",
-    "bridgedDecrypt": "Bridge decrypt",
-    "bridgedDecryptDesc": "At this browser's request, the program on your computer opened one message.",
-    "bridgedStatus": "Bridge status probe",
-    "bridgedStatusDesc": "This browser checked the status of the program on your computer.",
-    "bridgedPairRequested": "Bridge pair requested",
-    "bridgedPairRequestedDesc": "The Web UI asked the daemon to mint a new token from a pairing code. Expect `succeeded` or `failed` to follow immediately.",
-    "bridgedPairSucceeded": "Bridge pair succeeded",
-    "bridgedPairSucceededDesc": "The daemon minted a new bridge token. `device_label` and `nonce_bound=true/false` appear in the detail.",
-    "bridgedPairFailed": "Bridge pair failed",
-    "bridgedPairFailedDesc": "The pairing code was wrong / expired / already used, so no token was minted. Bursts from one origin may indicate probing.",
-    "bridgedPairRevoked": "Bridge pair revoked",
-    "bridgedPairRevokedDesc": "A browser ran Revoke this / Revoke all. The detail lists the affected labels / count."
+    "details": "Details",
+    "detailKind": "Kind",
+    "detailTime": "Time",
+    "detailAddress": "Address",
+    "detailCredential": "Registration ID",
+    "someAgent": "an agent",
+    "someCloudAi": "Cloud AI",
+    "unknownEvent": "Something happened with {agent}",
+    "events": {
+      "auto_reply_sent": {
+        "label": "Auto-reply sent",
+        "text": "{agent} replied to {who} automatically",
+        "textNoReply": "{agent} handled a message from {who} automatically (no reply)"
+      },
+      "auto_reply_evaluated": {
+        "label": "Auto-reply check",
+        "text": "{agent} applied its auto-reply rules to a message from {who}"
+      },
+      "auto_reply_skipped_incoming_is_auto_reply": {
+        "label": "Did not answer an auto-reply",
+        "text": "Did not reply automatically to an auto-reply from {who}"
+      },
+      "auto_reply_policy_created": {
+        "label": "Auto-reply set up",
+        "text": "Set up auto-reply for {agent}"
+      },
+      "auto_reply_policy_updated": {
+        "label": "Auto-reply settings changed",
+        "text": "Changed the auto-reply settings of {agent}"
+      },
+      "auto_reply_policy_deleted": {
+        "label": "Auto-reply settings removed",
+        "text": "Removed the auto-reply settings of {agent}"
+      },
+      "agent_draft_created": {
+        "label": "AI wrote a draft",
+        "text": "AI drafted a reply from {agent} to {who}"
+      },
+      "agent_draft_sent": {
+        "label": "Draft sent",
+        "text": "Checked and sent a draft of {agent}"
+      },
+      "agent_draft_discarded": {
+        "label": "Draft discarded",
+        "text": "Discarded a draft of {agent}"
+      },
+      "agent_message_sent": {
+        "label": "Sent from the computer",
+        "text": "{agent} sent a message from your computer"
+      },
+      "oauth_grant_created": {
+        "label": "Cloud AI connected",
+        "text": "Connected {client} (cloud AI) to {agent}"
+      },
+      "oauth_grant_revoked": {
+        "label": "Cloud AI disconnected",
+        "text": "Disconnected {client} (cloud AI) from {agent}"
+      },
+      "cloud_access_enabled": {
+        "label": "Cloud AI on",
+        "text": "Turned on cloud AI for {agent}"
+      },
+      "cloud_access_disabled": {
+        "label": "Cloud AI off",
+        "text": "Turned off cloud AI for {agent}"
+      },
+      "emergency_shutdown": {
+        "label": "Emergency stop",
+        "text": "Emergency stop for {agent}: every connected computer and AI was cut off"
+      },
+      "credential_activated": {
+        "label": "Computer connected",
+        "text": "Connected {agent} to your computer"
+      },
+      "credential_revoked": {
+        "label": "Computer registration revoked",
+        "text": "Revoked the computer registration of {agent}"
+      },
+      "credential_activation_failed": {
+        "label": "Computer registration failed",
+        "text": "Registering the computer for {agent} failed"
+      },
+      "credential_auto_revoked": {
+        "label": "Revoked after repeated failures",
+        "text": "Registration attempts kept failing, so the registration of {agent} was revoked"
+      },
+      "credential_compromised": {
+        "label": "Sign-in details may be stolen",
+        "text": "The computer sign-in details of {agent} may have been stolen, so everything was stopped"
+      },
+      "refresh_reuse_detected": {
+        "label": "Used sign-in details reused",
+        "text": "Sign-in details of {agent} that were already used came back"
+      },
+      "key_rotation_started": {
+        "label": "Key change started",
+        "text": "Started changing the computer key of {agent}"
+      },
+      "token_issued": {
+        "label": "Computer signed in",
+        "text": "Your computer signed in as {agent}"
+      },
+      "token_refreshed": {
+        "label": "Sign-in renewed",
+        "text": "Your computer renewed its sign-in for {agent}"
+      },
+      "token_revoked": {
+        "label": "Signed out",
+        "text": "Your computer signed out of {agent}"
+      },
+      "attachment_upload_intent_created": {
+        "label": "Attachment prepared",
+        "text": "{agent} prepared to send an attachment"
+      },
+      "attachment_upload_completed": {
+        "label": "Attachment uploaded",
+        "text": "{agent} uploaded an attachment"
+      },
+      "attachment_attached_to_message": {
+        "label": "Attachment added",
+        "text": "{agent} added an attachment to a message to {who}"
+      },
+      "attachment_download_url_issued": {
+        "label": "Attachment opened",
+        "text": "Opened an attachment of {agent}"
+      },
+      "attachment_deleted": {
+        "label": "Attachment deleted",
+        "text": "Deleted an attachment of {agent}"
+      },
+      "attachment_purged": {
+        "label": "Attachment removed for good",
+        "text": "Removed an attachment of {agent} from storage"
+      },
+      "attachment_upload_abandoned": {
+        "label": "Unused attachment cleaned up",
+        "text": "Cleaned up an attachment that was never used"
+      },
+      "attachment_upload_rejected_rate_limit": {
+        "label": "Too many attachments",
+        "text": "Too many attachments in a short time, so sending was stopped"
+      },
+      "attachment_quarantined": {
+        "label": "Attachment stopped",
+        "text": "Stopped an attachment whose contents changed after it was checked"
+      },
+      "bridged_decrypt": {
+        "label": "Opened one on the computer",
+        "text": "At this browser's request, your computer opened one message of {agent}"
+      },
+      "bridged_status": {
+        "label": "Computer status checked",
+        "text": "This browser checked the status of your computer"
+      },
+      "bridged_pair_requested": {
+        "label": "Browser pairing requested",
+        "text": "Asked to pair this browser with your computer"
+      },
+      "bridged_pair_succeeded": {
+        "label": "Browser paired",
+        "text": "Paired this browser with your computer"
+      },
+      "bridged_pair_failed": {
+        "label": "Pairing failed",
+        "text": "Pairing this browser with your computer failed (wrong or expired code)"
+      },
+      "bridged_pair_revoked": {
+        "label": "Pairing removed",
+        "text": "Removed the pairing of this browser and your computer"
+      }
+    }
   },
 
   "profile": {
@@ -1400,7 +1583,7 @@
     "proposeValidationToFormat": "Enter the recipient as aid:ai:… (Agent ID) or did:key:…, or pick one from the list.",
     "proposeValidationToNotFound": "Recipient agent not found. Check the Agent ID or DID.",
     "proposeKeyMissing": "Signing key for the sender agent is not on this device.",
-    "proposeComposeLink": "Propose a meeting (A2A)",
+    "proposeComposeLink": "Propose a meeting",
     "taskDelegationLabel": "Task delegation",
     "taskAcceptedBadge": "Accepted",
     "taskCompletedBadge": "Completed",
@@ -1518,7 +1701,8 @@
       "inbox": "Your inbox shows the messages and requests that arrive.",
       "details": "Technical details such as the AID and keys are in the agent settings.",
       "toInbox": "Go to inbox",
-      "toSettings": "Agent settings"
+      "toSettings": "Agent settings",
+      "toMessage": "Back to your message"
     }
   },
 

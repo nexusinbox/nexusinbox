@@ -55,6 +55,10 @@ test("MVP flow: login screen shown, then direct route to inbox -> detail -> comp
   await page.getByRole("link", { name: "新しい会話" }).first().click();
 
   await expect(page).toHaveURL(/\/compose$/);
+  // A bare /compose is the 新しい会話 picker (docs/35 step 3); the full
+  // form is one link away.
+  await page.getByTestId("new-conversation-full-form").click();
+  await expect(page).toHaveURL(/\/compose\?full=1/);
   await expect(page.getByText("新規メッセージ")).toBeVisible();
   // Send button label is plain "送信" (renamed from
   // "暗号化して送信" upstream); the smoke check only confirms the

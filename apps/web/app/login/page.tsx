@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation, type Locale } from "../../lib/i18n";
 import { sanitiseNextPath } from "../../lib/url/next-path";
+import { Logo } from "../_components/Logo";
 
 // Message contract between the iframe (`/login/idkit`) and this
 // page. Keep the keys flat and serialisable — postMessage cannot
@@ -158,17 +159,15 @@ export default function LoginPage() {
       : "idle";
 
   return (
-    <main className="ai-login-root" data-testid="login-root" style={{ background: "#0a0c18", color: "#e8ecff" }}>
-      {/* Language toggle — same visual class as /concept so the two pre-auth
-          screens share the floating dark-pill button in the top-left corner. */}
+    <main className="lg-root" data-testid="login-root">
       <button
         type="button"
-        className="ai-concept-lang-toggle"
+        className="lg-lang"
         onClick={toggleLocale}
         aria-label={locale === "en" ? "日本語に切り替え" : "Switch to English"}
         data-testid="login-lang-toggle"
       >
-        {locale === "en" ? "JP" : "EN"}
+        {locale === "en" ? "日本語" : "English"}
       </button>
 
       {iframeVisible ? (
@@ -219,127 +218,52 @@ export default function LoginPage() {
         </div>
       ) : null}
 
-      {/* Animated backdrop layers */}
-      <div className="ai-login-grid" aria-hidden="true" />
-      <div className="ai-login-stars" aria-hidden="true" />
-      <div className="ai-login-network" aria-hidden="true">
-        <svg viewBox="-200 -200 400 400" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="ai-link-gradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#7dd7ff" stopOpacity="0.1" />
-              <stop offset="50%" stopColor="#a9b8ff" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#d49eff" stopOpacity="0.1" />
-            </linearGradient>
-            <radialGradient id="ai-core-gradient" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
-              <stop offset="60%" stopColor="#7dd7ff" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#7dd7ff" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {/* Core glow — transparent fallback prevents black fill when gradient fails */}
-          <circle cx="0" cy="0" r="80" fill="url(#ai-core-gradient)" opacity="0.8" />
-
-          {/* Outer ring with nodes */}
-          <g className="ring-outer">
-            <circle cx="0" cy="0" r="170" stroke="rgba(140,180,255,0.25)" strokeWidth="0.8" fill="none" strokeDasharray="2 4" />
-            <circle className="node" cx="170" cy="0" r="4" />
-            <circle className="node n2" cx="120.2" cy="120.2" r="4" />
-            <circle className="node n3" cx="0" cy="170" r="4" />
-            <circle className="node n4" cx="-120.2" cy="120.2" r="4" />
-            <circle className="node n5" cx="-170" cy="0" r="4" />
-            <circle className="node n6" cx="-120.2" cy="-120.2" r="4" />
-            <circle className="node n3" cx="0" cy="-170" r="4" />
-            <circle className="node n2" cx="120.2" cy="-120.2" r="4" />
-          </g>
-
-          {/* Inner ring with cross-links */}
-          <g className="ring-inner">
-            <circle cx="0" cy="0" r="110" stroke="rgba(180,140,255,0.3)" strokeWidth="0.8" fill="none" />
-            <line className="link" x1="-110" y1="0" x2="110" y2="0" />
-            <line className="link" x1="0" y1="-110" x2="0" y2="110" />
-            <line className="link" x1="-78" y1="-78" x2="78" y2="78" />
-            <line className="link" x1="-78" y1="78" x2="78" y2="-78" />
-            <circle className="node n3" cx="110" cy="0" r="3.5" />
-            <circle className="node n4" cx="-110" cy="0" r="3.5" />
-            <circle className="node n2" cx="0" cy="110" r="3.5" />
-            <circle className="node n5" cx="0" cy="-110" r="3.5" />
-          </g>
-
-          {/* Core small ring */}
-          <g className="ring-core">
-            <circle cx="0" cy="0" r="55" stroke="rgba(120,220,255,0.45)" strokeWidth="0.6" fill="none" strokeDasharray="1 3" />
-            <circle className="node n3" cx="55" cy="0" r="2.5" />
-            <circle className="node n4" cx="-55" cy="0" r="2.5" />
-          </g>
-
-          {/* Radar sweep */}
-          <circle className="sweep" cx="0" cy="0" r="145" />
-        </svg>
-      </div>
-
-      {/* Corner HUD glyphs */}
-      <div className="ai-login-hud" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-        <span className="tag">
-          <span className="marker" />
-          {t("auth.hudTag")}
-        </span>
-      </div>
-
-      {/* Central card */}
-      <section className="ai-login-card" role="dialog" aria-labelledby="ai-login-title">
-        <div className="ai-login-brand">
-          <span className="dot" />
-          <span>{t("auth.proofLabel")}</span>
-        </div>
-
-        <h1 id="ai-login-title" className="ai-login-title">
-          <span className="glitch" data-text="NEXUS">NEXUS</span>
-          <br />
-          <span className="glitch" data-text="INBOX">INBOX</span>
+      <section className="lg-card" aria-labelledby="lg-title">
+        <h1 id="lg-title" className="lg-brand">
+          <Logo size={40} variant="light" />
+          <span>
+            Nexus<b>Inbox</b>
+          </span>
         </h1>
+        <p className="lg-hero">{t("auth.hero")}</p>
+        <p className="lg-sub">{t("auth.sub")}</p>
 
-        <p className="ai-login-subtitle">
-          {t("auth.loginSubtitle")}
-        </p>
-
-        <div className="ai-login-meta" aria-hidden="true">
-          <code>{t("auth.awaitingHandshake")}</code>
-          <span className="blink" />
+        {/* docs/36: a two-line scene of what using it looks like. */}
+        <div className="lg-scene" aria-hidden="true">
+          <span className="lg-scene-who">{t("auth.sceneThemWho")}</span>
+          <span className="lg-bubble">{t("auth.sceneThem")}</span>
+          <span className="lg-scene-who mine">{t("auth.sceneYouWho")}</span>
+          <span className="lg-bubble mine">{t("auth.sceneYou")}</span>
         </div>
 
-        <div className="ai-login-cta-wrap">
-          <button
-            className="ai-login-cta"
-            type="button"
-            onClick={handleOpenWidget}
-            disabled={iframeVisible}
-            data-testid="login-cta"
+        <button
+          className="lg-cta"
+          type="button"
+          onClick={handleOpenWidget}
+          disabled={iframeVisible}
+          data-testid="login-cta"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-              <path d="M2 12h20" />
-            </svg>
-            <span>{iframeVisible ? t("auth.verifying") : t("auth.connectWorldId")}</span>
-          </button>
-        </div>
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+            <path d="M2 12h20" />
+          </svg>
+          <span>{iframeVisible ? t("auth.verifying") : t("auth.start")}</span>
+        </button>
+        <p className="lg-cta-note">{t("auth.ctaNote")}</p>
 
         <p
-          className="ai-login-status"
+          className="lg-status"
           data-kind={statusKind}
           data-testid="login-status"
           role="status"
@@ -348,30 +272,36 @@ export default function LoginPage() {
           {statusText || "\u00A0"}
         </p>
 
-        <div className="ai-login-foot">
-          <span>
-            <span className="marker" />
-            {t("auth.footerE2E")}
-          </span>
-          <span>{t("auth.footerDID")}</span>
-          <span>{t("auth.footerIdentity")}</span>
-        </div>
+        <ul className="lg-points">
+          <li>
+            <span className="lg-point-icon" aria-hidden="true">🔒</span>
+            <span>
+              <b>{t("auth.pointPrivateTitle")}</b>
+              <span>{t("auth.pointPrivateDesc")}</span>
+            </span>
+          </li>
+          <li>
+            <span className="lg-point-icon" aria-hidden="true">🙋</span>
+            <span>
+              <b>{t("auth.pointHumanTitle")}</b>
+              <span>{t("auth.pointHumanDesc")}</span>
+            </span>
+          </li>
+          <li>
+            <span className="lg-point-icon" aria-hidden="true">🤖</span>
+            <span>
+              <b>{t("auth.pointAiTitle")}</b>
+              <span>{t("auth.pointAiDesc")}</span>
+            </span>
+          </li>
+        </ul>
 
-        <Link href="/concept" className="ai-login-concept-link">
-          {t("auth.conceptLink")}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14" />
-            <path d="M12 5l7 7-7 7" />
-          </svg>
-        </Link>
-
-        <div className="ai-login-legal-links">
-          <Link href="/help" className="ai-login-legal-link">{t("legal.helpLink")}</Link>
-          <span className="ai-login-legal-sep">·</span>
-          <Link href="/privacy" className="ai-login-legal-link">{t("legal.privacyLink")}</Link>
-          <span className="ai-login-legal-sep">·</span>
-          <Link href="/terms" className="ai-login-legal-link">{t("legal.termsLink")}</Link>
-        </div>
+        <nav className="lg-links" aria-label={t("auth.linksLabel")}>
+          <Link href="/concept">{t("auth.conceptLink")}</Link>
+          <Link href="/help">{t("legal.helpLink")}</Link>
+          <Link href="/terms">{t("legal.termsLink")}</Link>
+          <Link href="/privacy">{t("legal.privacyLink")}</Link>
+        </nav>
       </section>
     </main>
   );

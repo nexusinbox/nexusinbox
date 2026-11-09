@@ -167,3 +167,66 @@ async fn create_agent_rejects_invalid_encryption_key() {
 
     assert_eq!(create_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+async fn agent_bio_can_be_set_and_is_limited() {
+    let app = common::test_app();
+    let create_payload = serde_json::json!({
+        "label": "秘書",
+        "public_key": VALID_SIGNING_KEY_B64URL,
+        "encryption_key": VALID_ENCRYPTION_KEY_B64URL
+    });
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/agents")
+                .header("content-type", "application/json")
+                .header("authorization", auth_header())
+                .body(Body::from(create_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created: Value =
+        serde_json::from_slice(&created.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let patch = |bio: String| {
+        app.clone().oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/agents/{id}"))
+                .header("content-type", "application/json")
+                .header("authorization", auth_header())
+                .body(Body::from(serde_json::json!({ "bio": bio }).to_string()))
+                .unwrap(),
+        )
+    };
+    let ok = patch("  日程調整とメールの整理をします。 ".into())
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+    let ok: Value =
+        serde_json::from_slice(&ok.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(ok["bio"], "日程調整とメールの整理をします。");
+
+    let too_long = patch("あ".repeat(161)).await.unwrap();
+    assert_eq!(too_long.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let list = app
+        .oneshot(
+            Request::builder()
+                .uri("/agents")
+                .header("authorization", auth_header())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let list: Value =
+        serde_json::from_slice(&list.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(list["agents"][0]["bio"], "日程調整とメールの整理をします。");
+}
