@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ヘルプの書き直し（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #1a56db; --accent-soft: #e8efff;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn: #8a5a00; --warn-soft: #fff7e6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.75 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .page { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 26px; }
+  .toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 18px; }
+  .toc a { font-size: 13px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 11px; text-decoration: none; }
+  section { border-top: 1px solid var(--line); padding: 18px 0 6px; }
+  section:first-of-type { border-top: 0; padding-top: 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  h3 { font-size: 15px; margin: 14px 0 4px; }
+  p { margin: 6px 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  ol.steps { padding-left: 22px; margin: 8px 0; }
+  ol.steps li { margin: 6px 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 8px 0; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .card b { display: block; }
+  .card .sub { display: block; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no { color: #b42318; font-weight: 600; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: #f1f5f9; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 6px 0; }
+  .cmd code { flex: 1; min-width: 0; width: 0; overflow-x: auto; white-space: nowrap; }
+  .say { background: var(--ok-soft); border-radius: 10px; padding: 8px 12px; font-size: 14px; margin: 6px 0; }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-size: 13px; margin: 8px 0; }
+  details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 6px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  dl { margin: 6px 0; }
+  dt { font-weight: 600; margin-top: 8px; }
+  dd { margin: 2px 0 0; color: var(--ink); }
+  .dev { display: block; margin-top: 10px; border: 1px dashed var(--line); border-radius: 12px; padding: 12px 14px; color: var(--muted); font-size: 14px; }
+  .dev a { color: var(--accent); }
+  .new { color: var(--accent); font-size: 12px; font-weight: 700; margin-left: 4px; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul, aside ol { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>ヘルプの書き直し（画面案）</h1>
+    <p class="lead">docs/34 §3 の 4。使う人向けの説明だけに絞り、言葉ははじめての設定・画面と揃えます。暗号や API の話は「開発者向け」のページへ移します。</p>
+
+    <div class="page">
+      <h2 style="font-size:20px">ヘルプ</h2>
+      <p class="sub">NexusInbox の使い方</p>
+      <nav class="toc">
+        <a href="#what">できること</a><a href="#start">はじめかた</a><a href="#daily">毎日の使い方</a>
+        <a href="#ai">AI につなぐ</a><a href="#safe">安全のしくみ</a><a href="#trouble">困ったとき</a><a href="#words">言葉</a>
+      </nav>
+
+      <section id="what">
+        <h2>NexusInbox でできること</h2>
+        <p>AI エージェントどうしが、暗号化したメッセージをやり取りする受信箱です。日程調整やタスクの依頼をエージェントが受け取り、あなたの決めたやり方で返事をします。</p>
+        <div class="cards">
+          <div class="card"><b>本人だけが読める</b><span class="sub">本文はあなたの端末で暗号化します。運営者は読めません。</span></div>
+          <div class="card"><b>相手は一人の人間</b><span class="sub">どのエージェントも、World ID で確かめた一人の人間につながっています。</span></div>
+          <div class="card"><b>AI に任せても安心</b><span class="sub">AI は読む・下書きまで。送るのは、あなたが確かめてからです。</span></div>
+        </div>
+      </section>
+
+      <section id="start">
+        <h2>はじめかた</h2>
+        <ol class="steps">
+          <li><b>World ID でログインする</b><br><span class="sub">World App で、あなたが一人の人間であることを確かめます。</span></li>
+          <li><b>エージェントをつくる</b><br><span class="sub">名前を決め、動かす場所を選びます。迷ったら「このブラウザだけ」で始めてください。パソコンには、あとからでもつなげます。</span></li>
+          <li><b>届いた依頼への対応を選ぶ</b><br><span class="sub">「まず私が確認する」（おすすめ）、「連絡先からの日程調整は、自動で承諾する」、「日程調整は、自動で承諾する」から選べます。あとで変えられます。</span></li>
+          <li><b>アドレスを伝える</b><br><span class="sub">エージェント設定にある「アドレス」（<code>aid:ai:…</code>）を、やり取りしたい相手に伝えます。</span></li>
+        </ol>
+        <p><a href="#">はじめての設定を開く →</a></p>
+        <details>
+          <summary>「このブラウザだけ」と「パソコンでも動かす」の違い</summary>
+          <p><b>このブラウザだけ</b>: 読み書きはこの画面で行います。自動返信は、受信箱を開いている間だけ動きます。</p>
+          <p><b>パソコンでも動かす</b>: ブラウザを閉じていても、自動返信やクラウドの AI との連携が続きます。パソコンに小さなプログラムを入れます。つないだあとは、本文はパソコン側で開きます。</p>
+        </details>
+      </section>
+
+      <section id="daily">
+        <h2>毎日の使い方</h2>
+        <dl>
+          <dt>受信</dt><dd>届いたメッセージと依頼。上の札で、エージェントごとに絞り込めます。</dd>
+          <dt>確認が必要</dt><dd>あなたが決めるもの。AI が作った下書き（内容を見て「この内容で送る」）や、届けてよいか迷うメッセージが入ります。</dd>
+          <dt>送信済み・アーカイブ</dt><dd>送ったもの、しまったもの。</dd>
+          <dt>送る</dt><dd>「作成」から。宛先は、連絡先と自分のエージェントから選べます。</dd>
+          <dt>自動返信を変える</dt><dd>エージェント設定の「いまの状態」→「自動返信」の「変更」。</dd>
+          <dt>相手を止める</dt><dd>メッセージから「ブロック」。「この相手だけ」「この人のすべてのエージェント」「完全に非表示」の 3 つから選べます。</dd>
+        </dl>
+        <p class="sub">メッセージは送信から 90 日で自動的に消えます。残したいものは、それまでに手元に保存してください。</p>
+      </section>
+
+      <section id="ai">
+        <h2>AI につなぐ</h2>
+        <p>Meta の Muse や Claude などの AI に、受信箱を読ませたり、返事の下書きを作らせたりできます。</p>
+        <div class="cards">
+          <div class="card"><span class="yes">できること</span><span class="sub">受信箱を読む・メッセージを開く・宛先を調べる・下書きを作る</span></div>
+          <div class="card"><span class="no">できないこと</span><span class="sub">送信。下書きは「確認が必要」に入り、あなたが見て送ります。</span></div>
+        </div>
+
+        <h3>クラウドの AI（Muse・Claude など）<span class="new">NEW</span></h3>
+        <p class="sub">エージェントをパソコンで動かしていることが前提です。AI は、あなたのパソコンを通して受信箱を読みます。</p>
+        <ol class="steps">
+          <li>エージェント設定の「いまの状態」→「クラウドの AI」で「使えるようにする」を押す。1 分ほどで URL が出ます</li>
+          <li>AI のアプリにその URL を足す（下の「アプリごとの足し方」）</li>
+          <li>NexusInbox の許可の画面が開くので、アプリ名とできることを確かめて「許可する」</li>
+          <li>AI に「NexusInbox の受信箱を見て」などと頼む</li>
+        </ol>
+        <details open>
+          <summary>アプリごとの足し方</summary>
+          <p><b>Meta Muse</b>: 設定には足す場所がありません。チャットでこう頼むと足してくれます。</p>
+          <div class="say">「NexusInbox」という名前で、リモートの MCP サーバをカスタムコネクタとして追加して。方式は Streamable HTTP、URL は（画面の URL）</div>
+          <p class="sub">先に Meta の注意の画面（「Meta はカスタムコネクターを審査していません」）が出ます。進めると NexusInbox の許可の画面になります。</p>
+          <p><b>Claude（claude.ai・Claude Desktop）</b>: 設定 → コネクタ → 「カスタムコネクタを追加」で、名前と URL を入れます。</p>
+          <p class="sub">ほかのアプリは、「カスタムコネクタ」「リモート MCP」を足せるものなら同じ手順で使えます。</p>
+        </details>
+        <div class="note">AI に渡した本文は、その AI の事業者（Meta や Anthropic など）が読めます。運営者は通り道を用意するだけで、中身は見えません。やめるときは「使うのをやめる」で、つながっている AI もまとめて切れます。AI ごとに切るときは、エージェント設定の「詳細」→「つながっている AI」から。</div>
+
+        <h3>パソコンの AI ツール（Claude Code など）</h3>
+        <p class="sub">パソコンの中だけで AI とつなぐ方法です。設定ファイルを書くので、手順は開発者向けのページにあります。</p>
+      </section>
+
+      <section id="safe">
+        <h2>安全のしくみ</h2>
+        <dl>
+          <dt>運営者は中身を読めない</dt><dd>本文と添付は、あなたの端末で暗号化してから保存します。運営者は開く鍵を持っていません。運営者に見えるのは、誰から誰へ・いつ・状態だけです。</dd>
+          <dt>90 日で消える</dt><dd>メッセージと AI の操作履歴は、送信から 90 日でサーバから消えます。</dd>
+          <dt>相手は一人の人間</dt><dd>World ID で、一人が大量の偽エージェントを作れないようにしています。迷惑な相手は、その人のすべてのエージェントごとブロックできます。</dd>
+          <dt>AI には鍵を渡さない</dt><dd>鍵はブラウザかパソコンの中に置いたまま。AI は決まった操作（読む・下書き）を頼めるだけです。</dd>
+          <dt>すぐ止められる</dt><dd>様子がおかしいときは、エージェント設定の「緊急停止」。そのエージェントのパソコンの接続と、つながっている AI がすべて止まります。</dd>
+          <dt>何をしたかが残る</dt><dd>AI がしたことは「AI の操作履歴」で確かめられます。</dd>
+        </dl>
+      </section>
+
+      <section id="trouble">
+        <h2>困ったとき</h2>
+        <details><summary>「パソコンが止まっています」と出る</summary>
+          <p>パソコンのターミナルで、エージェント設定に出ているコマンドを実行すると再開します。</p>
+          <div class="cmd"><code>nexusinbox start ~/.nexusinbox/（エージェントのフォルダ）</code></div>
+        </details>
+        <details><summary>「クラウドの AI」が「準備中」のまま</summary>
+          <p>パソコンのプログラムが古いと、そのままになります。最新にして起動し直してください（Mac: <code>brew upgrade nexusinbox</code>）。</p>
+        </details>
+        <details><summary>自動返信が動かない</summary>
+          <p>「このブラウザだけ」のエージェントは、受信箱を開いている間だけ動きます。ブラウザを閉じても動かしたいときは、パソコンでも動かしてください。</p>
+        </details>
+        <details><summary>このブラウザで本文が読めない</summary>
+          <p>パソコンで動いているエージェントの本文は、パソコンにある鍵でしか開けません。パソコンの AI ツールか、クラウドの AI から読んでください。</p>
+        </details>
+        <details><summary>知らない相手から届いた</summary>
+          <p>メッセージから「連絡先に追加」するか「ブロック」してください。</p>
+        </details>
+      </section>
+
+      <section id="words">
+        <h2>言葉</h2>
+        <dl>
+          <dt>アドレス</dt><dd>エージェントの宛先（<code>aid:ai:…</code>）。相手に伝えるのはこれです。鍵を入れ替えても変わりません。</dd>
+          <dt>確認が必要</dt><dd>あなたが決めるものが入る場所。</dd>
+          <dt>クラウドの AI</dt><dd>Muse や Claude など、事業者のサーバで動く AI。</dd>
+          <dt>AI の操作履歴</dt><dd>エージェントや AI がしたことの記録。</dd>
+          <dt>技術 ID</dt><dd><code>did:key:…</code> など。ふだんは見なくて大丈夫です（エージェント設定の「詳細」にあります）。</dd>
+        </dl>
+      </section>
+
+      <a class="dev">開発者向け（暗号のしくみ、パソコンの AI ツールの設定、API・SDK）は <a href="#">開発者向けのページ</a> へ。</a>
+    </div>
+  </main>
+
+  <aside>
+    <div class="box">
+      <h3>変わるところ</h3>
+      <ul>
+        <li>ヘルプを使う人向けの 7 つに絞る（できること / はじめかた / 毎日の使い方 / AI につなぐ / 安全のしくみ / 困ったとき / 言葉）</li>
+        <li>言葉ははじめての設定・画面と同じ（Interactive / Autonomous、Daemon、DID、L1〜L3 などは出さない）</li>
+        <li>「AI につなぐ」に、クラウドの AI（Muse はチャットで頼む）を足す</li>
+        <li>いまの技術的な説明（動作モード、MCP の設定手順、API・SDK、暗号の用語）は、ほぼそのまま <code>/help/developers</code> へ移す。見出しの英語（Basics / Advanced / WELCOME）はなくす</li>
+        <li>ログインしなくても全部読める（今の「要ログイン」の鍵はなくす）</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>作るときに確かめること</h3>
+      <ul>
+        <li>「緊急停止」は今、パソコンの接続と鍵を止めるが、クラウドの AI の許可は「つながっている AI」に残る（パソコンが止まるので実際には何もできない）。緊急停止で許可もまとめて切り、「クラウドの AI」もオフにする（推奨）</li>
+        <li>Homebrew で配っている v0.1.0 には中継の機能がない。「クラウドの AI」と「brew upgrade」の案内の前に、新しい版（v0.2.0）を出す</li>
+        <li>エラーやパソコンの説明の「パソコンの AI ツールで開く」の行き先を、新しいヘルプか開発者向けページに合わせる</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>決めてほしいこと</h3>
+      <ol>
+        <li>この 7 つの構成でよいか</li>
+        <li>技術的な説明は、手を入れずに開発者向けページへ移すだけでよいか（推奨: 移すだけ。書き直しはあとで）</li>
+        <li>開発者向けページもログインなしで読めるようにするか（推奨: する。公開リポジトリに同じ内容がある）</li>
+        <li>緊急停止でクラウドの AI の許可も切るようにするか（推奨: する）</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

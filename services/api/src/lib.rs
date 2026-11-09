@@ -9422,7 +9422,8 @@ async fn agent_emergency_shutdown(
     let cred_result = sqlx::query(
         r#"
         UPDATE agent_credentials
-        SET status = 'revoked', revoked_at = NOW()
+        SET status = 'revoked', revoked_at = NOW(),
+            cloud_access_enabled_at = NULL, cloud_serving_at = NULL
         WHERE aid = $1 AND user_id = $2 AND status IN ('pending', 'active')
         "#,
     )
@@ -9451,6 +9452,18 @@ async fn agent_emergency_shutdown(
 
     let tokens_revoked = token_result.rows_affected();
 
+    // Disconnect every AI app allowed to use this agent (docs/33 §12).
+    let ai_apps_disconnected = sqlx::query(
+        "UPDATE oauth_grants SET revoked_at = NOW() \
+         WHERE aid = $1 AND user_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(&aid)
+    .bind(user_uuid)
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("AI app disconnection failed", e))?
+    .rows_affected();
+
     // Audit: emergency_shutdown
     record_audit_event(
         pool.clone(),
@@ -9462,6 +9475,7 @@ async fn agent_emergency_shutdown(
             "agent_id": agent_id.to_string(),
             "credentials_revoked": credentials_revoked,
             "tokens_revoked": tokens_revoked,
+            "ai_apps_disconnected": ai_apps_disconnected,
             "actor_type": "human",
             "actor_user_id": user_uuid.to_string(),
             "actor_ip": actor_ip,
@@ -9479,6 +9493,7 @@ async fn agent_emergency_shutdown(
         aid,
         credentials_revoked,
         tokens_revoked,
+        ai_apps_disconnected,
     }))
 }
 
@@ -9488,6 +9503,7 @@ struct EmergencyShutdownResponse {
     aid: String,
     credentials_revoked: u64,
     tokens_revoked: u64,
+    ai_apps_disconnected: u64,
 }
 
 // ---------------------------------------------------------------------------

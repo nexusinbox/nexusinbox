@@ -15,10 +15,9 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/concept") return true;
   if (pathname === "/privacy") return true;
   if (pathname === "/terms") return true;
-  // /help is public-readable: the page renders Basics for everyone and
-  // gates Advanced (MCP setup, API reference, daemon detail) behind the
-  // session check inside the React tree. See apps/web/app/help/page.tsx.
-  if (pathname === "/help") return true;
+  // Help is public-readable, both the guide and the developer reference
+  // (the same material is in the public repository). See app/help/.
+  if (pathname === "/help" || pathname === "/help/developers") return true;
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;

@@ -1018,3 +1018,54 @@ async fn relay_tickets_are_bound_to_the_computers_dpop_key() {
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+#[serial]
+async fn emergency_shutdown_disconnects_ai_apps_and_cloud_access() {
+    let pool = db!();
+    let s = setup(pool, "0xoauth-panic", 0x73).await;
+    let code = consent(&s).await;
+    let (status, tokens) = exchange(&s, &code, VERIFIER).await;
+    assert_eq!(status, StatusCode::OK, "{tokens}");
+    sqlx::query(
+        "UPDATE agent_credentials SET cloud_access_enabled_at = NOW(), cloud_serving_at = NOW() \
+         WHERE aid = $1",
+    )
+    .bind(&s.me.aid)
+    .execute(&s.pool)
+    .await
+    .unwrap();
+    let agent_id: Uuid = sqlx::query_scalar("SELECT agent_id FROM agent_identities WHERE aid = $1")
+        .bind(&s.me.aid)
+        .fetch_one(&s.pool)
+        .await
+        .unwrap();
+
+    let (status, body) = call(
+        &s.app,
+        "POST",
+        &format!("/agents/{agent_id}/emergency-shutdown"),
+        &s.me.auth,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ai_apps_disconnected"], 1, "{body}");
+    let live: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM oauth_grants WHERE aid = $1 AND revoked_at IS NULL",
+    )
+    .bind(&s.me.aid)
+    .fetch_one(&s.pool)
+    .await
+    .unwrap();
+    assert_eq!(live, 0);
+    let cloud_on: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_credentials WHERE aid = $1 \
+           AND (cloud_access_enabled_at IS NOT NULL OR cloud_serving_at IS NOT NULL)",
+    )
+    .bind(&s.me.aid)
+    .fetch_one(&s.pool)
+    .await
+    .unwrap();
+    assert_eq!(cloud_on, 0);
+}

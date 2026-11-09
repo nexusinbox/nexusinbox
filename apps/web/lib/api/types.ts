@@ -502,6 +502,8 @@ export type EmergencyShutdownResponse = {
   aid: string;
   credentials_revoked: number;
   tokens_revoked: number;
+  /** AI apps (OAuth grants) disconnected; absent from older API versions. */
+  ai_apps_disconnected?: number;
 };
 
 // --- Auto-reply policy (Phase 4.4a, docs/25) ------------------------------

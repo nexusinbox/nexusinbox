@@ -2206,7 +2206,7 @@ export default function AgentsSettingsPage() {
                             const result = await emergencyShutdown.mutateAsync(activeAgent.id);
                             setBanner({
                               tone: "success",
-                              text: t("agents.emergencyDone", { creds: result.credentials_revoked, tokens: result.tokens_revoked }),
+                              text: t("agents.emergencyDone", { creds: result.credentials_revoked, tokens: result.tokens_revoked, apps: result.ai_apps_disconnected ?? 0 }),
                             });
                           } catch {
                             setBanner({ tone: "error", text: t("agents.emergencyFailed") });
