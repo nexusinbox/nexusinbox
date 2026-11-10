@@ -8610,6 +8610,44 @@ async fn list_agent_credentials(
     Ok(Json(AgentCredentialsListResponse { credentials }))
 }
 
+/// Take a stopped computer's key out of the recipient set (docs/38 §3 1).
+/// A key whose credential is revoked or compromised, and that no active
+/// credential still uses, is no longer `active`, so senders stop wrapping
+/// message keys for it. The browser's own key has no credential and is
+/// never touched. Credentials and keys are matched by signing key.
+async fn retire_keys_of_stopped_credentials(
+    executor: impl sqlx::PgExecutor<'_>,
+    aid: &str,
+) -> Result<u64, sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE agent_identity_keys k
+        SET status = CASE WHEN EXISTS (
+                SELECT 1 FROM agent_credentials c
+                WHERE c.aid = k.aid AND c.signing_public_key = k.signing_public_key
+                  AND c.status = 'compromised'
+              ) THEN 'compromised' ELSE 'retired' END,
+            retired_at = NOW()
+        WHERE k.aid = $1
+          AND k.status IN ('active', 'rotating')
+          AND EXISTS (
+            SELECT 1 FROM agent_credentials c
+            WHERE c.aid = k.aid AND c.signing_public_key = k.signing_public_key
+              AND c.status IN ('revoked', 'compromised')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_credentials c
+            WHERE c.aid = k.aid AND c.signing_public_key = k.signing_public_key
+              AND c.status = 'active'
+          )
+        "#,
+    )
+    .bind(aid)
+    .execute(executor)
+    .await
+    .map(|r| r.rows_affected())
+}
+
 /// DELETE /agent-credentials/:id — revoke a credential immediately.
 async fn revoke_agent_credential(
     State(state): State<AppState>,
@@ -8628,20 +8666,21 @@ async fn revoke_agent_credential(
     let actor_user_agent = audit_user_agent(&headers);
 
     // Revoke credential
-    let result = sqlx::query(
+    let revoked_aid: Option<String> = sqlx::query_scalar(
         r#"
         UPDATE agent_credentials
         SET status = 'revoked', revoked_at = NOW()
         WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'active')
+        RETURNING aid
         "#,
     )
     .bind(credential_id)
     .bind(user_uuid)
-    .execute(&pool)
+    .fetch_optional(&pool)
     .await
     .map_err(|e| internal_error("failed to revoke credential", e))?;
 
-    if result.rows_affected() == 0 {
+    let Some(revoked_aid) = revoked_aid else {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -8649,7 +8688,12 @@ async fn revoke_agent_credential(
                 message: "credential not found or already revoked".into(),
             }),
         ));
-    }
+    };
+
+    // Stop wrapping new messages for this computer's key.
+    retire_keys_of_stopped_credentials(&pool, &revoked_aid)
+        .await
+        .map_err(|e| internal_error("failed to retire the computer's key", e))?;
 
     // Also revoke all tokens for this credential
     let token_result = sqlx::query(
@@ -9236,12 +9280,21 @@ async fn activate_agent_credential(
         ));
     }
 
-    // Insert into agent_identity_keys (if this DID doesn't already exist)
+    // The computer's key joins the agent's recipient set. A key this agent
+    // used before (retired by a revoke, or mid-rotation) becomes active
+    // again; a key of another agent, or one marked compromised, is refused
+    // (docs/38 §3).
     sqlx::query(
         r#"
         INSERT INTO agent_identity_keys (aid, did, signing_public_key, encryption_public_key, status)
         VALUES ($1, $2, $3, $4, 'active')
-        ON CONFLICT (did) DO NOTHING
+        ON CONFLICT (did) DO UPDATE
+        SET status = 'active',
+            activated_at = NOW(),
+            retired_at = NULL,
+            encryption_public_key = EXCLUDED.encryption_public_key
+        WHERE agent_identity_keys.aid = EXCLUDED.aid
+          AND agent_identity_keys.status IN ('active', 'retired', 'rotating')
         "#,
     )
     .bind(&aid)
@@ -9251,6 +9304,22 @@ async fn activate_agent_credential(
     .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to insert identity key", e))?;
+    let key_row = sqlx::query("SELECT aid, status FROM agent_identity_keys WHERE did = $1")
+        .bind(&did)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to read identity key", e))?;
+    if key_row.get::<String, _>("aid") != aid || key_row.get::<String, _>("status") != "active" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "key_not_usable".into(),
+                message:
+                    "this key belongs to another agent or was marked compromised; generate new keys"
+                        .into(),
+            }),
+        ));
+    }
 
     tx.commit()
         .await
@@ -9387,15 +9456,20 @@ async fn rotate_agent_credential(
 
     let aid: String = cred_row.get("aid");
 
-    // Mark old identity keys as rotating
+    // Mark this credential's key as rotating. Only its own key: the
+    // browser's key and other computers keep receiving (docs/38 §3 2).
     let _ = sqlx::query(
         r#"
-        UPDATE agent_identity_keys
+        UPDATE agent_identity_keys k
         SET status = 'rotating'
-        WHERE aid = $1 AND status = 'active'
+        FROM agent_credentials c
+        WHERE c.id = $2 AND k.aid = $1 AND k.status = 'active'
+          AND c.signing_public_key IS NOT NULL
+          AND k.signing_public_key = c.signing_public_key
         "#,
     )
     .bind(&aid)
+    .bind(credential_id)
     .execute(&pool)
     .await;
 
@@ -9586,6 +9660,11 @@ async fn agent_emergency_shutdown(
     .map_err(|e| internal_error("credential revocation failed", e))?;
 
     let credentials_revoked = cred_result.rows_affected();
+
+    // Stop wrapping new messages for the stopped computers' keys.
+    retire_keys_of_stopped_credentials(&pool, &aid)
+        .await
+        .map_err(|e| internal_error("failed to retire computer keys", e))?;
 
     // Revoke all tokens under those credentials
     let token_result = sqlx::query(
@@ -10665,7 +10744,8 @@ async fn revoke_refresh_family_for_reuse(
     .await;
     let family_tokens_revoked = family_revoke.map(|r| r.rows_affected()).unwrap_or(0);
 
-    // Second: mark credential as compromised (escalation).
+    // Second: mark credential as compromised (escalation), and stop
+    // wrapping new messages for its key.
     let _ = sqlx::query(
         r#"
         UPDATE agent_credentials
@@ -10676,6 +10756,7 @@ async fn revoke_refresh_family_for_reuse(
     .bind(credential_id)
     .execute(pool)
     .await;
+    let _ = retire_keys_of_stopped_credentials(pool, aid).await;
 
     // Third: revoke any OTHER live tokens under the same credential
     // that happened to belong to different families.
