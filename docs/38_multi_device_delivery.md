@@ -96,6 +96,8 @@
 0. **安全の直し (先に、単独で)**: 解除・緊急停止・使い回しの検知で、その端末の鍵を `retired` (検知は `compromised`) にする。鍵を作り直すときは、その資格情報の端末だけを `rotating` にする。credential と鍵の行は `signing_public_key` で結びつける
    - 実装 (2026-11-10): `retire_keys_of_stopped_credentials` を解除・緊急停止・使い回しの検知の後に呼ぶ。鍵の作り直しは、その資格情報の鍵だけを `rotating` にする。つなぎ直しで同じ鍵を使うときは、同じエージェントの鍵なら有効に戻し、ほかのエージェントの鍵や `compromised` の鍵は断る (`key_not_usable`)。マイグレーション 0031 で、すでに止めた端末の鍵を外し、古い作り直しで `rotating` になっていた作成時の鍵 (ブラウザ) を戻す。テストは `device_key_lifecycle_db_integration_test` (変更前のコードでは 3 本とも落ちることを確認)
 1. **API**: resolve の `devices`、封筒の一覧の受け取りと返却 (古いクライアントはそのまま動く)
+   - 実装 (2026-11-10): `GET /recipients/resolve` に `devices` (新しい順、10 まで。DID で聞いても、そのエージェントの全端末)。封筒に `encrypted_keys` / `sender_encrypted_keys` (`[{did, key}]`、各 10 まで、DID の重複なし、`x25519v1:` の形)。一覧の DID は、相手 (送り手) のエージェントの有効な端末でなければ断る (422)。保存先の JSON に入れ、`GET /messages/:id/content` で返す。下書きを送るとき (`POST /agent-drafts/:id/send`) も、確かめたブラウザが 2 つの一覧を付けられる。OpenAPI に追記。テストは `multi_device_delivery_db_integration_test` と、形の確かめの単体テスト
+   - 署名 v2 (§5.5) はこの段では入れない。受け取る側が署名を確かめるまで効き目が無いので、段階 5 (端末の裏付け・受け取る側での確認) でまとめて入れる
 2. **Web と core と SaaS の MCP**: 送る側で全端末に包み、読む側で一覧を見る。添付も
 3. **パソコン側**: ゲートウェイと自動返信。v0.3.0 として配布
 4. **画面**: 端末の一覧、新しい端末の知らせ。「パソコンをつなぐと、ブラウザでは読めなくなる」の説明を消す

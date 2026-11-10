@@ -1341,7 +1341,37 @@ components:
           type: string
         encryption_public_key:
           type: string
-      required: [input, aid, did, signing_public_key, encryption_public_key]
+        devices:
+          type: array
+          maxItems: 10
+          description: |
+            Every device of the agent that can read new messages, newest
+            first (docs/38). Senders wrap the content key for each in
+            `envelope.encrypted_keys`; `did` / `encryption_public_key`
+            above are the newest device, for clients that wrap once.
+          items:
+            $ref: '#/components/schemas/DeviceKey'
+      required: [input, aid, did, signing_public_key, encryption_public_key, devices]
+
+    DeviceKey:
+      type: object
+      properties:
+        did:
+          type: string
+        encryption_public_key:
+          type: string
+      required: [did, encryption_public_key]
+
+    KeyWrap:
+      type: object
+      description: The content key wrapped for one device (docs/38).
+      properties:
+        did:
+          type: string
+        key:
+          type: string
+          pattern: '^x25519v1:.+'
+      required: [did, key]
 
     EnvelopeMetadata:
       type: object
@@ -1366,6 +1396,22 @@ components:
           type: string
           description: "x25519 wrapped content key. Must start with x25519v1:"
           pattern: '^x25519v1:.+'
+        sender_encrypted_key:
+          type: string
+          description: The content key wrapped for the sender (docs/35 §5).
+          pattern: '^x25519v1:.+'
+        encrypted_keys:
+          type: array
+          maxItems: 10
+          description: The content key for each of the recipient agent's devices (docs/38).
+          items:
+            $ref: '#/components/schemas/KeyWrap'
+        sender_encrypted_keys:
+          type: array
+          maxItems: 10
+          description: The content key for each of the sending agent's devices (docs/38).
+          items:
+            $ref: '#/components/schemas/KeyWrap'
         nonce:
           type: string
         signature:
@@ -1562,6 +1608,16 @@ components:
           description: x25519 wrapped content key (x25519v1)
         nonce:
           type: string
+        sender_encrypted_key:
+          type: string
+        encrypted_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyWrap'
+        sender_encrypted_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyWrap'
       required: [encrypted_content, encrypted_key, nonce]
 
     SealedContact:

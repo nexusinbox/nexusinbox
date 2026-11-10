@@ -574,14 +574,36 @@ struct ContactsResponse {
     contacts: Vec<ContactEntry>,
 }
 
+/// Most device keys an agent's content key is wrapped for (docs/38 §5).
+const MAX_DEVICE_WRAPS: usize = 10;
+
+/// One of an agent's devices that can read its messages (docs/38 §5.1).
+#[derive(Clone, Serialize)]
+struct DeviceKey {
+    did: String,
+    encryption_public_key: String,
+}
+
+/// A message's content key wrapped for one device (docs/38 §5.2).
+#[derive(Clone, Serialize, Deserialize)]
+struct KeyWrap {
+    did: String,
+    key: String,
+}
+
 #[derive(Clone, Serialize)]
 struct RecipientResolutionResponse {
     input: String,
     aid: String,
+    /// The device that joined last; `encrypted_key` is wrapped for it so
+    /// clients that read one wrap keep working.
     did: String,
     label: Option<String>,
     signing_public_key: String,
     encryption_public_key: String,
+    /// Every device of the agent that can read, newest first (at most
+    /// MAX_DEVICE_WRAPS). Senders wrap the content key for each.
+    devices: Vec<DeviceKey>,
     /// Aggregate over the recipient agent's *active* credentials so
     /// the sender UI can surface a truthful compose-time hint without
     /// probing the recipient's keystore. Values:
@@ -705,6 +727,12 @@ struct StoredMessageContent {
     /// messages sent before this existed and from clients that omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sender_encrypted_key: Option<String>,
+    /// The content key for each of the recipient's devices, and for each
+    /// of the sender's own (docs/38 §5.2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    encrypted_keys: Vec<KeyWrap>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sender_encrypted_keys: Vec<KeyWrap>,
 }
 
 #[derive(Deserialize)]
@@ -787,6 +815,11 @@ struct Envelope {
     /// Optional: the content key wrapped for the sender (docs/35 §5).
     #[serde(default)]
     sender_encrypted_key: Option<String>,
+    /// Optional: one wrap per recipient device / per own device (docs/38).
+    #[serde(default)]
+    encrypted_keys: Option<Vec<KeyWrap>>,
+    #[serde(default)]
+    sender_encrypted_keys: Option<Vec<KeyWrap>>,
     nonce: Option<String>,
     signature: Option<String>,
     metadata: Option<EnvelopeMetadata>,
@@ -963,6 +996,11 @@ struct MessageContentResponse {
     /// The content key wrapped for the sender, when the sender kept one.
     #[serde(skip_serializing_if = "Option::is_none")]
     sender_encrypted_key: Option<String>,
+    /// Per-device wraps (docs/38 §5.4); absent on older messages.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    encrypted_keys: Vec<KeyWrap>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sender_encrypted_keys: Vec<KeyWrap>,
 }
 
 #[derive(Serialize)]
@@ -1603,6 +1641,10 @@ fn resolve_recipient_record_in_memory(
                     label: Some(agent.label.clone()),
                     signing_public_key: agent.public_key.clone(),
                     encryption_public_key: agent.encryption_key.clone(),
+                    devices: vec![DeviceKey {
+                        did: agent.did.clone(),
+                        encryption_public_key: agent.encryption_key.clone(),
+                    }],
                     // In-memory fallback path has no credential table
                     // to aggregate over — surface as 'unknown', which
                     // the Web UI treats as Standard mode for display.
@@ -2103,6 +2145,7 @@ async fn resolve_recipient_record_in_db(
 
     let aid: String = row.get("aid");
     let key_holder = aggregate_recipient_key_holder_in_db(pool, &aid).await?;
+    let devices = active_devices_in_db(pool, &aid).await?;
 
     Ok(Some(RecipientResolutionResponse {
         input: recipient.to_string(),
@@ -2111,8 +2154,103 @@ async fn resolve_recipient_record_in_db(
         label: row.get("label"),
         signing_public_key: row.get("signing_public_key"),
         encryption_public_key: row.get("encryption_public_key"),
+        devices,
         key_holder,
     }))
+}
+
+/// An agent's devices that can read new messages, newest first
+/// (docs/38 §5.1).
+async fn active_devices_in_db(
+    executor: impl sqlx::PgExecutor<'_>,
+    aid: &str,
+) -> Result<Vec<DeviceKey>, String> {
+    let rows = sqlx::query(
+        r#"
+        SELECT did, encryption_public_key
+        FROM agent_identity_keys
+        WHERE aid = $1 AND status = 'active'
+        ORDER BY activated_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(aid)
+    .bind(MAX_DEVICE_WRAPS as i64)
+    .fetch_all(executor)
+    .await
+    .map_err(|error| format!("failed to list devices: {error}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| DeviceKey {
+            did: row.get("did"),
+            encryption_public_key: row.get("encryption_public_key"),
+        })
+        .collect())
+}
+
+/// Shape check for a list of per-device wraps (docs/38 §5.3): at most
+/// MAX_DEVICE_WRAPS, each a did:key with an x25519v1 wrap, no DID twice.
+fn parse_key_wraps(field: &str, wraps: Option<&Vec<KeyWrap>>) -> Result<Vec<KeyWrap>, String> {
+    let Some(wraps) = wraps else {
+        return Ok(Vec::new());
+    };
+    if wraps.len() > MAX_DEVICE_WRAPS {
+        return Err(format!(
+            "envelope.{field} may hold at most {MAX_DEVICE_WRAPS} wraps"
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(wraps.len());
+    for wrap in wraps {
+        let did = wrap.did.trim();
+        let key = wrap.key.trim();
+        if !did.starts_with("did:key:") || did.len() > 256 {
+            return Err(format!("envelope.{field}[].did must be a did:key"));
+        }
+        if key.len() > 512 || !is_valid_wrapped_encrypted_key_format(key) {
+            return Err(format!(
+                "envelope.{field}[].key must use x25519v1 wrapped key format"
+            ));
+        }
+        if !seen.insert(did.to_string()) {
+            return Err(format!("envelope.{field} lists a DID twice"));
+        }
+        out.push(KeyWrap {
+            did: did.to_string(),
+            key: key.to_string(),
+        });
+    }
+    Ok(out)
+}
+
+/// Every wrap must be for a device of the agent that `anchor_did` belongs
+/// to (docs/38 §5.3), so a sender cannot list someone else's device.
+async fn ensure_wraps_for_agent_devices(
+    pool: &PgPool,
+    field: &str,
+    wraps: &[KeyWrap],
+    anchor_did: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if wraps.is_empty() {
+        return Ok(());
+    }
+    let dids: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT k.did FROM agent_identity_keys k
+        WHERE k.status = 'active'
+          AND k.aid = (SELECT aid FROM agent_identity_keys WHERE did = $1)
+        "#,
+    )
+    .bind(anchor_did)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| internal_error("failed to check device wraps", e))?;
+    if wraps.iter().any(|w| !dids.contains(&w.did)) {
+        return Err(validation_error(&format!(
+            "envelope.{field} lists a DID that is not an active device of that agent"
+        )));
+    }
+    Ok(())
 }
 
 /// Collapse the recipient agent's active credentials into a single
@@ -6512,18 +6650,30 @@ async fn send_agent_draft(
     Path(id): Path<Uuid>,
     body: axum::body::Bytes,
 ) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, Json<ErrorResponse>)> {
-    // Optional `{ "sender_encrypted_key": "x25519v1:..." }`: the reviewing
-    // browser opened the draft, so it can wrap the content key for the
-    // sending agent too, and the sender can read it later (docs/35 §5).
-    let sender_encrypted_key = if body.is_empty() {
-        None
+    // Optional `{ "sender_encrypted_key": "x25519v1:...",
+    // "encrypted_keys": [...], "sender_encrypted_keys": [...] }`: the
+    // reviewing browser opened the draft, so it can wrap the content key
+    // for the sending agent (docs/35 §5) and for every device of both
+    // agents (docs/38 §5.2).
+    let extra: serde_json::Value = if body.is_empty() {
+        serde_json::Value::Null
     } else {
-        serde_json::from_slice::<serde_json::Value>(&body)
-            .map_err(|_| validation_error("body must be JSON"))?
-            .get("sender_encrypted_key")
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
+        serde_json::from_slice(&body).map_err(|_| validation_error("body must be JSON"))?
     };
+    let sender_encrypted_key = extra
+        .get("sender_encrypted_key")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let wraps = |field: &str| -> Result<Option<Vec<KeyWrap>>, (StatusCode, Json<ErrorResponse>)> {
+        match extra.get(field) {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(value) => serde_json::from_value(value.clone())
+                .map(Some)
+                .map_err(|_| validation_error(&format!("{field} must be a list of {{did, key}}"))),
+        }
+    };
+    let encrypted_keys = wraps("encrypted_keys")?;
+    let sender_encrypted_keys = wraps("sender_encrypted_keys")?;
     let user_id = authenticated_user_id(&state, &headers).await?;
     let user_uuid = parse_user_uuid(&user_id)?;
     let pool = drafts_pool(&state).await?;
@@ -6551,6 +6701,8 @@ async fn send_agent_draft(
             encrypted_content: Some(row.get("encrypted_content")),
             encrypted_key: Some(row.get("encrypted_key")),
             sender_encrypted_key,
+            encrypted_keys,
+            sender_encrypted_keys,
             nonce: Some(row.get("nonce")),
             signature: Some(row.get("signature")),
             metadata: Some(EnvelopeMetadata {
@@ -11217,6 +11369,18 @@ async fn send_message_as(
             ));
         }
     }
+    let encrypted_keys = parse_key_wraps(
+        "encrypted_keys",
+        envelope.as_ref().and_then(|e| e.encrypted_keys.as_ref()),
+    )
+    .map_err(|e| validation_error(&e))?;
+    let sender_encrypted_keys = parse_key_wraps(
+        "sender_encrypted_keys",
+        envelope
+            .as_ref()
+            .and_then(|e| e.sender_encrypted_keys.as_ref()),
+    )
+    .map_err(|e| validation_error(&e))?;
 
     let recipient_did = if let Some(pool) = maybe_pool.clone() {
         match resolve_recipient_in_db(&pool, &recipient_ref)
@@ -11302,6 +11466,26 @@ async fn send_message_as(
     );
     if !verify_envelope_signature(&signing_agent.public_key, &signature, &signing_payload) {
         return Err(unauthorized_error("invalid envelope signature"));
+    }
+
+    // Per-device wraps must name devices of the recipient agent and of the
+    // sending agent. Without a database there is one device per agent.
+    if let Some(pool) = maybe_pool.as_ref() {
+        ensure_wraps_for_agent_devices(pool, "encrypted_keys", &encrypted_keys, &recipient_did)
+            .await?;
+        ensure_wraps_for_agent_devices(
+            pool,
+            "sender_encrypted_keys",
+            &sender_encrypted_keys,
+            &sender_did,
+        )
+        .await?;
+    } else if encrypted_keys.iter().any(|w| w.did != recipient_did)
+        || sender_encrypted_keys.iter().any(|w| w.did != sender_did)
+    {
+        return Err(validation_error(
+            "envelope wraps must be for the recipient's and the sender's devices",
+        ));
     }
 
     let recipient_exists_result = recipient_exists(&state, &recipient_did)
@@ -11489,6 +11673,8 @@ async fn send_message_as(
         nonce: nonce.clone(),
         content_type: content_type.clone(),
         sender_encrypted_key,
+        encrypted_keys,
+        sender_encrypted_keys,
     };
     let encoded_payload = serde_json::to_string(&stored_payload).map_err(|_| {
         audit_storage_event(
@@ -14672,6 +14858,8 @@ async fn message_content(
                     thread_id: message.thread_id,
                     content_type: payload.content_type,
                     sender_encrypted_key: payload.sender_encrypted_key,
+                    encrypted_keys: payload.encrypted_keys,
+                    sender_encrypted_keys: payload.sender_encrypted_keys,
                 }));
             }
             audit_storage_event(
@@ -15985,6 +16173,35 @@ fn app_with_state(state: AppState) -> Router {
 #[cfg(test)]
 mod internal_tests {
     use super::*;
+
+    #[test]
+    fn key_wraps_are_shape_checked() {
+        let w = |did: &str, key: &str| KeyWrap {
+            did: did.into(),
+            key: key.into(),
+        };
+        let good = format!(
+            "x25519v1:{}:{}:{}:{}",
+            URL_SAFE_NO_PAD.encode([1u8; 32]),
+            URL_SAFE_NO_PAD.encode([0u8; 16]),
+            URL_SAFE_NO_PAD.encode([0u8; 12]),
+            URL_SAFE_NO_PAD.encode([0u8; 48]),
+        );
+        assert!(parse_key_wraps("encrypted_keys", None).unwrap().is_empty());
+        let ok = vec![w(" did:key:zA ", &good), w("did:key:zB", &good)];
+        let parsed = parse_key_wraps("encrypted_keys", Some(&ok)).unwrap();
+        assert_eq!(parsed[0].did, "did:key:zA");
+        let twice = vec![w("did:key:zA", &good), w("did:key:zA", &good)];
+        assert!(parse_key_wraps("encrypted_keys", Some(&twice)).is_err());
+        let not_did = vec![w("aid:ai:x", &good)];
+        assert!(parse_key_wraps("encrypted_keys", Some(&not_did)).is_err());
+        let bad_key = vec![w("did:key:zA", "x25519v1:short")];
+        assert!(parse_key_wraps("encrypted_keys", Some(&bad_key)).is_err());
+        let too_many: Vec<KeyWrap> = (0..=MAX_DEVICE_WRAPS)
+            .map(|i| w(&format!("did:key:z{i}"), &good))
+            .collect();
+        assert!(parse_key_wraps("encrypted_keys", Some(&too_many)).is_err());
+    }
 
     #[test]
     fn avatar_color_index_matches_the_web() {
