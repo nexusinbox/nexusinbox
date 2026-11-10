@@ -52,7 +52,6 @@ tokio-util = { version = "0.7", features = ["compat"] }
 yamux = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
-rustls-pemfile = "2"
 rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tls12", "webpki-roots"] }
 webpki-roots = "1"
 hyper = { version = "1", features = ["server", "http1"] }

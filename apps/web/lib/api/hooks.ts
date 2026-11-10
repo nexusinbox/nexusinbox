@@ -432,6 +432,7 @@ export function useDeleteAccountMutation() {
       await queryClient.clear();
       clearAllBridgeTokens();
       await disconnectLLM();
+      await disconnectCalendar().catch(() => {});
     },
   });
 }

@@ -37,6 +37,17 @@ describe("web security headers", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
+  it("lists only loopback sources browsers accept for the daemon bridge", () => {
+    for (const isDev of [false, true]) {
+      const csp = buildCsp("test-nonce", "/", { isDev });
+      const connect = csp.split("; ").find((d) => d.startsWith("connect-src "))!;
+      const sources = connect.split(" ").slice(1);
+      expect(sources).toContain("http://127.0.0.1:*");
+      // An IP-literal host source is invalid CSP; browsers drop it noisily.
+      expect(sources.some((s) => s.includes("["))).toBe(false);
+    }
+  });
+
   it("lets the browser reach the BYOK endpoints (AI draft, Calendar) by exact URL", () => {
     // These are called straight from the browser with the user's own key.
     // If they are missing from connect-src the features fail only in a

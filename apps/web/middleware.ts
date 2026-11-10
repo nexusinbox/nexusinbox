@@ -183,9 +183,10 @@ export function buildCsp(
   // daemon at http://127.0.0.1:<port> without CSP blocking the
   // fetch. Safe because the browser still honours Private Network
   // Access preflights and the daemon itself enforces Origin + bearer
-  // token; CSP is the belt, PNA + bearer is the braces.
-  const bridgeConnect =
-    "http://127.0.0.1:* http://[::1]:* http://localhost:*";
+  // token; CSP is the belt, PNA + bearer is the braces. No IPv6 entry:
+  // CSP host sources cannot be IPv6 literals, so browsers dropped
+  // `http://[::1]:*` with a console error on every page.
+  const bridgeConnect = "http://127.0.0.1:* http://localhost:*";
 
   // Attachment downloads are fetched from a Cloudflare R2 presigned URL
   // (AGENT_INBOX_S3_ENDPOINT, shaped `<account>.r2.cloudflarestorage.com`).

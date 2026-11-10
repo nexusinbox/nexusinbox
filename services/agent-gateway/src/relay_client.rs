@@ -345,8 +345,10 @@ fn roots(extra: Option<&PathBuf>) -> Result<rustls::RootCertStore, String> {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
     if let Some(path) = extra {
-        let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        for cert in rustls_pemfile::certs(&mut std::io::BufReader::new(file)) {
+        use rustls::pki_types::{pem::PemObject, CertificateDer};
+        let certs =
+            CertificateDer::pem_file_iter(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        for cert in certs {
             let cert = cert.map_err(|e| format!("{}: {e}", path.display()))?;
             roots
                 .add(cert)
@@ -365,4 +367,39 @@ fn create_private_dir(dir: &PathBuf) -> Result<(), String> {
             .map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A throwaway self-signed CA (P-256, no key kept), for --mcp-acme-ca /
+    // --mcp-relay-ca style files.
+    const TEST_CA_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIIBkTCCATegAwIBAgIUXaJB56JhELI/uEaJN29IKGPLW4swCgYIKoZIzj0EAwIw
+HTEbMBkGA1UEAwwSbmV4dXNpbmJveC10ZXN0LWNhMCAXDTI2MTExMDA4MzE0OVoY
+DzIxMjYxMDE3MDgzMTQ5WjAdMRswGQYDVQQDDBJuZXh1c2luYm94LXRlc3QtY2Ew
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQCIDMlkp7gAgzR6kv0ceSbCfaIKtli
+540rYwJYbtYJ1vLhUTWn5onYid38I1ohV6dxnwJ5VVVFI8VJ80HlFWYoo1MwUTAd
+BgNVHQ4EFgQU4kaE5qRdQCOkvZx65JO+EfapLHUwHwYDVR0jBBgwFoAU4kaE5qRd
+QCOkvZx65JO+EfapLHUwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBF
+AiEA/fXTe7z8GgzOYv5ul3jkuXPm4Tm1mOgjpZy1aTagw60CIDQDcNqTu18We/Eb
+ccDhmz3ihCx/BXa/InYnmq7vuzUo
+-----END CERTIFICATE-----
+";
+
+    #[test]
+    fn roots_add_an_extra_ca_from_a_pem_file() {
+        let base = webpki_roots::TLS_SERVER_ROOTS.len();
+        assert_eq!(roots(None).unwrap().len(), base);
+
+        let path = std::env::temp_dir().join(format!("nexusinbox-ca-{}.pem", std::process::id()));
+        std::fs::write(&path, TEST_CA_PEM).unwrap();
+        let with_extra = roots(Some(&path));
+        std::fs::remove_file(&path).ok();
+        assert_eq!(with_extra.unwrap().len(), base + 1);
+
+        let missing = std::env::temp_dir().join("nexusinbox-ca-missing.pem");
+        assert!(roots(Some(&missing)).is_err());
+    }
 }
