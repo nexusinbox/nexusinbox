@@ -1,6 +1,6 @@
 # 33. クラウドで動く AI エージェントからつなぐ
 
-**Status**: C (暗号のまま通す中継) で進めることに決定 (2026-11-08)。段階 1 (パソコン側の MCP の入口と、下書きの承認) と段階 2 (OAuth) は済み (§9、§10)
+**Status**: C (暗号のまま通す中継) で進めることに決定 (2026-11-08)。段階 1 (パソコン側の MCP の入口と、下書きの承認) と段階 2 (OAuth) は済み (§9、§10)。dots / Grok Bot の受け入れ準備は §15
 **Scope**: Meta の Muse、OpenAI の dots、xAI の Grok Bot のような、事業者のクラウドで常時動く AI エージェントから NexusInbox を使えるようにする
 **Related**: [20 MCP / Skill 戦略](./20_mcp_skill_strategy.md)、[32 配布](./32_daemon_distribution.md)、[28 運営が持つデータと保持期間](./28_data_inventory_and_retention.md)
 
@@ -336,3 +336,27 @@ API は `AGENT_INBOX_MCP_RESOURCE_DOMAIN=mcp.agent-inbox.ai` で URL を割り�
 
 - 直近 120 日で想定外は `api.agent-inbox.ai` の 4 枚だけ。古い Fly アプリ `agent-inbox-api` (止めたまま) にこの名前の証明書が設定されたまま残り、Fly が 10 月にも更新していた。DNS は消してあるので、この先の更新は通らない。アプリから証明書を外すか、アプリごと消すのが安全
 - `agent-inbox.ai` の頂点と `relay` には CAA が無い (`mcp` にだけ Let's Encrypt の CAA がある)。頂点にも CAA を置くと、`relay` などに他の CA が証明書を出せなくなる。Cloudflare は Universal SSL の CA の CAA を自動で足す
+
+## 15. OpenAI dots と xAI Grok Bot (2026-11-10)
+
+### 15.1 公開情報で分かったこと
+
+- **dots**: ChatGPT の中で常に動くエージェント。つなぐアプリは ChatGPT の「Plugins」と共通 (dot のプロフィール → Customize → Plugins)。使えるのは Pro (18 歳以上、EEA・スイス・英国を除く)、Business Premium、Enterprise / Edu / Healthcare ([Getting started with your dot](https://help.openai.com/en/articles/20001530-getting-started-with-your-dot))
+- **ChatGPT のカスタム MCP**: パソコンの Web 版だけ。Plugins →「＋」→ Add custom MCP server → 公開の HTTPS の URL。Developer Mode は要らない。Business は管理者・オーナーだけが足せる。**Pro は読む・取ってくるだけ** (書く操作は Business / Enterprise / Edu) とあるので、Pro では下書きを作れない見込み ([Connecting custom MCP servers](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt))
+- **ChatGPT の OAuth**: クライアントの名乗り方は CIMD を優先し (`https://chatgpt.com/oauth/client.json`)、DCR も使える。RFC 9207 の `iss` を返す認可サーバには、固定の戻り先 `https://chatgpt.com/connector_platform_oauth_redirect` を使う ([Authentication](https://developers.openai.com/plugins/build/auth))
+- **Grok**: grok.com/connectors → New Connector → Custom → URL を入れて認証。全員が使える (Business / Enterprise は管理者が先に用意)。Grok は会話の中で呼ぶ ([xAI Connectors](https://docs.x.ai/grok/connectors))。Grok Bot はチャットで「カスタムの MCP サーバを足して」と頼むと足せる (第三者の解説だけ)。OAuth の細かい決まり (DCR か CIMD か、戻り先) は公式に書かれていない
+
+### 15.2 直したこと
+
+ChatGPT の CIMD の文書は、トークンの受け取り方を `["none", "private_key_jwt"]` の一覧で示し、単数の希望として `private_key_jwt` も書く (MCP SEP-3149)。grant には `jwt-bearer` も入っている。これまでは単数の欄だけを見て、知らない grant があると断っていたので、ChatGPT からつなぐと許可の画面の前で止まっていた。
+
+- 一覧があれば、その中に `none` があることを条件にする (このサーバは `none` だけ)。一覧が無いときは、これまでどおり単数の欄で決める
+- 知らない grant は無視する (トークンの窓口が断る)。`authorization_code` が無いものは断る
+- DCR の登録はこれまでどおり (Muse はこれで通った)
+
+手元で、本物の `https://chatgpt.com/oauth/client.json` を使った許可の要求が、クライアントの確認を通り、どのパソコンの URL かを確かめる段まで進むことを確かめた。
+
+### 15.3 まだのこと
+
+- 実機の確認: 運営者のアカウントで、ChatGPT (dots) と Grok から足して、受信箱を読み、下書きを作る。Pro で下書きが作れないなら、画面の案内に書く
+- 確かめてから、help に dots / Grok の手順を足す (Muse と同じ扱い)

@@ -423,6 +423,59 @@ async fn fetch_client_metadata(client_id: &str) -> Result<serde_json::Value, Str
 
 /// The app behind `client_id`: a registered one, or one known by its
 /// metadata document URL (fetched again after a day).
+/// The name and redirect URIs from a client metadata document.
+///
+/// A document may list several token endpoint methods (MCP SEP-3149, used
+/// by ChatGPT: `["none", "private_key_jwt"]` plus a singular preference).
+/// This server accepts only `none`, so the client must list it; the
+/// singular field decides only when the list is absent. Grant types this
+/// server does not offer are ignored (the token endpoint refuses them), but
+/// the authorization code grant must be among them.
+fn metadata_document_fields(
+    doc: &serde_json::Value,
+    client_id: &str,
+) -> Result<(String, Vec<String>), String> {
+    if doc.get("client_id").and_then(|v| v.as_str()) != Some(client_id) {
+        return Err("client metadata names another client_id".into());
+    }
+    let strings = |k: &str| -> Option<Vec<String>> {
+        doc.get(k).and_then(|v| v.as_array()).map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+    };
+    let auth_method = match strings("token_endpoint_auth_methods_supported") {
+        Some(methods) if methods.iter().any(|m| m == "none") => Some("none".to_string()),
+        Some(_) => {
+            return Err(
+                "only public clients (token_endpoint_auth_method=none) are supported".into(),
+            )
+        }
+        None => doc
+            .get("token_endpoint_auth_method")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    };
+    let grant_types = match strings("grant_types") {
+        Some(g) if !g.iter().any(|t| t == "authorization_code") => {
+            return Err("grant_types must include authorization_code".into())
+        }
+        g => g.map(|g| {
+            g.into_iter()
+                .filter(|t| t == "authorization_code" || t == "refresh_token")
+                .collect::<Vec<_>>()
+        }),
+    };
+    check_client_fields(
+        doc.get("client_name").and_then(|v| v.as_str()),
+        strings("redirect_uris").as_ref(),
+        auth_method.as_deref(),
+        grant_types.as_ref(),
+        strings("response_types").as_ref(),
+    )
+}
+
 async fn resolve_client(pool: &PgPool, client_id: &str) -> Result<ClientRecord, String> {
     let row = sqlx::query(
         "SELECT client_id, client_name, redirect_uris, kind, \
@@ -450,24 +503,7 @@ async fn resolve_client(pool: &PgPool, client_id: &str) -> Result<ClientRecord, 
         return Err("unknown client_id".into());
     }
     let doc = fetch_client_metadata(client_id).await?;
-    if doc.get("client_id").and_then(|v| v.as_str()) != Some(client_id) {
-        return Err("client metadata names another client_id".into());
-    }
-    let strings = |k: &str| -> Option<Vec<String>> {
-        doc.get(k).and_then(|v| v.as_array()).map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str().map(str::to_string))
-                .collect()
-        })
-    };
-    let (name, uris) = check_client_fields(
-        doc.get("client_name").and_then(|v| v.as_str()),
-        strings("redirect_uris").as_ref(),
-        doc.get("token_endpoint_auth_method")
-            .and_then(|v| v.as_str()),
-        strings("grant_types").as_ref(),
-        strings("response_types").as_ref(),
-    )?;
+    let (name, uris) = metadata_document_fields(&doc, client_id)?;
     sqlx::query(
         "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, fetched_at) \
          VALUES ($1, $2, $3, 'metadata_document', NOW()) \
@@ -1578,6 +1614,49 @@ mod tests {
         }
         assert!(is_public_ip("1.1.1.1".parse().unwrap()));
         assert!(is_public_ip("2606:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn chatgpt_metadata_document_is_accepted_as_a_public_client() {
+        // https://chatgpt.com/oauth/client.json as served on 2026-11-10.
+        let id = "https://chatgpt.com/oauth/client.json";
+        let doc = serde_json::json!({
+            "client_id": id,
+            "client_uri": "https://chatgpt.com/",
+            "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+            "token_endpoint_auth_method": "private_key_jwt",
+            "token_endpoint_auth_methods_supported": ["none", "private_key_jwt"],
+            "grant_types": ["authorization_code", "refresh_token",
+                            "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+            "response_types": ["code"],
+            "client_name": "ChatGPT",
+            "token_endpoint_auth_signing_alg": "RS256",
+            "jwks_uri": "https://chatgpt.com/oauth/jwks.json"
+        });
+        let (name, uris) = metadata_document_fields(&doc, id).unwrap();
+        assert_eq!(name, "ChatGPT");
+        assert_eq!(
+            uris,
+            vec!["https://chatgpt.com/connector_platform_oauth_redirect"]
+        );
+
+        // Another client_id, no "none" in the list, or no code grant: refused.
+        assert!(metadata_document_fields(&doc, "https://other.example/c.json").is_err());
+        let mut only_jwt = doc.clone();
+        only_jwt["token_endpoint_auth_methods_supported"] = serde_json::json!(["private_key_jwt"]);
+        assert!(metadata_document_fields(&only_jwt, id).is_err());
+        let mut no_code = doc.clone();
+        no_code["grant_types"] = serde_json::json!(["refresh_token"]);
+        assert!(metadata_document_fields(&no_code, id).is_err());
+        // Without the list, the singular method still decides.
+        let mut singular = doc.clone();
+        singular
+            .as_object_mut()
+            .unwrap()
+            .remove("token_endpoint_auth_methods_supported");
+        assert!(metadata_document_fields(&singular, id).is_err());
+        singular["token_endpoint_auth_method"] = serde_json::json!("none");
+        assert!(metadata_document_fields(&singular, id).is_ok());
     }
 
     #[test]
