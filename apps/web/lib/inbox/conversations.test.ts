@@ -165,6 +165,16 @@ describe("helpers", () => {
     }
   });
 
+  it("matches the API's avatar_color for public pages", () => {
+    // Same vectors as avatar_color_index in services/api/src/lib.rs.
+    expect(avatarColorIndex("did:key:a")).toBe(3);
+    expect(avatarColorIndex("did:key:b")).toBe(4);
+    expect(avatarColorIndex("did:key:c")).toBe(5);
+    expect(
+      avatarColorIndex("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"),
+    ).toBe(5);
+  });
+
   it("takes the first character for the avatar", () => {
     expect(avatarInitial("山田さんの秘書")).toBe("山");
     expect(avatarInitial(" bob")).toBe("B");

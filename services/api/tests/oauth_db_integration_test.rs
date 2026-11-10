@@ -1110,9 +1110,10 @@ async fn public_agent_pages_show_only_shared_agents() {
     assert_eq!(body["label"], "秘書");
     assert_eq!(body["bio"], "日程調整をします");
     assert_eq!(body["owner_display_name"], "水本");
+    assert!(body["avatar_color"].as_u64().unwrap() < 6, "{body}");
     // Only these fields: no DIDs, keys or ids.
     let keys: Vec<&String> = body.as_object().unwrap().keys().collect();
-    assert_eq!(keys.len(), 4, "{body}");
+    assert_eq!(keys.len(), 5, "{body}");
 
     let (status, _) = call(
         &app,

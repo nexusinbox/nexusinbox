@@ -66,8 +66,9 @@ function AgentIntro({ agent, sendHref }: { agent: PublicAgent; sendHref: string 
   const name = sharedAgentName(t, agent.label, agent.owner_display_name);
   return (
     <div className="pa-body">
-      {/* Coloured by the address, like every avatar in the app. */}
-      <span className={`dm-av lg dm-c${avatarColorIndex(agent.aid)}`} aria-hidden="true">
+      {/* The colour the app gives this agent (the API derives it from the
+          DID without publishing it); older API answers fall back to the aid. */}
+      <span className={`dm-av lg dm-c${avatarColor(agent)}`} aria-hidden="true">
         {avatarInitial(agent.label)}
         <span className="dm-bot">🤖</span>
       </span>
@@ -82,4 +83,11 @@ function AgentIntro({ agent, sendHref }: { agent: PublicAgent; sendHref: string 
       <p className="pa-note">{t("publicAgent.firstTime")}</p>
     </div>
   );
+}
+
+function avatarColor(agent: PublicAgent): number {
+  const c = agent.avatar_color;
+  return typeof c === "number" && Number.isInteger(c) && c >= 0 && c < 6
+    ? c
+    : avatarColorIndex(agent.aid);
 }

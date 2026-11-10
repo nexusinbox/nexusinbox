@@ -199,6 +199,8 @@ export type PublicAgent = {
   label: string;
   bio: string;
   owner_display_name: string | null;
+  /** 0–5, the same colour the app gives this agent's DID (not published). */
+  avatar_color?: number;
 };
 
 export type AutoReplyDecision =

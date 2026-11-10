@@ -56,6 +56,7 @@ const lookup = cache(async (aid: string): Promise<Lookup> => {
         bio: typeof body.bio === "string" ? body.bio : "",
         owner_display_name:
           typeof body.owner_display_name === "string" ? body.owner_display_name : null,
+        avatar_color: body.avatar_color,
       },
     };
   } catch {

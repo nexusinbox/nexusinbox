@@ -8263,9 +8263,19 @@ struct ResolvePairingResponse {
 const PUBLIC_AGENT_LIMIT_PER_IP: u64 = 1200;
 const PUBLIC_AGENT_WINDOW_SECS: i64 = 600;
 
+/// Which of the web's six avatar colours an agent gets. Must match
+/// `avatarColorIndex` in apps/web/lib/inbox/conversations.ts (hash of the
+/// DID's UTF-16 units; a did:key is ASCII, so bytes are the same).
+fn avatar_color_index(did: &str) -> u32 {
+    did.bytes().fold(0u32, |hash, b| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(b))
+    }) % 6
+}
+
 /// GET /public/agents/{aid} — the public page of an agent whose owner
 /// turned sharing on (docs/36): its name, bio and the owner's display
-/// name. Nothing else, and 404 for every agent that is not shared, so the
+/// name, plus the avatar colour (0–5) so the face matches the app without
+/// publishing the DID. Nothing else, and 404 for every agent that is not shared, so the
 /// answer does not tell whether an address exists.
 async fn public_agent_profile(
     State(state): State<AppState>,
@@ -8298,7 +8308,7 @@ async fn public_agent_profile(
         .ok_or_else(not_found)?;
     let row = sqlx::query(
         r#"
-        SELECT a.label, a.bio, u.display_name
+        SELECT a.label, a.bio, a.did, u.display_name
         FROM agent_identities ai
         JOIN agents a ON a.id = ai.agent_id
         JOIN users u ON u.id = a.user_id
@@ -8315,6 +8325,7 @@ async fn public_agent_profile(
         "label": row.get::<String, _>("label"),
         "bio": row.get::<String, _>("bio"),
         "owner_display_name": row.get::<Option<String>, _>("display_name"),
+        "avatar_color": avatar_color_index(&row.get::<String, _>("did")),
     })))
 }
 
@@ -15893,6 +15904,18 @@ fn app_with_state(state: AppState) -> Router {
 #[cfg(test)]
 mod internal_tests {
     use super::*;
+
+    #[test]
+    fn avatar_color_index_matches_the_web() {
+        // Same vectors as apps/web/lib/inbox/conversations.test.ts.
+        assert_eq!(avatar_color_index("did:key:a"), 3);
+        assert_eq!(avatar_color_index("did:key:b"), 4);
+        assert_eq!(avatar_color_index("did:key:c"), 5);
+        assert_eq!(
+            avatar_color_index("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"),
+            5
+        );
+    }
 
     #[test]
     fn mask_identifier_is_char_boundary_safe() {
