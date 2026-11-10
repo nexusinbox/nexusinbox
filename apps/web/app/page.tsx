@@ -279,8 +279,9 @@ function MessagesPageInner() {
   const withParam = archiveView ? "" : (searchParams.get("with") ?? "").trim();
   const asParam = searchParams.get("as") ?? "";
 
-  // "all", "unread", or an own agent's DID.
-  const [chip, setChip] = useState<string>("all");
+  // "all", "unread", or an own agent's DID (/?agent=<DID> starts there,
+  // from an agent's "受信箱を開く").
+  const [chip, setChip] = useState<string>(() => searchParams.get("agent") || "all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeKey, setActiveKey] = useState<string>("");
   const [mobileView, setMobileView] = useState<"list" | "detail">(

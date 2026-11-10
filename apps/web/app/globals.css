@@ -4431,6 +4431,30 @@ details[open] .help-accordion-chevron {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
 }
+/* 相手を招く (docs/37): where a new person has nobody to talk to yet. */
+.invite-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+}
+.nc .invite-card {
+  margin: 12px 16px 4px;
+}
+.invite-card h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+.invite-card .item-sub {
+  margin: 0;
+}
+.invite-card .sh-panel {
+  margin-top: 4px;
+  background: var(--surface);
+}
 .sh-switch {
   display: flex;
   align-items: center;

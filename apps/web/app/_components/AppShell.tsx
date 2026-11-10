@@ -159,11 +159,20 @@ export function AppShell({
 }: AppShellProps) {
   const { t } = useTranslation();
 
-  // The browser tab title follows the page name.
+  // The browser tab title follows the page name. Next applies the root
+  // layout's title again after client navigations (even a search-param
+  // change), so put ours back whenever <head> changes.
   useEffect(() => {
     if (typeof document === "undefined") return;
     const base = "NexusInbox";
-    document.title = title ? `${title} · ${base}` : base;
+    const wanted = title ? `${title} · ${base}` : base;
+    const apply = () => {
+      if (document.title !== wanted) document.title = wanted;
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
   }, [title]);
 
   const sessionQuery = useAuthSessionQuery();

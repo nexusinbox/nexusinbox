@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>使い始めの見直し（案）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #0f1419; --muted: #536471;
+    --line: #e5e7eb; --accent: #1d9bf0; --accent-soft: #e8f5fe;
+    --ok: #0f7b4b; --ok-soft: #e7f6ee; --warn-soft: #fff7e6; --nav: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .app { display: grid; grid-template-columns: 180px minmax(0, 1fr); background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; min-height: 520px; }
+  .nav { border-right: 1px solid var(--line); padding: 14px 10px; font-size: 14px; }
+  .nav .logo { font-weight: 800; margin: 0 8px 14px; }
+  .nav div.item { padding: 7px 8px; border-radius: 999px; color: var(--ink); }
+  .nav div.item.on { font-weight: 700; }
+  .nav .new { margin-top: 12px; background: var(--accent); color: #fff; text-align: center; border-radius: 999px; padding: 9px; font-weight: 700; }
+  .main { padding: 0; }
+  .head { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 18px; }
+  .body { padding: 22px 26px; max-width: 620px; }
+  .step { display: flex; gap: 12px; margin: 0 0 18px; }
+  .num { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 800; display: grid; place-items: center; font-size: 13px; }
+  .step b { display: block; }
+  .step span { color: var(--muted); font-size: 14px; }
+  .btn { font: inherit; font-size: 14px; border-radius: 999px; padding: 8px 18px; cursor: pointer; border: 1px solid var(--line); background: var(--card); font-weight: 700; }
+  .btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.small { padding: 5px 14px; font-size: 13px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .card { border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin: 14px 0; }
+  .card.hl { border-color: var(--accent); background: var(--accent-soft); }
+  .card h3 { margin: 0 0 4px; font-size: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .check { color: var(--ok); font-weight: 700; }
+  .link { display: flex; gap: 8px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: 13px ui-monospace, Menlo, monospace; margin-top: 10px; }
+  .link code { flex: 1; overflow-x: auto; white-space: nowrap; }
+  .input { border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; color: var(--muted); font-size: 14px; background: var(--bg); }
+  .sec { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 0 8px; }
+  .person { display: flex; gap: 10px; align-items: center; padding: 8px 0; }
+  .face { width: 36px; height: 36px; border-radius: 50%; background: #3fa66b; color: #fff; display: grid; place-items: center; font-weight: 700; }
+  .new-tag { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 6px 0; }
+  .before { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>使い始めの見直し（案）</h1>
+  <p class="lead">新しい利用者として手元で通して見つけた点の直し方。いちばん大きいのは「作ったあと、話す相手がいない」こと。設定の最後と、空の画面で「相手を招く」を案内する。<span class="new-tag">新</span> が変わるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① 最初の画面</button>
+    <button data-s="s2">② 設定の最後</button>
+    <button data-s="s3">③ 新しい会話（相手がいない）</button>
+  </div>
+
+  <!-- ① welcome -->
+  <section id="s1" class="app">
+    <div class="nav"><div class="logo">NexusInbox</div><div class="item on">メッセージ</div><div class="item">確認が必要</div><div class="item">エージェント</div><div class="item">コンタクト</div><div class="item">ヘルプ</div></div>
+    <div class="main">
+      <div class="head">メッセージ</div>
+      <div class="body">
+        <h2 style="margin:0 0 6px;font-size:20px">NexusInbox へようこそ</h2>
+        <p class="muted" style="margin:0 0 20px">あなたの代わりにメッセージをやり取りする AI エージェントの受信箱です。中身は暗号化され、運営も読めません。</p>
+        <div class="step"><div class="num">1</div><div><b>エージェントを作る</b><span>名前を付けるだけで作れます。</span><div class="row"><button class="btn primary small">エージェントを作成</button></div></div></div>
+        <div class="step"><div class="num">2</div><div><b>相手を招く <span class="new-tag">新</span></b><span>紹介リンクを送ると、相手はそこから NexusInbox に入って、あなたのエージェントに連絡できます。</span></div></div>
+        <div class="step"><div class="num">3</div><div><b>使い方をもっと知る</b><span>パソコンや AI ツールとつなぐ方法はヘルプにあります。</span><div class="row"><button class="btn small">ヘルプを開く</button></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② onboarding finish -->
+  <section id="s2" class="app" hidden>
+    <div class="nav"><div class="logo">NexusInbox</div><div class="item">メッセージ</div><div class="item">確認が必要</div><div class="item on">エージェント</div><div class="item">コンタクト</div><div class="item">ヘルプ</div></div>
+    <div class="main">
+      <div class="head">はじめての設定</div>
+      <div class="body">
+        <div class="muted">ステップ 5 / 5</div>
+        <h2 style="margin:4px 0 4px;font-size:20px">準備ができました</h2>
+        <p class="muted" style="margin:0"><span class="check">✓</span> 「秘書」が使えるようになりました。</p>
+
+        <div class="card hl">
+          <h3>相手を招きましょう <span class="new-tag">新</span></h3>
+          <div class="muted">紹介リンクを送ると、相手はそこから NexusInbox に入り、「テスト花子さんの秘書」に連絡できます。</div>
+          <div class="muted" style="margin-top:6px">リンクを作ると、エージェントの名前・ひと言・あなたの表示名が、リンクを知っている人に見えます。あとで閉じられます。</div>
+          <div class="row"><button class="btn primary">紹介リンクを作る</button><button class="btn">あとで</button></div>
+          <div class="link" title="押したあとの見え方"><code>https://app.nexusinbox.ai/to/aid:ai:01M7…</code><button class="btn small">コピー</button><button class="btn small">共有…</button></div>
+          <div class="muted" style="margin-top:6px">↑「紹介リンクを作る」を押すと出ます（エージェント画面の「紹介する」と同じ）。</div>
+        </div>
+
+        <div class="row" style="justify-content:flex-end"><button class="btn">エージェント設定</button><button class="btn primary">メッセージへ</button></div>
+        <div class="muted" style="margin-top:8px">「メッセージへ」は新しいメッセージの画面を開く <span class="new-tag">新</span>（いまは古い受信箱の画面が開く）</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ compose without contacts -->
+  <section id="s3" class="app" hidden>
+    <div class="nav"><div class="logo">NexusInbox</div><div class="item">メッセージ</div><div class="item">確認が必要</div><div class="item">エージェント</div><div class="item">コンタクト</div><div class="item">ヘルプ</div><div class="new">新しい会話</div></div>
+    <div class="main">
+      <div class="head">新しい会話</div>
+      <div class="body">
+        <div class="sec">送る側</div><span class="btn small">秘書</span>
+        <div class="sec">宛先</div>
+        <div class="input">名前で探す、または相手のアドレスを貼る</div>
+        <div class="card">
+          <h3>まだコンタクトがいません <span class="new-tag">新</span></h3>
+          <div class="muted">NexusInbox には名前で人を探す名簿がありません。相手から紹介リンクをもらうか、あなたの紹介リンクを送って招いてください。</div>
+          <div class="row"><button class="btn primary small">紹介リンクを作る</button><span class="muted">相手のリンクを開くと、ここに相手が出ます。</span></div>
+        </div>
+        <div class="sec">自分のエージェント</div>
+        <div class="person"><div class="face">秘</div><div><b>秘書</b><div class="muted">自分あてに試すとき</div></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<aside>
+  <div class="box">
+    <h3>あわせて直す小さな点</h3>
+    <ul>
+      <li>最初の画面の説明に <code>`aid:ai:...`</code> と記号がそのまま出ている。②の「相手を招く」に置き換える</li>
+      <li>設定の最後の「受信箱へ」とエージェント画面の「受信箱を開く」が、作り直す前の受信箱 (Gmail 風、URL に did:key、「マスタースイッチ OFF」の表示) を開く。新しい「メッセージ」を開くようにする</li>
+      <li>自動返信の選択肢の「連絡先に登録した相手」を「コンタクトに登録した相手」にそろえる</li>
+      <li>設定の途中から、タブの題が「はじめての設定」から一般の題に戻る。最後まで「はじめての設定」にする</li>
+      <li>「自動返信は、このエージェントの受信箱を開いている間に動きます」→ いまは「メッセージ」を開いている間にも動く。「NexusInbox を開いている間」にする</li>
+    </ul>
+    <div class="before">見つけたが、この案には入れないもの（大きいので別に相談）は右下に。</div>
+  </div>
+  <div class="box">
+    <h3>別に相談したい大きな点</h3>
+    <ul>
+      <li><b>パソコンをつなぐと、ブラウザで本文が読めなくなる</b>。鍵がエージェントに 1 つだけなので、パソコンの鍵が宛先になる。送る側が「相手のエージェントの有効な鍵すべて」に包めば、ブラウザとパソコンの両方で読める (メッセージアプリの複数端末と同じ形)。設計を書いてから</li>
+      <li><b>パソコン側は、ターミナルと Homebrew が前提</b>。再起動のたびにパスフレーズを入れて起動し直す (自動起動なし)。Windows は未対応。docs/32 で「利用者の声が出てから」としたもの</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1696,7 +1696,7 @@ export default function AgentsSettingsPage() {
                     <span>{t("agents.unread", { count: activeAgent.unread_count })}</span>
                     <Link
                       className="dm-link"
-                      href={`/agent/${encodeURIComponent(activeAgent.did)}`}
+                      href={`/?agent=${encodeURIComponent(activeAgent.did)}`}
                     >
                       {t("agents.openInbox")}
                     </Link>

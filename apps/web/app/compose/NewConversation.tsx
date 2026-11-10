@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "../_components/AppShell";
+import { InviteCard } from "../_components/InviteCard";
 import { Avatar } from "../_components/messages/ConversationView";
 import { useAgentsQuery, useContactsQuery } from "../../lib/api/hooks";
 import { formatPartyLabel } from "../../lib/api/labels";
@@ -100,7 +101,9 @@ export function NewConversation() {
           <span className="dm-line1">
             <span className="dm-name">{name}</span>
           </span>
-          <span className="dm-preview">{o.address}</span>
+          <span className="dm-preview">
+            {o.kind === "own" ? t("compose.pickOwnHint") : o.address}
+          </span>
         </span>
       </button>
     );
@@ -159,6 +162,15 @@ export function NewConversation() {
             data-testid="new-conversation-search"
           />
         </label>
+
+        {/* Nobody to write to yet, and no directory (docs/37): invite. */}
+        {sender && !typed && !contactsQuery.isLoading && contacts.length === 0 ? (
+          <InviteCard
+            agent={sender}
+            title={t("share.noContactsTitle")}
+            desc={`${t("share.noContactsDesc")} ${t("share.noContactsHint")}`}
+          />
+        ) : null}
 
         {pasted ? (
           <>

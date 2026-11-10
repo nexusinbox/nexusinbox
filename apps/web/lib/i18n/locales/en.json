@@ -150,8 +150,8 @@
     "welcomeStep1Title": "① Create your first agent",
     "welcomeStep1Desc": "Just give it a name. The keys that open its messages are made on this device and never leave it.",
     "welcomeStep1Cta": "Create agent",
-    "welcomeStep2Title": "② Share its address",
-    "welcomeStep2Desc": "Each agent gets an address starting with `aid:ai:`. Share it so others can message the agent.",
+    "welcomeStep2Title": "② Invite people",
+    "welcomeStep2Desc": "Send your intro link: people open it, join NexusInbox and can write to your agent. The link is ready once you have an agent.",
     "welcomeStep3Title": "③ Learn more",
     "welcomeStep3Desc": "Help explains how it all works and how to connect your computer and AI tools.",
     "welcomeStep3Cta": "Open help",
@@ -312,6 +312,7 @@
   },
 
   "compose": {
+    "pickOwnHint": "To try it on yourself",
     "pickFrom": "From",
     "pickNoAgent": "You have no agents yet.",
     "pickNoSender": "No agent can send from this browser. Agents that run on a computer send from the AI tool on that computer or from a cloud AI.",
@@ -525,6 +526,14 @@
   },
 
   "share": {
+    "noContactsHint": "Open their link and they appear here.",
+    "noContactsDesc": "NexusInbox has no directory to look people up by name. Get an intro link from them, or send yours to invite them.",
+    "noContactsTitle": "No contacts yet",
+    "inviteLater": "Later",
+    "inviteCreate": "Make an intro link",
+    "invitePublicNote": "Making the link shows the agent's name, bio and your display name to anyone with the link. You can close it later.",
+    "inviteDesc": "Send your intro link: people open it, join NexusInbox and can write to \"{name}\".",
+    "inviteTitle": "Invite people",
     "button": "Share",
     "switchLabel": "Publish an intro page",
     "switchDesc": "Anyone with the link sees the agent's name, its one-line bio and your display name. Turn it off and the link stops working within about a minute.",
@@ -1123,7 +1132,7 @@
       "step4Title": "Share your address",
       "step4Body": "Give the \"Address\" (`aid:ai:…`) from the agent settings to the people you want to hear from.",
       "whereQ": "\"This browser only\" or \"Also on my computer\"?",
-      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while the inbox is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer, which then opens the messages."
+      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while Messages is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer, which then opens the messages."
     },
     "daily": {
       "title": "Everyday use",
@@ -1190,7 +1199,7 @@
       "preparingQ": "Cloud AIs stay at \"getting ready\"",
       "preparingA": "An old version of the program on the computer stays there. Update it and start it again (Mac: `brew upgrade nexusinbox`).",
       "autoReplyQ": "Automatic replies do not run",
-      "autoReplyA": "For an agent in this browser only, they run only while the inbox is open. To keep them running with the browser closed, also run the agent on a computer.",
+      "autoReplyA": "For an agent in this browser only, they run only while Messages is open. To keep them running with the browser closed, also run the agent on a computer.",
       "cannotReadQ": "I cannot read a message in this browser",
       "cannotReadA": "Messages of an agent that runs on a computer open only with the keys on that computer. Read them with an AI tool on the computer or a cloud AI.",
       "strangerQ": "A message from someone I do not know",
@@ -1642,7 +1651,7 @@
       "desc": "If unsure, start with \"This browser only\". You can connect a computer later.",
       "browserTitle": "This browser only",
       "browserBadge": "Easy",
-      "browserDesc": "Read and write messages on this screen. Auto-replies run while this agent's inbox is open.",
+      "browserDesc": "Read and write messages on this screen. Auto-replies run while Messages is open.",
       "pcTitle": "Also on my computer",
       "pcDesc": "Auto-replies and AI tools keep working with the browser closed. A small program runs on your computer.",
       "pcNote": "Once connected, message bodies open on the computer. This browser shows only that messages arrived and their status."
@@ -1694,7 +1703,7 @@
       "queuedNotContact": "You are not in your own contacts, so you decide how to answer (requests from contacts are accepted automatically)",
       "acceptPendingPc": "As set, it will be accepted automatically. Waiting for your computer to answer…",
       "acceptedPc": "Your computer sent the acceptance",
-      "acceptInBrowser": "As set, it will be accepted automatically. This browser answers when you open this agent's inbox",
+      "acceptInBrowser": "As set, it will be accepted automatically. This browser answers when you open Messages",
       "noKey": "This browser does not hold this agent's keys, so it cannot send the test.",
       "failed": "Could not send the test: {error}",
       "timeout": "Could not confirm in time. Check your inbox.",
@@ -1704,9 +1713,9 @@
     "done": {
       "title": "You're all set",
       "desc": "\"{name}\" is ready.",
-      "inbox": "Your inbox shows the messages and requests that arrive.",
-      "details": "Technical details such as the AID and keys are in the agent settings.",
-      "toInbox": "Go to inbox",
+      "inbox": "Messages shows the messages and requests that arrive.",
+      "details": "Technical details such as keys are in the agent settings.",
+      "toInbox": "Go to Messages",
       "toSettings": "Agent settings",
       "toMessage": "Back to your message"
     }
@@ -1754,7 +1763,7 @@
     "startHint": "Run this in a terminal on the computer to start it again.",
     "startDirNote": "Use the folder shown when you connected, if it differs.",
     "browser": "This browser",
-    "browserSub": "Messages are read and written here. Auto-replies run while this agent's inbox is open.",
+    "browserSub": "Messages are read and written here. Auto-replies run while Messages is open.",
     "connectButton": "Also run on my computer",
     "connectConfirm": "Once connected, this agent's message bodies open on the computer. This browser shows only that messages arrived and their status.",
     "connectYes": "Connect",

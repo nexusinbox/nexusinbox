@@ -16,6 +16,7 @@ import {
   useApplyAutoReplyPreset,
 } from "../_components/AgentSetup";
 import { AppShell } from "../_components/AppShell";
+import { InviteCard, useInviteName } from "../_components/InviteCard";
 import { type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
 import { createAgentWithLocalKeys } from "../../lib/agents/create-agent";
 import {
@@ -30,7 +31,7 @@ import {
   useCreateAgentMutation,
   useSendMessageMutation,
 } from "../../lib/api/hooks";
-import type { MessageIndexEntry } from "../../lib/api/types";
+import type { Agent, MessageIndexEntry } from "../../lib/api/types";
 import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
 import { useTranslation } from "../../lib/i18n";
 import { sendScheduleProposal } from "../../lib/protocol/send-propose";
@@ -142,7 +143,7 @@ function OnboardingFlow() {
         {step === "done" && agent ? (
           <DoneStep
             agent={agent}
-            onInbox={() => router.push(`/agent/${encodeURIComponent(agent.did)}`)}
+            onInbox={() => router.push(`/?agent=${encodeURIComponent(agent.did)}`)}
             onSettings={() => router.push("/settings/agents")}
             onReturn={returnTo ? () => router.push(returnTo) : undefined}
           />
@@ -501,9 +502,15 @@ function DoneStep({
   onReturn?: () => void;
 }) {
   const { t } = useTranslation();
+  const agentsQuery = useAgentsQuery();
+  const full = agentsQuery.data?.agents.find((a) => a.id === agent.id);
+  const [inviteLater, setInviteLater] = useState(false);
   return (
     <div className="panel" data-testid="first-run-done">
       <StepHeading title={t("firstRun.done.title")} desc={t("firstRun.done.desc", { name: agent.label })} />
+      {full && !inviteLater ? (
+        <DoneInvite agent={full} onLater={() => setInviteLater(true)} />
+      ) : null}
       <p className="item-sub" style={{ marginTop: 10 }}>
         {t("firstRun.done.inbox")}
       </p>
@@ -529,6 +536,19 @@ function DoneStep({
         ) : null}
       </Actions>
     </div>
+  );
+}
+
+function DoneInvite({ agent, onLater }: { agent: Agent; onLater: () => void }) {
+  const { t } = useTranslation();
+  const name = useInviteName(agent);
+  return (
+    <InviteCard
+      agent={agent}
+      title={t("share.inviteTitle")}
+      desc={t("share.inviteDesc", { name })}
+      onLater={onLater}
+    />
   );
 }
 
