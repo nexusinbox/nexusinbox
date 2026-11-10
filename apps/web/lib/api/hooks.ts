@@ -8,6 +8,7 @@ import { disconnectLLM } from "../llm/llmAuth";
 import { defaultApiClient } from "./client";
 import {
   AuditLogQuery,
+  KeyWrap,
   AuthVerifyRequest,
   BlockFromMessageRequest,
   CreateAgentCredentialRequest,
@@ -358,6 +359,9 @@ export function useSendMessageMutation() {
       contentType?: string;
       /** The content key wrapped for the sender (docs/35 §5). */
       senderEncryptedKey?: string;
+      /** The content key for each recipient device / own device (docs/38). */
+      encryptedKeys?: KeyWrap[];
+      senderEncryptedKeys?: KeyWrap[];
     }) => defaultApiClient.seedMessage(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -500,8 +504,15 @@ export function useReviewKeysQuery() {
 export function useSendAgentDraftMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; senderEncryptedKey?: string }) =>
-      defaultApiClient.sendAgentDraft(input.id, input.senderEncryptedKey),
+    mutationFn: ({
+      id,
+      ...wraps
+    }: {
+      id: string;
+      senderEncryptedKey?: string;
+      encryptedKeys?: KeyWrap[];
+      senderEncryptedKeys?: KeyWrap[];
+    }) => defaultApiClient.sendAgentDraft(id, wraps),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agentDrafts() });
       queryClient.invalidateQueries({ queryKey: ["messages"] });

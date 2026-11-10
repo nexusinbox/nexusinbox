@@ -12,6 +12,7 @@
  */
 
 import type {
+  DeviceKey,
   NexusInboxApiClient as NexusInboxApiClientType,
   MessageContentResponse,
   MessageIndexEntry,
@@ -20,6 +21,7 @@ import type {
 } from "@nexusinbox/core";
 import {
   NexusInboxApiClient,
+  contentKeyWrapsFor,
   exchangeAgentToken,
   exportRawPublicKeyBase64Url,
 } from "@nexusinbox/core";
@@ -349,20 +351,25 @@ async function decryptIncoming(
   body: string;
 }> {
   const content = await client.readMessage(messageId);
-  // A message this agent sent opens with its own copy of the content key
-  // (`sender_encrypted_key`, docs/35 §5) when it has one.
-  const encryptedKey =
-    content.sender_did === credential.did && content.sender_encrypted_key
-      ? content.sender_encrypted_key
-      : content.encrypted_key;
-  const { subject, body } = await decryptEnvelopeTextForRecipient({
-    encrypted_content: content.encrypted_content,
-    encrypted_key: encryptedKey,
-    nonce: content.nonce,
-    subject_encrypted: content.subject_encrypted ?? "",
-    recipientPrivateKey: credential.encryption.privateKey,
-  });
-  return { content, subject, body };
+  // This device's own wrap of the content key first (docs/38), then the
+  // single wraps older messages carry: the sender copy when this agent
+  // sent it (docs/35 §5), the recipient copy otherwise.
+  let lastError: unknown = new Error("no content key wrap for this device");
+  for (const encryptedKey of contentKeyWrapsFor(content, credential.did)) {
+    try {
+      const { subject, body } = await decryptEnvelopeTextForRecipient({
+        encrypted_content: content.encrypted_content,
+        encrypted_key: encryptedKey,
+        nonce: content.nonce,
+        subject_encrypted: content.subject_encrypted ?? "",
+        recipientPrivateKey: credential.encryption.privateKey,
+      });
+      return { content, subject, body };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 function prefixReSubject(subject: string): string {
@@ -381,7 +388,7 @@ function prefixReSubject(subject: string): string {
  * is required) — we validate at the boundary rather than widening the
  * tool-response type.
  */
-type SendableRecipient = { did: string; encryption_public_key?: string };
+type SendableRecipient = { did: string; encryption_public_key?: string; devices?: DeviceKey[] };
 
 async function sendViaClient(
   client: NexusInboxApiClientType,
@@ -399,10 +406,19 @@ async function sendViaClient(
       "recipient has no registered encryption_public_key — cannot build E2E envelope",
     );
   }
+  // This agent's other devices (the browser, other computers) get a copy
+  // of the content key too (docs/38). Best effort: without the list the
+  // message still goes out with the single sender copy.
+  const senderDevices = await client
+    .resolveRecipient(credential.did)
+    .then((me) => me.devices)
+    .catch(() => undefined);
   const response = await client.sendTextMessage({
     senderDid: credential.did,
     recipientDid: args.recipient.did,
     recipientEncryptionPublicKey: encryptionPublicKey,
+    recipientDevices: args.recipient.devices,
+    senderDevices,
     senderSigningPrivateKey: credential.signing.privateKey,
     // Keep a copy of the content key for ourselves (docs/35 §5).
     senderEncryptionPublicKey: await exportRawPublicKeyBase64Url(

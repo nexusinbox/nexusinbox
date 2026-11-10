@@ -21,6 +21,7 @@ import {
   type ScheduleCandidate,
 } from "@nexusinbox/core/a2a";
 import type { MessageContentResponse, MessageIndexEntry } from "../api/types";
+import { wrapsForDid } from "../crypto/wrap-select";
 import {
   evaluateAutoReplyPolicyClient,
   mergeDecisions,
@@ -224,9 +225,11 @@ export async function runAutoReplyExecutor(
         progress({ kind: "skipped", messageId: entry.id, reason: "not_a2a" });
         continue;
       }
+      // This device's own wrap when the sender made one (docs/38), else
+      // the single wrap older messages carry.
       const plaintext = await input.decrypt(
         content.encrypted_content,
-        content.encrypted_key,
+        wrapsForDid(content, input.viewerAgentDid)[0] ?? content.encrypted_key,
         input.viewerAgentDid,
       );
       const parsed = parseA2APayload(plaintext, A2A_CONTENT_TYPE);

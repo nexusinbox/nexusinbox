@@ -67,6 +67,12 @@ export type {
  */
 type AgentKeyHolder = "web_keystore" | "signer_daemon" | "unknown";
 
+/** One of an agent's devices that can read its messages (docs/38). */
+export type DeviceKey = { did: string; encryption_public_key: string };
+
+/** A message's content key wrapped for one device (docs/38). */
+export type KeyWrap = { did: string; key: string };
+
 export type RecipientResolution = {
   input?: string;
   aid: string;
@@ -82,6 +88,8 @@ export type RecipientResolution = {
    * docs/21_message_visibility_ux_for_mcp_modes.md §4.4.
    */
   key_holder?: AgentKeyHolder;
+  /** Every device of the agent that can read, newest first (docs/38). */
+  devices?: DeviceKey[];
 };
 
 export type MessageIndexEntry = {
@@ -118,6 +126,9 @@ export type MessageContentResponse = {
   thread_id?: string | null;
   /** The content key wrapped for the sender, when the sender kept one (docs/35 §5). */
   sender_encrypted_key?: string | null;
+  /** The content key for each recipient device / each sender device (docs/38). */
+  encrypted_keys?: KeyWrap[];
+  sender_encrypted_keys?: KeyWrap[];
 };
 
 export type SendMessageResponse = {
@@ -236,6 +247,9 @@ export type SendEnvelope = {
    * the message (docs/35 §5). Not covered by the signature.
    */
   sender_encrypted_key?: string;
+  /** The content key for each device of the recipient / of the sender (docs/38). */
+  encrypted_keys?: KeyWrap[];
+  sender_encrypted_keys?: KeyWrap[];
   nonce: string;
   signature?: string;
   metadata: {
@@ -257,6 +271,13 @@ export type SendTextMessageInput = {
    * so the sender can read what it sent.
    */
   senderEncryptionPublicKey?: string;
+  /**
+   * Every device of the recipient agent and of the sending agent
+   * (`devices` from resolving each). The content key is wrapped for each
+   * (docs/38), so all of them can read the message.
+   */
+  recipientDevices?: DeviceKey[];
+  senderDevices?: DeviceKey[];
   subject: string;
   body: string;
   priority?: "high" | "normal" | "low" | "background";
@@ -486,6 +507,48 @@ export async function wrapContentKeyForRecipient(
   return `x25519v1:${toBase64Url(ephemeralRaw)}:${toBase64Url(salt)}:${toBase64Url(iv)}:${toBase64Url(new Uint8Array(ciphertext))}`;
 }
 
+/** The content key wrapped for each device (docs/38). */
+export async function wrapContentKeyForDevices(
+  contentKey: string,
+  devices: DeviceKey[] | undefined,
+): Promise<KeyWrap[]> {
+  const out: KeyWrap[] = [];
+  const seen = new Set<string>();
+  for (const device of devices ?? []) {
+    if (seen.has(device.did) || !device.encryption_public_key) continue;
+    seen.add(device.did);
+    out.push({ did: device.did, key: await wrapContentKeyForRecipient(contentKey, device.encryption_public_key) });
+  }
+  return out;
+}
+
+/**
+ * The wraps a device holding `did`'s private key should try, best first:
+ * its own entries in the per-device lists (docs/38), then the single
+ * wraps older messages carry — the sender copy only when `did` sent it.
+ */
+export function contentKeyWrapsFor(content: MessageContentResponse, did: string): string[] {
+  const wraps: string[] = [];
+  for (const w of [...(content.encrypted_keys ?? []), ...(content.sender_encrypted_keys ?? [])]) {
+    if (w.did === did) wraps.push(w.key);
+  }
+  if (content.sender_did === did && content.sender_encrypted_key) wraps.push(content.sender_encrypted_key);
+  if (content.encrypted_key) wraps.push(content.encrypted_key);
+  return Array.from(new Set(wraps));
+}
+
+async function deviceWrapFields(
+  contentKey: string,
+  input: Pick<SendTextMessageInput, "recipientDevices" | "senderDevices">,
+): Promise<Pick<SendEnvelope, "encrypted_keys" | "sender_encrypted_keys">> {
+  const encryptedKeys = await wrapContentKeyForDevices(contentKey, input.recipientDevices);
+  const senderEncryptedKeys = await wrapContentKeyForDevices(contentKey, input.senderDevices);
+  return {
+    ...(encryptedKeys.length ? { encrypted_keys: encryptedKeys } : {}),
+    ...(senderEncryptedKeys.length ? { sender_encrypted_keys: senderEncryptedKeys } : {}),
+  };
+}
+
 export async function signEnvelopePayload(params: {
   signingPrivateKey: CryptoKey;
   senderDid: string;
@@ -537,6 +600,7 @@ export async function buildEncryptedTextEnvelope(input: SendTextMessageInput): P
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
     ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
+    ...(await deviceWrapFields(contentKey, input)),
     nonce: encryptedBody.iv,
     signature,
     metadata: {
@@ -627,6 +691,7 @@ export async function buildA2AEnvelope(input: SendA2AMessageInput): Promise<Send
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
     ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
+    ...(await deviceWrapFields(contentKey, input)),
     nonce: encryptedBody.iv,
     signature,
     metadata: {

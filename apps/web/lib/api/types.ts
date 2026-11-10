@@ -147,6 +147,12 @@ export type CreateAgentCredentialRequest = {
   pairing?: boolean;
 };
 
+/** One of an agent's devices that can read its messages (docs/38). */
+export type DeviceKey = { did: string; encryption_public_key: string };
+
+/** A message's content key wrapped for one device (docs/38). */
+export type KeyWrap = { did: string; key: string };
+
 export type RecipientResolutionResponse = {
   input: string;
   aid: string;
@@ -154,6 +160,8 @@ export type RecipientResolutionResponse = {
   label: string | null;
   signing_public_key: string;
   encryption_public_key: string;
+  /** Every device of the agent that can read, newest first (docs/38). */
+  devices?: DeviceKey[];
   /**
    * Aggregate mode over the recipient agent's active credentials.
    * Optional because older API builds don't return it — absence
@@ -287,6 +295,9 @@ export type MessageContentResponse = {
   // The content key wrapped for the sender's own encryption key, when the
   // sender kept one, so the sender can read what they sent (docs/35 §5).
   sender_encrypted_key?: string | null;
+  // The content key for each recipient device / each sender device (docs/38).
+  encrypted_keys?: KeyWrap[];
+  sender_encrypted_keys?: KeyWrap[];
 };
 
 // --- Attachment upload types (docs/17_attachment_upload_r2_spec.md) -------

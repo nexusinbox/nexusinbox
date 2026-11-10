@@ -5,13 +5,20 @@
 import type { MessageContentResponse, MessageIndexEntry } from "../api/types";
 import { decryptEnvelopeTextWithState, ENCRYPTED_PLACEHOLDER } from "../crypto/envelope";
 import { hasRecipientPrivateKey } from "../crypto/recipient-keyring";
+import { wrapsForDid } from "../crypto/wrap-select";
 
 /** A wrapped content key and the DID whose private key opens it. */
 export type ViewerKey = { encryptedKey: string; did: string };
 
-/** The DIDs whose private keys could open this message for the viewer. */
+/**
+ * The DIDs whose private keys could open this message for the viewer: the
+ * addressed device, and any device of the viewer's own agent, since each
+ * may have its own wrap (docs/38).
+ */
 export function candidateDids(entry: MessageIndexEntry, mine: boolean, ownDids: string[]): string[] {
-  const dids = mine ? [entry.sender_did, ...ownDids, entry.recipient_did] : [entry.recipient_did];
+  const dids = mine
+    ? [entry.sender_did, ...ownDids, entry.recipient_did]
+    : [entry.recipient_did, ...ownDids];
   return Array.from(new Set(dids.filter(Boolean)));
 }
 
@@ -22,6 +29,10 @@ function viewerKeys(
   ownDids: string[],
 ): ViewerKey[] {
   const keys: ViewerKey[] = [];
+  // A wrap made for one of this agent's devices (docs/38), best first.
+  for (const did of candidateDids(entry, mine, ownDids)) {
+    for (const encryptedKey of wrapsForDid(content, did)) keys.push({ encryptedKey, did });
+  }
   if (mine && content.sender_encrypted_key) {
     for (const did of Array.from(new Set([entry.sender_did, ...ownDids]))) {
       keys.push({ encryptedKey: content.sender_encrypted_key, did });

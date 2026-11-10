@@ -398,6 +398,7 @@ function TestStep({
           signingPrivateKey,
           recipientDid: resolved.did,
           recipientEncryptionKey: resolved.encryption_public_key,
+          recipientDevices: resolved.devices,
           subject: title,
           body: t("firstRun.test.body"),
           payload: {

@@ -20,6 +20,7 @@ import {
   findThisBrowsersReviewKey,
   forgetReviewKey,
   openDraft,
+  draftDeviceWraps,
   senderCopyForDraft,
   type OpenedDraft,
 } from "../../lib/crypto/review-key";
@@ -91,7 +92,8 @@ export function AgentDrafts() {
         opened[draft.id],
         agentsQuery.data?.agents ?? [],
       );
-      await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey });
+      const wraps = await draftDeviceWraps(draft, opened[draft.id]);
+      await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey, ...wraps });
       setStatus(t("agentDrafts.sent"));
     } catch {
       setStatus(t("agentDrafts.sendFailed"));

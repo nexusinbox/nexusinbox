@@ -118,6 +118,8 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
                   contentType: payload.contentType,
                   autoReplyOrigin: payload.autoReplyOrigin,
                   senderEncryptedKey: payload.senderEncryptedKey,
+                  encryptedKeys: payload.encryptedKeys,
+                  senderEncryptedKeys: payload.senderEncryptedKeys,
                 }),
             }),
           decrypt: (ciphertext, encryptedKey, recipientDid) =>

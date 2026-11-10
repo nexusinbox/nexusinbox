@@ -23,6 +23,7 @@ import {
   wrapContentKeyForRecipient,
   wrapContentKeyForSender,
 } from "../../lib/crypto/keywrap";
+import { agentDevices, receivedWrap, wrapContentKeyForDevices } from "../../lib/crypto/device-wraps";
 import {
   encryptAttachment,
   generateAttachmentKey,
@@ -145,6 +146,11 @@ function ComposePageInner() {
   );
 
   const apiAgents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
+  // Every DID of the person's own agents: a received message may carry a
+  // wrap for any of them (docs/38). A ref so the decrypt effects below do
+  // not re-run when the agent list refreshes.
+  const ownDidsRef = useRef<string[]>([]);
+  ownDidsRef.current = apiAgents.flatMap((a) => [a.did, ...(a.dids ?? [])]);
   const contacts = useMemo(
     () => contactsQuery.data?.contacts ?? [],
     [contactsQuery.data],
@@ -211,10 +217,12 @@ function ComposePageInner() {
       }
 
       if (data.subject_encrypted) {
+        // This browser's own wrap when the sender made one (docs/38).
+        const wrap = await receivedWrap(data, ownDidsRef.current);
         const decrypted = await decryptEnvelopeText(
           data.subject_encrypted,
-          data.encrypted_key,
-          originalRecipient,
+          wrap.encryptedKey,
+          wrap.did ?? originalRecipient,
         );
         if (cancelled) return;
         // Fallback to "Re: " if decryption failed (e.g. missing key).
@@ -255,10 +263,11 @@ function ComposePageInner() {
       setAiDraftStatus("generating");
       setAiDraftError(null);
 
+      const wrap = await receivedWrap(data, ownDidsRef.current);
       const plaintext = await decryptEnvelopeText(
         data.encrypted_content,
-        data.encrypted_key,
-        data.recipient_did,
+        wrap.encryptedKey,
+        wrap.did,
       );
       const isReadable =
         plaintext && plaintext !== ENCRYPTED_PLACEHOLDER ? plaintext : "";
@@ -266,8 +275,8 @@ function ComposePageInner() {
       if (data.subject_encrypted) {
         const decryptedSubject = await decryptEnvelopeText(
           data.subject_encrypted,
-          data.encrypted_key,
-          data.recipient_did,
+          wrap.encryptedKey,
+          wrap.did,
         );
         if (decryptedSubject && decryptedSubject !== ENCRYPTED_PLACEHOLDER) {
           subjectText = decryptedSubject;
@@ -560,6 +569,11 @@ function ComposePageInner() {
       const encryptedKey = wrapped.wrappedKey;
       // The sender's own copy, so this message can be read back (docs/35 §5).
       const senderEncryptedKey = await wrapContentKeyForSender(contentKey, senderEncryptionKey);
+      // Every device of both agents can read it (docs/38).
+      const recipientDevices = resolvedRecipient.devices ?? [];
+      const senderDevices = (await agentDevices(senderDid)) ?? [];
+      const encryptedKeys = await wrapContentKeyForDevices(contentKey, recipientDevices);
+      const senderEncryptedKeys = await wrapContentKeyForDevices(contentKey, senderDevices);
 
       // Attachment upload pipeline (E2E per docs/17):
       //   encrypt locally → presigned PUT to R2 → complete → build encrypted
@@ -616,6 +630,14 @@ function ComposePageInner() {
             senderEncryptionKey,
           );
 
+          // ...and for every other device of both agents (docs/38).
+          const deviceAttachmentWraps = await wrapContentKeyForDevices(
+            attachmentKeyStr,
+            [...recipientDevices, ...senderDevices].filter(
+              (d) => d.did !== recipientAddress && d.did !== senderDid,
+            ),
+          );
+
           const metadataPlain: AttachmentMetadataPlain = {
             filename: att.name,
             mime: att.mime,
@@ -625,6 +647,7 @@ function ComposePageInner() {
             attachment_key_wraps: [
               { recipient_did: recipientAddress, wrapped_key: recipientWrap.wrappedKey },
               { recipient_did: senderDid, wrapped_key: senderWrap.wrappedKey },
+              ...deviceAttachmentWraps.map((w) => ({ recipient_did: w.did, wrapped_key: w.key })),
             ],
             sha256_plaintext: sha256Plain,
           };
@@ -691,6 +714,8 @@ function ComposePageInner() {
         threadId,
         attachments: outboundAttachments,
         senderEncryptedKey,
+        encryptedKeys,
+        senderEncryptedKeys,
       });
       setStatus({ kind: "success", message: t("compose.statusSent") });
       // Only wipe the body/attachments so the user can tweak &

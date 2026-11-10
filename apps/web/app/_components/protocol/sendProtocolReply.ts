@@ -38,6 +38,8 @@ import {
 } from "../../../lib/crypto/keywrap";
 import { signEnvelopePayload } from "../../../lib/crypto/signature";
 import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
+import { deviceWraps } from "../../../lib/crypto/device-wraps";
+import type { KeyWrap } from "../../../lib/api/types";
 import {
   buildReplyPayload,
   type A2ARespondPayload,
@@ -55,6 +57,8 @@ type SendMessageFn = (payload: {
   contentType?: string;
   autoReplyOrigin?: string;
   senderEncryptedKey?: string;
+  encryptedKeys?: KeyWrap[];
+  senderEncryptedKeys?: KeyWrap[];
 }) => Promise<unknown>;
 
 export type SendProtocolReplyInput = {
@@ -151,6 +155,12 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
     contentKey,
     input.senderEncryptionKey,
   );
+  // Every device of both agents can read the reply (docs/38).
+  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
+    contentKey,
+    resolved?.devices,
+    input.viewerAgentDid,
+  );
   const signature = await signEnvelopePayload({
     signingPrivateKey,
     senderDid: input.viewerAgentDid,
@@ -173,6 +183,8 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
     contentType: A2A_CONTENT_TYPE,
     autoReplyOrigin: input.autoReplyOrigin,
     senderEncryptedKey,
+    encryptedKeys,
+    senderEncryptedKeys,
   });
 }
 

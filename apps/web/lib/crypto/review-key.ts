@@ -8,11 +8,12 @@
 // can tell which server-side review key is this browser's.
 
 import { defaultApiClient } from "../api/client";
-import type { Agent, AgentDraft, ReviewKey } from "../api/types";
+import type { Agent, AgentDraft, KeyWrap, ReviewKey } from "../api/types";
 import { decryptEnvelopeTextWithContentKey } from "./envelope";
 import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
 import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForSender } from "./keywrap";
 import { generateX25519KeyPairMaterial } from "./recipient-keyring";
+import { agentDevices, deviceWraps } from "./device-wraps";
 
 const PRIVATE_KEY_ID = "nexusinbox.review-key.v1";
 const PUBLIC_KEY_STORAGE = "nexusinbox.review-key.pub.v1";
@@ -120,6 +121,19 @@ export async function openDraft(
  * person can read the sent message later (docs/35 §5). Undefined when the
  * draft is not open here or the agent has no encryption key.
  */
+/**
+ * The approved draft's content key for every device of the recipient
+ * agent and of the sending agent (docs/38). Empty lists when the draft is
+ * not open here.
+ */
+export async function draftDeviceWraps(
+  draft: AgentDraft,
+  opened: OpenedDraft | null | undefined,
+): Promise<{ encryptedKeys: KeyWrap[]; senderEncryptedKeys: KeyWrap[] }> {
+  if (!opened) return { encryptedKeys: [], senderEncryptedKeys: [] };
+  return deviceWraps(opened.contentKey, await agentDevices(draft.recipient_did), draft.sender_did);
+}
+
 export async function senderCopyForDraft(
   draft: AgentDraft,
   opened: OpenedDraft | null | undefined,

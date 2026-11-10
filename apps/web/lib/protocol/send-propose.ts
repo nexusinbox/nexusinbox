@@ -13,6 +13,8 @@ import {
 import { encryptEnvelopeText, generateContentKey } from "../crypto/envelope";
 import { wrapContentKeyForRecipient, wrapContentKeyForSender } from "../crypto/keywrap";
 import { signEnvelopePayload } from "../crypto/signature";
+import { deviceWraps } from "../crypto/device-wraps";
+import type { DeviceKey, KeyWrap } from "../api/types";
 
 export type SendEncryptedMessage = (payload: {
   senderDid: string;
@@ -25,6 +27,8 @@ export type SendEncryptedMessage = (payload: {
   threadId: string | null;
   contentType: string;
   senderEncryptedKey?: string;
+  encryptedKeys?: KeyWrap[];
+  senderEncryptedKeys?: KeyWrap[];
 }) => Promise<{ message_id: string }>;
 
 export async function sendScheduleProposal(
@@ -34,6 +38,8 @@ export async function sendScheduleProposal(
     /** The recipient as resolved by the server, and its receiving key. */
     recipientDid: string;
     recipientEncryptionKey: string;
+    /** Every device of the recipient agent (`devices` from resolving it, docs/38). */
+    recipientDevices?: DeviceKey[];
     /** The sender's own encryption key, so it can read the message later (docs/35 §5). */
     senderEncryptionKey?: string;
     subject: string;
@@ -62,6 +68,12 @@ export async function sendScheduleProposal(
   const encBody = await encryptEnvelopeText(JSON.stringify(a2aPayload), { contentKey });
   const wrapped = await wrapContentKeyForRecipient(contentKey, input.recipientEncryptionKey);
   const senderEncryptedKey = await wrapContentKeyForSender(contentKey, input.senderEncryptionKey);
+  // Every device of both agents can read it (docs/38).
+  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
+    contentKey,
+    input.recipientDevices,
+    input.senderDid,
+  );
   const signature = await signEnvelopePayload({
     signingPrivateKey: input.signingPrivateKey,
     senderDid: input.senderDid,
@@ -85,6 +97,8 @@ export async function sendScheduleProposal(
     threadId: null,
     contentType: A2A_CONTENT_TYPE,
     senderEncryptedKey,
+    encryptedKeys,
+    senderEncryptedKeys,
   });
   return { messageId: sent.message_id, proposeId: protocolBlock.id };
 }

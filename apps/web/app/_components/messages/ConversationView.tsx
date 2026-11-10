@@ -48,6 +48,7 @@ import {
 import {
   findThisBrowsersReviewKey,
   openDraft,
+  draftDeviceWraps,
   senderCopyForDraft,
   type OpenedDraft,
 } from "../../../lib/crypto/review-key";
@@ -62,6 +63,7 @@ import {
   type Conversation,
 } from "../../../lib/inbox/conversations";
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
+import { deviceWraps } from "../../../lib/crypto/device-wraps";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
 
@@ -646,7 +648,8 @@ function ConversationDrafts({
     setStatus("");
     try {
       const senderEncryptedKey = await senderCopyForDraft(draft, opened[draft.id], agents);
-      await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey });
+      const wraps = await draftDeviceWraps(draft, opened[draft.id]);
+      await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey, ...wraps });
     } catch {
       setStatus(t("agentDrafts.sendFailed"));
     }
@@ -792,6 +795,12 @@ function Composer({
       const encryptedBody = await encryptEnvelopeText(body, { contentKey });
       const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncryptionKey);
       const senderEncryptedKey = await wrapContentKeyForSender(contentKey, ownAgent?.encryption_key);
+      // Every device of both agents can read it (docs/38).
+      const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
+        contentKey,
+        resolved.devices,
+        senderDid,
+      );
       const signature = await signEnvelopePayload({
         signingPrivateKey,
         senderDid,
@@ -811,6 +820,8 @@ function Composer({
         signature,
         threadId,
         senderEncryptedKey,
+        encryptedKeys,
+        senderEncryptedKeys,
       });
       setText("");
     } catch {

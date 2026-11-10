@@ -21,6 +21,7 @@ import {
   AgentCredentialsResponse,
   CreateAgentCredentialRequest,
   RecipientResolutionResponse,
+  KeyWrap,
   AgentAuthTokenResponse,
   AgentAuthRefreshRequest,
   UpdateAgentRequest,
@@ -434,6 +435,9 @@ export class NexusInboxApiClient {
      * sender can read the message later (docs/35 §5). Not signed.
      */
     senderEncryptedKey?: string;
+    /** The content key for each recipient device / own device (docs/38). */
+    encryptedKeys?: KeyWrap[];
+    senderEncryptedKeys?: KeyWrap[];
   }) {
     const attachments = params.attachments ?? [];
     const metadata: Record<string, unknown> = {
@@ -456,6 +460,12 @@ export class NexusInboxApiClient {
     };
     if (params.senderEncryptedKey) {
       envelope.sender_encrypted_key = params.senderEncryptedKey;
+    }
+    if (params.encryptedKeys?.length) {
+      envelope.encrypted_keys = params.encryptedKeys;
+    }
+    if (params.senderEncryptedKeys?.length) {
+      envelope.sender_encrypted_keys = params.senderEncryptedKeys;
     }
     const body: Record<string, unknown> = {
       sender_did: params.senderDid,
@@ -639,20 +649,27 @@ export class NexusInboxApiClient {
   }
 
   /**
-   * `senderEncryptedKey` is the draft's content key wrapped for the sending
-   * agent, so the agent's owner can read the sent message (docs/35 §5).
+   * The draft's content key wrapped for the sending agent, so the agent's
+   * owner can read the sent message (docs/35 §5), and for every device of
+   * both agents (docs/38). The reviewing browser opened the draft, so it
+   * holds the content key.
    */
   async sendAgentDraft(
     id: string,
-    senderEncryptedKey?: string,
+    wraps: {
+      senderEncryptedKey?: string;
+      encryptedKeys?: KeyWrap[];
+      senderEncryptedKeys?: KeyWrap[];
+    } = {},
   ): Promise<{ message_id: string; status: string }> {
+    const body: Record<string, unknown> = {};
+    if (wraps.senderEncryptedKey) body.sender_encrypted_key = wraps.senderEncryptedKey;
+    if (wraps.encryptedKeys?.length) body.encrypted_keys = wraps.encryptedKeys;
+    if (wraps.senderEncryptedKeys?.length) body.sender_encrypted_keys = wraps.senderEncryptedKeys;
     return this.request<{ message_id: string; status: string }>(
       "/agent-drafts/" + encodeURIComponent(id) + "/send",
-      senderEncryptedKey
-        ? {
-            method: "POST",
-            body: JSON.stringify({ sender_encrypted_key: senderEncryptedKey }),
-          }
+      Object.keys(body).length > 0
+        ? { method: "POST", body: JSON.stringify(body) }
         : { method: "POST" },
     );
   }
