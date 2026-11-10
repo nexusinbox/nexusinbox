@@ -25,8 +25,8 @@ const AUTHORIZE_PARAMS = [
 const card: React.CSSProperties = {
   maxWidth: 480,
   margin: "48px auto",
-  background: "var(--surface, #fff)",
-  border: "1px solid var(--line, #e5e7eb)",
+  background: "var(--surface)",
+  border: "1px solid var(--line)",
   borderRadius: 16,
   padding: "22px 24px",
 };
@@ -35,7 +35,7 @@ const permRow: React.CSSProperties = {
   display: "flex",
   gap: 8,
   padding: "7px 0",
-  borderTop: "1px solid var(--line, #e5e7eb)",
+  borderTop: "1px solid var(--line)",
   fontSize: 14,
 };
 

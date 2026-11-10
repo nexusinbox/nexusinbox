@@ -344,7 +344,7 @@ function GoogleCalendarCard() {
           )}
           {error ? (
             <span
-              style={{ color: "#d93025", fontSize: 12 }}
+              style={{ color: "var(--danger)", fontSize: 12 }}
               data-testid="integrations-gcal-error"
             >
               {error}
@@ -509,7 +509,7 @@ function AIAssistantCard() {
               </button>
             ) : null}
             {error ? (
-              <span style={{ color: "#d93025", fontSize: 12 }} data-testid="integrations-llm-error">
+              <span style={{ color: "var(--danger)", fontSize: 12 }} data-testid="integrations-llm-error">
                 {error}
               </span>
             ) : null}

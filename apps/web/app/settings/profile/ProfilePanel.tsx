@@ -212,7 +212,7 @@ export function ProfilePanel() {
       <section className="settings-card" data-testid="profile-delete">
         <div className="settings-card-header">
           <div className="settings-card-heading">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d93025" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ color: "var(--danger)" }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
               <path d="M10 11v6M14 11v6" />
@@ -244,7 +244,7 @@ export function ProfilePanel() {
             <button
               type="button"
               className="btn"
-              style={{ color: "#d93025", borderColor: "#d93025" }}
+              style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
               disabled={
                 deleteAccount.isPending ||
                 deleteConfirm.trim() !== t("profile.deleteConfirmWord")

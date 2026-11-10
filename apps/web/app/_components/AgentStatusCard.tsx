@@ -46,7 +46,7 @@ const REFRESH_MS = 30_000;
 // While the computer gets ready for cloud AIs it reports every 5 s.
 const PREPARING_REFRESH_MS = 5_000;
 
-const DOT_COLORS = { ok: "#16a34a", warn: "#f59e0b", off: "#9ca3af" } as const;
+const DOT_COLORS = { ok: "var(--ok)", warn: "var(--warn)", off: "var(--text-muted)" } as const;
 
 function Dot({ tone }: { tone: keyof typeof DOT_COLORS }) {
   return (

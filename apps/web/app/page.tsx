@@ -10,6 +10,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } fr
 import { AppShell } from "./_components/AppShell";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
+import { InviteCard, useInviteName } from "./_components/InviteCard";
 import {
   Avatar,
   ConversationView,
@@ -30,7 +31,7 @@ import {
   useContactsQuery,
   useMessagesQuery,
 } from "../lib/api/hooks";
-import type { MessageContentResponse } from "../lib/api/types";
+import type { Agent, MessageContentResponse } from "../lib/api/types";
 import { hasRecipientPrivateKey } from "../lib/crypto/recipient-keyring";
 import {
   groupConversations,
@@ -114,7 +115,7 @@ function WelcomeNoAgents({
       <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
         👋 {t("inbox.welcomeTitle")}
       </h2>
-      <p style={{ margin: 0, color: "var(--text-muted, #5f6368)", lineHeight: 1.6 }}>
+      <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>
         {t("inbox.welcomeDesc")}
       </p>
       <div
@@ -128,7 +129,7 @@ function WelcomeNoAgents({
       >
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep1Title")}</p>
-          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted, #5f6368)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: 14 }}>
             {t("inbox.welcomeStep1Desc")}
           </p>
           <button
@@ -142,13 +143,13 @@ function WelcomeNoAgents({
         </div>
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep2Title")}</p>
-          <p style={{ margin: "4px 0 0 0", color: "var(--text-muted, #5f6368)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 0 0", color: "var(--text-muted)", fontSize: 14 }}>
             {t("inbox.welcomeStep2Desc")}
           </p>
         </div>
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep3Title")}</p>
-          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted, #5f6368)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: 14 }}>
             {t("inbox.welcomeStep3Desc")}
           </p>
           <button
@@ -167,85 +168,44 @@ function WelcomeNoAgents({
 
 /**
  * Empty-inbox state when the user has at least one agent but no
- * messages yet. Surfaces their first AID for copy-to-clipboard +
- * offers a "send yourself a test" shortcut so the inbox feels
- * inhabited after ~30 seconds rather than staying empty until a
- * third party actually sends them something.
+ * messages yet: invite people with the agent's intro link (docs/37),
+ * or try it on yourself in a conversation with your own agent.
  */
 function WelcomeNoMessages({
-  aid,
+  agent,
   t,
   onSelfSend,
   onManageAgents,
 }: {
-  aid: string;
-  t: (key: string) => string;
+  agent: Agent;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   onSelfSend: () => void;
   onManageAgents: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(aid);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard permission denied — keep the button clickable so
-      // the user can select + manual-copy from the input instead.
-    }
-  }
+  const name = useInviteName(agent);
   return (
     <InboxWelcomeFrame>
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
         📨 {t("inbox.noMessagesTitle")}
       </h2>
-      <p style={{ margin: 0, color: "var(--text-muted, #5f6368)", lineHeight: 1.6 }}>
+      <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>
         {t("inbox.noMessagesDesc")}
       </p>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          padding: "8px 12px",
-          borderRadius: 8,
-          border: "1px solid var(--border, rgba(128,128,128,0.28))",
-          background: "rgba(66, 133, 244, 0.04)",
-        }}
-      >
-        <code
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontFamily: "ui-monospace, monospace",
-            fontSize: 13,
-            textAlign: "left",
-          }}
-          title={aid}
-        >
-          {aid}
-        </code>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => void copy()}
-          data-testid="welcome-copy-aid"
-          style={{ flexShrink: 0 }}
-        >
-          {copied ? t("inbox.noMessagesCopied") : t("inbox.noMessagesCopyAid")}
-        </button>
+      <div style={{ textAlign: "left" }}>
+        <InviteCard
+          agent={agent}
+          title={t("share.inviteTitle")}
+          desc={t("share.inviteDesc", { name })}
+        />
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
         <button
-          className="btn primary"
+          className="btn"
           type="button"
           onClick={onSelfSend}
           data-testid="welcome-self-send"
         >
-          {t("inbox.noMessagesSelfSend")} →
+          {t("inbox.noMessagesSelfSend")}
         </button>
         <button
           className="btn"
@@ -606,9 +566,13 @@ function MessagesPageInner() {
       ) : showWelcomeNoMessages && firstAgentAid ? (
         // Agents set up, but no messages yet → share the address, or test.
         <WelcomeNoMessages
-          aid={firstAgentAid}
+          agent={agentList[0]}
           t={t}
-          onSelfSend={() => router.push(`/compose?to=${encodeURIComponent(firstAgentAid)}`)}
+          onSelfSend={() =>
+            router.push(
+              `/?with=${encodeURIComponent(firstAgentAid)}&as=${encodeURIComponent(agentList[0].did)}`,
+            )
+          }
           onManageAgents={() => router.push("/settings/agents")}
         />
       ) : (

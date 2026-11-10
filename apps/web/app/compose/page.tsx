@@ -840,7 +840,7 @@ function ComposePageInner() {
                   <div
                     data-testid="compose-recipient-picker"
                     style={{
-                      border: "1px solid var(--line, #e5e7eb)",
+                      border: "1px solid var(--line)",
                       borderRadius: 10,
                       marginTop: 6,
                       maxHeight: 220,
@@ -898,7 +898,7 @@ function ComposePageInner() {
                     lineHeight: 1.45,
                     background: "rgba(66, 133, 244, 0.08)",
                     border: "1px solid rgba(66, 133, 244, 0.28)",
-                    color: "#1a73e8",
+                    color: "var(--primary-text)",
                   }}
                 >
                   {t("compose.recipientModeDaemonIsolatedHint")}
@@ -910,7 +910,7 @@ function ComposePageInner() {
                   style={{
                     marginTop: 6,
                     fontSize: 12,
-                    color: "#188038",
+                    color: "var(--ok)",
                   }}
                 >
                   {t("compose.recipientModeStandardHint")}
@@ -1079,20 +1079,20 @@ function AIDraftBanner({
 
   let bg = "rgba(66, 133, 244, 0.08)";
   let border = "rgba(66, 133, 244, 0.28)";
-  let color = "#1a73e8";
+  let color = "var(--primary-text)";
   let text = "";
 
   if (status === "no_key") {
     bg = "rgba(251, 188, 5, 0.1)";
     border = "rgba(251, 188, 5, 0.4)";
-    color = "#b06000";
+    color = "var(--warn)";
     text = t("compose.aiDraftNoKey");
   } else if (status === "generating") {
     text = t("compose.aiDraftGenerating");
   } else if (status === "done") {
     bg = "rgba(15, 157, 88, 0.08)";
     border = "rgba(15, 157, 88, 0.3)";
-    color = "#0f9d58";
+    color = "var(--ok)";
     const toneLabel =
       currentTone && currentTone !== "default"
         ? t(`compose.aiDraftTone.${currentTone}`)
@@ -1103,7 +1103,7 @@ function AIDraftBanner({
   } else if (status === "error") {
     bg = "rgba(217, 48, 37, 0.08)";
     border = "rgba(217, 48, 37, 0.3)";
-    color = "#d93025";
+    color = "var(--danger)";
     const errorKey = error ? `compose.aiDraftError.${error}` : "compose.aiDraftError.api_error";
     text = t(errorKey);
   }
@@ -1206,10 +1206,10 @@ function AIDraftToolbar({
               borderRadius: 999,
               fontSize: 12,
               border: selected
-                ? "1px solid #1a73e8"
+                ? "1px solid var(--primary)"
                 : "1px solid var(--line-strong)",
               background: selected ? "rgba(26,115,232,0.08)" : "transparent",
-              color: selected ? "#1a73e8" : "var(--text)",
+              color: selected ? "var(--primary-text)" : "var(--text)",
               cursor: busy ? "not-allowed" : "pointer",
               fontWeight: selected ? 600 : 400,
             }}
@@ -1238,7 +1238,7 @@ function AIDraftToolbar({
       </button>
       {bodyEdited ? (
         <span
-          style={{ fontSize: 11, color: "#b06000" }}
+          style={{ fontSize: 11, color: "var(--warn)" }}
           data-testid="compose-ai-draft-toolbar-edited-hint"
         >
           {t("compose.aiDraftEditedHint")}

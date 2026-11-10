@@ -518,7 +518,7 @@ export function ConversationThread({ rootMessageId }: ConversationThreadProps) {
                   style={{
                     margin: "4px 0 8px 0",
                     fontSize: 12,
-                    color: blockStatus.kind === "success" ? "#188038" : "#c5221f",
+                    color: blockStatus.kind === "success" ? "var(--ok)" : "var(--danger)",
                   }}
                 >
                   {blockStatus.text}
@@ -1072,7 +1072,7 @@ function BridgedRestoreButton({
         <p
           className="item-sub"
           role="alert"
-          style={{ margin: 0, color: "#c5221f", fontSize: 12 }}
+          style={{ margin: 0, color: "var(--danger)", fontSize: 12 }}
         >
           {error}
         </p>

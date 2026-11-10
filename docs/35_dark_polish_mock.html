@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダークモードの仕上げ（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 6px; }
+  .lead, .note { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
+  .opt { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; }
+  .opt > header { padding: 10px 14px; font-weight: 700; font-size: 14px; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); }
+  .rec { font-size: 11px; font-weight: 700; color: #1d4ed8; background: #e8eeff; border-radius: 6px; padding: 1px 7px; }
+  /* App previews: the real dark / light tokens */
+  .dark { --bg: #15202b; --surface-alt: #1b2733; --line2: #2f3b47; --text: #f7f9f9; --text-muted: #8b98a5; --primary: #2f5bea; --on-primary: #fff; }
+  .light { --bg: #ffffff; --surface-alt: #f7f9f9; --line2: #eff3f4; --text: #0f1419; --text-muted: #536471; --primary: #2f5bea; --on-primary: #fff; }
+  .app { background: var(--bg); color: var(--text); padding: 16px; font-size: 14px; }
+  .app + .app { border-top: 1px solid var(--line); }
+  .chips { display: flex; gap: 6px; margin-bottom: 14px; }
+  .chip { border: 1px solid var(--line2); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; color: var(--text); background: transparent; }
+  .card { border: 1px solid var(--line2); border-radius: 16px; padding: 12px; max-width: 330px; }
+  .card .k { color: var(--text-muted); font-size: 12px; }
+  .slot { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--line2); border-radius: 10px; padding: 6px 6px 6px 10px; margin-top: 6px; font-size: 12px; font-weight: 700; }
+  .btn { border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; border: 1px solid var(--line2); color: var(--text); background: transparent; }
+  /* A: inverted (today) */
+  .A .chip.on, .A .btn.main { background: var(--text); color: var(--bg); border-color: var(--text); }
+  /* B: blue */
+  .B .chip.on, .B .btn.main { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+  table { border-collapse: collapse; width: 100%; background: #15202b; color: #f7f9f9; border-radius: 12px; overflow: hidden; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #2f3b47; }
+  th { color: #8b98a5; font-weight: 700; font-size: 12px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+  .bad { color: #f4677f; font-weight: 700; }
+  .good { color: #3ecf8e; font-weight: 700; }
+  ul { margin: 6px 0 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ダークモードの仕上げ（案）</h1>
+  <p class="lead">ダークで残っているのは「選んでいるボタンが白く浮く」ことと「決め打ちの色で文字が読みにくい」ことの 2 つ。下の見本は、アプリの実際の色で描いている。</p>
+
+  <h2>1. 選んでいる状態と主なボタン</h2>
+  <p class="note">メッセージと AI の操作履歴の絞り込み（「すべて」など）、依頼カードの「承諾」が対象。いまは文字の色で塗る（反転）ので、ダークでは白いかたまりになる。</p>
+  <div class="row">
+    <div class="opt">
+      <header>A. いまのまま（反転、X と同じ）</header>
+      <div class="app dark A">
+        <div class="chips"><span class="chip on">すべて</span><span class="chip">未読</span></div>
+        <div class="card"><div class="k">日程調整</div><b>テストの打ち合わせ</b>
+          <div class="slot">11/11 10:00 – 10:30 <span class="btn main">承諾</span></div>
+          <div class="slot">11/12 10:00 – 10:30 <span class="btn main">承諾</span></div>
+          <div style="margin-top:8px;display:flex;gap:6px"><span class="btn">辞退</span><span class="btn">代替案を出す</span></div></div>
+      </div>
+      <div class="app light A">
+        <div class="chips"><span class="chip on">すべて</span><span class="chip">未読</span></div>
+        <div class="card"><div class="k">日程調整</div><b>テストの打ち合わせ</b>
+          <div class="slot">11/11 10:00 – 10:30 <span class="btn main">承諾</span></div></div>
+      </div>
+    </div>
+    <div class="opt">
+      <header>B. 青にそろえる <span class="rec">推奨</span></header>
+      <div class="app dark B">
+        <div class="chips"><span class="chip on">すべて</span><span class="chip">未読</span></div>
+        <div class="card"><div class="k">日程調整</div><b>テストの打ち合わせ</b>
+          <div class="slot">11/11 10:00 – 10:30 <span class="btn main">承諾</span></div>
+          <div class="slot">11/12 10:00 – 10:30 <span class="btn main">承諾</span></div>
+          <div style="margin-top:8px;display:flex;gap:6px"><span class="btn">辞退</span><span class="btn">代替案を出す</span></div></div>
+      </div>
+      <div class="app light B">
+        <div class="chips"><span class="chip on">すべて</span><span class="chip">未読</span></div>
+        <div class="card"><div class="k">日程調整</div><b>テストの打ち合わせ</b>
+          <div class="slot">11/11 10:00 – 10:30 <span class="btn main">承諾</span></div></div>
+      </div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:10px">B の理由: 「新しい会話」「メッセージへ」「紹介リンクを作る」など、ほかの主な操作はすでに青。ライトでも黒から青に変わる。</p>
+
+  <h2>2. 文字の色（ダーク）</h2>
+  <p class="note">画面の中に決め打ちの色が約 50 か所残っている（エージェント設定、作成画面、日程の候補、エラー文など）。これを色の定義（ライトとダークで入れ替わるもの）に置き換える。数字は背景との明るさの差で、4.5 以上が読みやすさの目安。</p>
+  <table>
+    <tr><th>使い道</th><th>いま</th><th></th><th>案</th><th></th></tr>
+    <tr><td>成功・承諾</td><td><span class="sw" style="background:#188038"></span><span style="color:#188038">承諾 0</span></td><td class="bad">3.3</td><td><span class="sw" style="background:#3ecf8e"></span><span style="color:#3ecf8e">承諾 0</span></td><td class="good">8.3</td></tr>
+    <tr><td>注意・辞退</td><td><span class="sw" style="background:#b45309"></span><span style="color:#b45309">辞退 0</span></td><td class="bad">3.3</td><td><span class="sw" style="background:#e5a542"></span><span style="color:#e5a542">辞退 0</span></td><td class="good">7.7</td></tr>
+    <tr><td>エラー</td><td><span class="sw" style="background:#c5221f"></span><span style="color:#c5221f">保存できませんでした</span></td><td class="bad">2.8</td><td><span class="sw" style="background:#f4677f"></span><span style="color:#f4677f">保存できませんでした</span></td><td class="good">5.6</td></tr>
+    <tr><td>青い文字（リンク、「受信箱を開く」など）</td><td><span class="sw" style="background:#2f5bea"></span><span style="color:#2f5bea">受信箱を開く</span></td><td class="bad">3.0</td><td><span class="sw" style="background:#7c9cff"></span><span style="color:#7c9cff">受信箱を開く</span></td><td class="good">6.3</td></tr>
+  </table>
+  <ul class="note">
+    <li>青い文字だけは新しい色を足す（ダークでは明るい青 #7c9cff）。ボタンの塗りの青は変えない（白い文字が読めなくなるため）</li>
+    <li>ライトでは、ほぼ同じ色のまま（緑・橙・赤は定義済みの色に寄るだけ）</li>
+    <li>ヘルプの古いボタン（Google 風の青 #1a73e8）も、アプリの青にそろえる</li>
+  </ul>
+
+  <h2>3. 変えないもの</h2>
+  <ul class="note">
+    <li>ログイン、コンセプトページ、紹介ページ（もともと暗いデザイン）</li>
+    <li>相手の顔の色（6 色）。ダークでも読める</li>
+  </ul>
+</div>
+</body>
+</html>

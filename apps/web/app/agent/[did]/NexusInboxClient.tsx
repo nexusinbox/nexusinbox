@@ -546,7 +546,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                           })}
                           style={{
                             marginLeft: 6,
-                            color: "var(--text-muted, #5f6368)",
+                            color: "var(--text-muted)",
                             fontWeight: 400,
                             fontVariantNumeric: "tabular-nums",
                           }}
@@ -578,19 +578,19 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                             letterSpacing: 0.3,
                             whiteSpace: "nowrap",
                             background: "rgba(66, 133, 244, 0.14)",
-                            color: "#1a73e8",
+                            color: "var(--primary-text)",
                             border: "1px solid rgba(66, 133, 244, 0.28)",
                           }}
                         >
                           {t("inbox.unavailableOnThisDeviceBadge")}
                         </span>
-                        <span style={{ color: "var(--text-muted, #5f6368)" }}>
+                        <span style={{ color: "var(--text-muted)" }}>
                           {t("inbox.unavailableOnThisDeviceSubject")}
                         </span>
                       </p>
                       <p
                         className="thread-preview"
-                        style={{ color: "var(--text-muted, #5f6368)" }}
+                        style={{ color: "var(--text-muted)" }}
                       >
                         {t("inbox.unavailableOnThisDevicePreview")}
                       </p>
@@ -608,7 +608,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                             fontSize: 10,
                             fontWeight: 500,
                             letterSpacing: 0.2,
-                            color: "#0f9d58",
+                            color: "var(--ok)",
                           }}
                         >
                           {t("inbox.autoReply.sentAt", {
@@ -628,7 +628,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                             fontSize: 10,
                             fontWeight: 500,
                             letterSpacing: 0.2,
-                            color: "#b06000",
+                            color: "var(--warn)",
                           }}
                         >
                           {t("inbox.autoReply.incomplete")}
@@ -648,9 +648,9 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                             letterSpacing: 0.2,
                             color:
                               thread.autoReplyDecision === "auto_accept"
-                                ? "#0f9d58"
+                                ? "var(--ok)"
                                 : thread.autoReplyDecision === "auto_decline"
-                                  ? "#d93025"
+                                  ? "var(--danger)"
                                   : "var(--text-muted)",
                           }}
                         >

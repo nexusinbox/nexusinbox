@@ -91,7 +91,7 @@ function CredentialModeBadge({
   // shape either way without needing a theme-aware conditional.
   const daemonStyle: CSSProperties = {
     background: "rgba(66, 133, 244, 0.14)",
-    color: "#1a73e8",
+    color: "var(--primary-text)",
     border: "1px solid rgba(66, 133, 244, 0.28)",
   };
   const unknownStyle: CSSProperties = {
@@ -101,7 +101,7 @@ function CredentialModeBadge({
   };
   const standardStyle: CSSProperties = {
     background: "rgba(52, 168, 83, 0.14)",
-    color: "#188038",
+    color: "var(--ok)",
     border: "1px solid rgba(52, 168, 83, 0.28)",
   };
   const style = isDaemon ? daemonStyle : isUnknown ? unknownStyle : standardStyle;
@@ -148,13 +148,13 @@ function AgentModePanel({
     mode === "daemon_isolated"
       ? {
           background: "rgba(66, 133, 244, 0.14)",
-          color: "#1a73e8",
+          color: "var(--primary-text)",
           border: "1px solid rgba(66, 133, 244, 0.28)",
         }
       : mode === "standard"
         ? {
             background: "rgba(52, 168, 83, 0.14)",
-            color: "#188038",
+            color: "var(--ok)",
             border: "1px solid rgba(52, 168, 83, 0.28)",
           }
         : {
@@ -205,7 +205,7 @@ function AgentModePanel({
         style={{
           fontSize: 12,
           textDecoration: "underline",
-          color: "var(--primary, #1a73e8)",
+          color: "var(--primary-text)",
         }}
       >
         {t("agents.modeHelpLink")} →
@@ -438,7 +438,7 @@ function StatCell({
 }) {
   const color = (() => {
     if (tone === "ok") return "var(--ok)";
-    if (tone === "warn") return "#b45309";
+    if (tone === "warn") return "var(--warn)";
     if (tone === "muted") return "var(--text-muted)";
     return "var(--text)";
   })();
@@ -627,7 +627,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                               action === "auto_accept"
                                 ? "var(--ok)"
                                 : action === "auto_decline"
-                                  ? "#b45309"
+                                  ? "var(--warn)"
                                   : "var(--text)",
                           }}
                         >
@@ -687,7 +687,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
               marginTop: 10,
               fontSize: 12,
               textDecoration: "underline",
-              color: "var(--primary, #1a73e8)",
+              color: "var(--primary-text)",
             }}
           >
             {t("agents.autoReplyVisibilityViewAll")}
@@ -1027,7 +1027,7 @@ function BridgeTokenPanel({
             letterSpacing: 0.3,
             whiteSpace: "nowrap",
             background: "rgba(217, 119, 6, 0.14)",
-            color: "#b45309",
+            color: "var(--warn)",
             border: "1px solid rgba(217, 119, 6, 0.28)",
           }}
         >
@@ -1124,7 +1124,7 @@ function BridgeTokenPanel({
                 : t("agents.bridgePairBtn")}
             </button>
             {status.kind === "error" ? (
-              <span className="item-sub" style={{ fontSize: 12, color: "#c5221f" }}>
+              <span className="item-sub" style={{ fontSize: 12, color: "var(--danger)" }}>
                 {status.message}
               </span>
             ) : null}
@@ -1159,12 +1159,12 @@ function BridgeTokenPanel({
                 fontSize: 11,
                 color:
                   status.kind === "paired"
-                    ? "#188038"
+                    ? "var(--ok)"
                     : status.kind === "offline"
-                      ? "#b45309"
+                      ? "var(--warn)"
                       : status.kind === "error"
-                        ? "#c5221f"
-                        : "var(--text-muted, #5f6368)",
+                        ? "var(--danger)"
+                        : "var(--text-muted)",
               }}
             >
               {status.kind === "paired"
@@ -1225,7 +1225,7 @@ function BridgeTokenPanel({
                               padding: "1px 5px",
                               borderRadius: 999,
                               background: "rgba(52, 168, 83, 0.14)",
-                              color: "#188038",
+                              color: "var(--ok)",
                               border: "1px solid rgba(52, 168, 83, 0.28)",
                             }}
                           >
@@ -1262,8 +1262,8 @@ function BridgeTokenPanel({
                 color:
                   policy.bridged_decrypts_per_day_used >=
                   Math.max(1, Math.floor(policy.bridged_decrypts_per_day_max * 0.8))
-                    ? "#b45309"
-                    : "var(--text-muted, #5f6368)",
+                    ? "var(--warn)"
+                    : "var(--text-muted)",
               }}
               data-testid="bridge-rate-quota"
             >
@@ -1352,7 +1352,7 @@ function BridgeTokenPanel({
           marginTop: 8,
           display: "inline-block",
           textDecoration: "underline",
-          color: "var(--primary, #1a73e8)",
+          color: "var(--primary-text)",
         }}
       >
         {t("agents.bridgeHelpLink")} →
@@ -1949,7 +1949,7 @@ export default function AgentsSettingsPage() {
                                         style={{
                                           fontSize: 12,
                                           borderColor: "rgba(220, 38, 38, 0.4)",
-                                          color: "#dc2626",
+                                          color: "var(--danger)",
                                         }}
                                         disabled={revokeCredential.isPending}
                                         onClick={async () => {
@@ -2252,7 +2252,7 @@ export default function AgentsSettingsPage() {
                         disabled={emergencyShutdown.isPending}
                         style={{
                           borderColor: "rgba(220, 38, 38, 0.4)",
-                          color: "#dc2626",
+                          color: "var(--danger)",
                           fontWeight: 600,
                         }}
                         onClick={async () => {
@@ -2288,7 +2288,7 @@ export default function AgentsSettingsPage() {
                         disabled={deleteAgent.isPending}
                         style={{
                           borderColor: "rgba(220, 38, 38, 0.4)",
-                          color: "#dc2626",
+                          color: "var(--danger)",
                         }}
                       >
                         {deleteAgent.isPending ? t("agents.deleting") : t("agents.deleteBtn")}
