@@ -6,7 +6,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppShell } from "./_components/AppShell";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
@@ -40,6 +40,7 @@ import {
   type Conversation,
 } from "../lib/inbox/conversations";
 import { candidateDids, decryptMessageBody } from "../lib/inbox/decrypt-message";
+import { useTwoColumnResize } from "../lib/ui/useTwoColumnResize";
 
 // Bounded concurrency for the preview decrypt below. Picked 4 by hand:
 // the bottleneck in practice is the X25519 keystore unwrap, which is
@@ -286,6 +287,14 @@ function MessagesPageInner() {
     withParam ? "detail" : "list",
   );
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
+  // The list's width, dragged like the Agents screen; Messages and Archives
+  // share it.
+  const { threadWidth: listWidth, startResize } = useTwoColumnResize({
+    storageKey: "nexusinbox.messages.list_width.v1",
+    initialWidth: 380,
+    min: 280,
+    max: 640,
+  });
 
   // Received messages (by folder) and everything the person's agents sent;
   // sent messages live inside the conversations.
@@ -602,7 +611,10 @@ function MessagesPageInner() {
           onManageAgents={() => router.push("/settings/agents")}
         />
       ) : (
-        <section className={`dm-layout mobile-${mobileView}`}>
+        <section
+          className={`dm-layout mobile-${mobileView}`}
+          style={{ "--dm-list-width": `${listWidth}px` } as CSSProperties}
+        >
           <aside className="dm-list">
             <div className="dm-chips" role="tablist" aria-label={t("messages.chipsLabel")}>
               {chips.map((c) => (
@@ -693,6 +705,7 @@ function MessagesPageInner() {
             )}
           </aside>
 
+          <div className="mail-resizer" onMouseDown={startResize} />
           <div className="dm-pane">
             {active ? (
               <ConversationView
