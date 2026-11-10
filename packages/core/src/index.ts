@@ -251,6 +251,12 @@ export type SendTextMessageInput = {
   recipientDid: string;
   recipientEncryptionPublicKey: string;
   senderSigningPrivateKey: CryptoKey;
+  /**
+   * The sender's own X25519 public key (base64url). When set, the content
+   * key is also wrapped for the sender (`sender_encrypted_key`, docs/35 §5)
+   * so the sender can read what it sent.
+   */
+  senderEncryptionPublicKey?: string;
   subject: string;
   body: string;
   priority?: "high" | "normal" | "low" | "background";
@@ -523,9 +529,14 @@ export async function buildEncryptedTextEnvelope(input: SendTextMessageInput): P
     nonce: encryptedBody.iv,
   });
 
+  const senderEncryptedKey = input.senderEncryptionPublicKey
+    ? await wrapContentKeyForRecipient(contentKey, input.senderEncryptionPublicKey)
+    : undefined;
+
   return {
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
+    ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
     nonce: encryptedBody.iv,
     signature,
     metadata: {
@@ -608,9 +619,14 @@ export async function buildA2AEnvelope(input: SendA2AMessageInput): Promise<Send
     nonce: encryptedBody.iv,
   });
 
+  const senderEncryptedKey = input.senderEncryptionPublicKey
+    ? await wrapContentKeyForRecipient(contentKey, input.senderEncryptionPublicKey)
+    : undefined;
+
   return {
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
+    ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
     nonce: encryptedBody.iv,
     signature,
     metadata: {

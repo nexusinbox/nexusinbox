@@ -89,3 +89,5 @@ A・B・C のどれでも、CI で OS ごとの実行ファイルを作って Gi
 3. `brew upgrade nexusinbox` で入れ替わることを確かめる
 
 v0.2.0 (2026-11-09、公開 `7353fe8`): クラウドの AI (中継、docs/33 §12)。4 つの配布物のハッシュと来歴の証明を確かめ、tap を `c82186d` に上げ、運営者の Mac で `brew upgrade` → `brew test` が通った。入れた `nexusinbox` は中継の指定を渡し、`nexusinbox-gateway` に `--mcp-relay` がある
+
+v0.2.1 (2026-11-10、公開 `391ed2f`): パソコン側で送ったメッセージ (自動返信、ローカルの MCP) にも本人用の鍵の包みを付ける (docs/35 §5)。4 つの配布物のハッシュと来歴の証明を確かめ、tap を `fce689c` に上げ、運営者の Mac で `brew upgrade` → `brew test` が通った

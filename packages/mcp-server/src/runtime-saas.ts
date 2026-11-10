@@ -21,6 +21,7 @@ import type {
 import {
   NexusInboxApiClient,
   exchangeAgentToken,
+  exportRawPublicKeyBase64Url,
 } from "@nexusinbox/core";
 import {
   createAuditor,
@@ -348,9 +349,15 @@ async function decryptIncoming(
   body: string;
 }> {
   const content = await client.readMessage(messageId);
+  // A message this agent sent opens with its own copy of the content key
+  // (`sender_encrypted_key`, docs/35 §5) when it has one.
+  const encryptedKey =
+    content.sender_did === credential.did && content.sender_encrypted_key
+      ? content.sender_encrypted_key
+      : content.encrypted_key;
   const { subject, body } = await decryptEnvelopeTextForRecipient({
     encrypted_content: content.encrypted_content,
-    encrypted_key: content.encrypted_key,
+    encrypted_key: encryptedKey,
     nonce: content.nonce,
     subject_encrypted: content.subject_encrypted ?? "",
     recipientPrivateKey: credential.encryption.privateKey,
@@ -397,6 +404,10 @@ async function sendViaClient(
     recipientDid: args.recipient.did,
     recipientEncryptionPublicKey: encryptionPublicKey,
     senderSigningPrivateKey: credential.signing.privateKey,
+    // Keep a copy of the content key for ourselves (docs/35 §5).
+    senderEncryptionPublicKey: await exportRawPublicKeyBase64Url(
+      credential.encryption.publicKey,
+    ),
     subject: args.subject,
     body: args.body,
     threadId: args.threadId,
