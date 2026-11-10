@@ -24,13 +24,18 @@
   --danger: #d0193f;
   --ok: #00875a;
   --warn: #9a5b00;
+  --on-primary: #ffffff;
+  --danger-soft: #fce8e6;
+  --ok-soft: #e6f4ea;
+  --warn-soft: #fff7e6;
   --shadow-sm: 0 1px 3px rgba(15, 20, 25, 0.08);
   --shadow-md: 0 4px 16px rgba(15, 20, 25, 0.12);
 }
 
-/* Dark colours (docs/35 §2). Switched on with data-theme="dark" on <html>
-   once every screen reads only these tokens (docs/35 §4). */
+/* Dark colours (docs/35 §2). data-theme on <html> is set by
+   lib/ui/theme-boot.ts (device setting or the sidebar's choice). */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #15202b;
   --surface: #15202b;
   --surface-alt: #1b2733;
@@ -41,6 +46,13 @@
   --text: #f7f9f9;
   --text-muted: #8b98a5;
   --primary-soft: #1d2f5c;
+  --danger-soft: #3a1f2f;
+  --ok-soft: #113534;
+  --warn-soft: #302c22;
+  /* Lighter so text in these colours stays readable on the dark ground. */
+  --danger: #f4677f;
+  --ok: #3ecf8e;
+  --warn: #e5a542;
 }
 
 * {
@@ -55,11 +67,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #dadce0;
+  background: var(--line-strong);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bdc1c6;
+  background: color-mix(in srgb, var(--line-strong), var(--text-muted) 20%);
 }
 
 html, body {
@@ -151,7 +163,7 @@ button, input, textarea, select {
 
 .x-count {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-size: 12px;
   font-weight: 700;
   border-radius: 999px;
@@ -168,7 +180,7 @@ button, input, textarea, select {
   place-items: center;
   border-radius: 999px;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-size: var(--fs-lg);
   font-weight: 700;
 }
@@ -184,6 +196,35 @@ button, input, textarea, select {
   padding: 10px 4px 0;
   border-top: 1px solid var(--line);
 }
+.x-theme {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px 0;
+  font-size: var(--fs-xs);
+}
+.x-theme-label {
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.x-theme-opt {
+  font: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.x-theme-opt:hover {
+  background: var(--surface-hover);
+}
+.x-theme-opt.on {
+  color: var(--text);
+  border-color: var(--line-strong);
+  font-weight: 700;
+}
+
 .x-me-name {
   flex: 1;
   min-width: 0;
@@ -200,7 +241,7 @@ button, input, textarea, select {
   display: grid;
   place-items: center;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-weight: 700;
   border: 0;
   flex: none;
@@ -391,7 +432,7 @@ button, input, textarea, select {
     height: 56px;
     border-radius: 50%;
     background: var(--primary);
-    color: #fff;
+    color: var(--on-primary);
     box-shadow: 0 6px 18px rgba(47, 91, 234, 0.4);
     z-index: 900;
   }
@@ -758,7 +799,7 @@ button, input, textarea, select {
 .dm-msg.mine .dm-bubble {
   border-radius: 20px 20px 6px 20px;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
 }
 .dm-bubble.muted,
 .dm-msg.mine .dm-bubble.muted {
@@ -884,7 +925,7 @@ button, input, textarea, select {
 .dm-btn.accent {
   border-color: var(--primary);
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
 }
 .dm-btn:disabled {
   opacity: 0.5;
@@ -943,7 +984,7 @@ button, input, textarea, select {
   display: grid;
   place-items: center;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   cursor: pointer;
 }
 .dm-send:disabled {
@@ -1373,7 +1414,6 @@ button, input, textarea, select {
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
 }
-.ct-addr,
 .ct-note {
   color: var(--text-muted);
   font-size: var(--fs-xs);
@@ -1636,7 +1676,7 @@ button, input, textarea, select {
 .btn.primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
 }
 
 .btn.primary:hover {
@@ -1784,22 +1824,22 @@ button, input, textarea, select {
   display: flex;
   align-items: flex-start;
   padding: 10px 16px;
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid var(--line);
   cursor: pointer;
   gap: 12px;
   font-size: 0.88rem;
 }
 
 .thread-item:hover {
-  box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  box-shadow: inset 1px 0 0 var(--line-strong), inset -1px 0 0 var(--line-strong), 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
   z-index: 1;
   position: relative;
-  background: #fff;
+  background: var(--surface);
 }
 
 .thread-item.active {
   background: var(--surface-active);
-  border-color: #a8d7fa;
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
 .thread-item.unread .thread-sender,
@@ -1869,7 +1909,7 @@ button, input, textarea, select {
 
 .display-name-card {
   width: min(440px, 100%);
-  background: #fff;
+  background: var(--surface);
   border-radius: 16px;
   padding: 28px 28px 24px;
   box-shadow: 0 20px 48px rgba(15, 23, 42, 0.25);
@@ -1896,7 +1936,7 @@ button, input, textarea, select {
 
 .display-name-error {
   margin: 0;
-  color: #b3261e;
+  color: var(--danger);
   font-size: 0.82rem;
 }
 
@@ -1910,7 +1950,7 @@ button, input, textarea, select {
 .compose-frame {
   max-width: 820px;
   margin: 16px auto 48px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(60, 64, 67, 0.08), 0 4px 12px rgba(60, 64, 67, 0.06);
@@ -1923,7 +1963,7 @@ button, input, textarea, select {
   justify-content: space-between;
   gap: 12px;
   padding: 18px 24px;
-  background: #f6f9fc;
+  background: var(--surface-alt);
   border-bottom: 1px solid var(--line);
   font-weight: 600;
   color: var(--text);
@@ -1931,9 +1971,9 @@ button, input, textarea, select {
 
 .compose-context {
   padding: 10px 24px;
-  background: #fdf8e6;
+  background: var(--warn-soft);
   border-bottom: 1px solid var(--line);
-  color: #5f5a34;
+  color: var(--text-muted);
   font-size: 0.84rem;
 }
 
@@ -1968,7 +2008,7 @@ button, input, textarea, select {
   width: 100%;
   font: inherit;
   color: var(--text);
-  background: #fff;
+  background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
@@ -1987,7 +2027,7 @@ button, input, textarea, select {
 .input:disabled,
 .select:disabled,
 .textarea:disabled {
-  background: #f4f4f4;
+  background: var(--surface-hover);
   color: var(--text-muted);
   cursor: not-allowed;
 }
@@ -2020,7 +2060,7 @@ button, input, textarea, select {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 12px;
-  background: #f6f9fc;
+  background: var(--surface-alt);
   border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 0.85rem;
@@ -2053,7 +2093,7 @@ button, input, textarea, select {
 }
 
 .attachment-remove:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--surface-hover);
   color: var(--danger, #c5221f);
 }
 
@@ -2064,7 +2104,7 @@ button, input, textarea, select {
   padding: 8px 14px;
   border: 1px dashed var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--bg);
   color: var(--text);
   cursor: pointer;
   font-size: 0.85rem;
@@ -2073,7 +2113,7 @@ button, input, textarea, select {
 
 .file-picker-btn:hover {
   border-color: var(--primary);
-  background: #f0f6ff;
+  background: var(--primary-soft);
 }
 
 .hidden-file-input {
@@ -2092,21 +2132,21 @@ button, input, textarea, select {
 }
 
 .form-status.info {
-  background: #f0f6ff;
-  color: #0b57d0;
-  border: 1px solid #c8daf5;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 .form-status.error {
-  background: #fce8e6;
-  color: #a50e0e;
-  border: 1px solid #f5c3bc;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 .form-status.success {
-  background: #e6f4ea;
-  color: #137333;
-  border: 1px solid #b7e1c5;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent);
 }
 
 .form-actions {
@@ -2128,14 +2168,14 @@ button, input, textarea, select {
   align-items: flex-start;
   gap: 4px;
   padding: 12px 16px;
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid var(--line);
   cursor: pointer;
   font-size: 0.88rem;
   background: var(--surface);
 }
 
 .card-item:hover {
-  background: #fff;
+  background: var(--surface);
 }
 
 .card-item.active {
@@ -2171,7 +2211,7 @@ button, input, textarea, select {
 
 /* Reader Pane */
 .reader-pane {
-  background: #fff;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -2180,7 +2220,7 @@ button, input, textarea, select {
 
 .reader-header {
   padding: 24px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .reader-subject-row {
@@ -2232,7 +2272,7 @@ button, input, textarea, select {
   padding: 0 24px 24px;
   line-height: 1.6;
   font-size: 0.95rem;
-  color: #222;
+  color: var(--text);
 }
 
 .reader-actions {
@@ -2269,14 +2309,14 @@ button, input, textarea, select {
 .conversation-message {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fdfdfd;
+  background: var(--surface);
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .conversation-message.latest {
-  background: #fff;
-  border-color: #c7d2fe;
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
@@ -2292,8 +2332,8 @@ button, input, textarea, select {
   padding: 20px;
   line-height: 1.7;
   font-size: 0.95rem;
-  color: #1a1c1e;
-  background: #fff;
+  color: var(--text);
+  background: var(--surface);
 }
 
 .conversation-block-panel {
@@ -2311,8 +2351,8 @@ button, input, textarea, select {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--primary-soft);
+  color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2361,14 +2401,14 @@ button, input, textarea, select {
 .conversation-message-head .reader-meta-text p {
   margin: 2px 0 0 0;
   font-size: 0.8rem;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .conversation-message-body {
   padding: 16px 20px;
   line-height: 1.6;
   font-size: 0.95rem;
-  color: #222;
+  color: var(--text);
 }
 
 .conversation-message-body p {
@@ -2401,9 +2441,9 @@ button, input, textarea, select {
   border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: #eef2ff;
-  color: #4f46e5;
-  border: 1px solid #c7d2fe;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
 .action-row {
@@ -2429,7 +2469,7 @@ button, input, textarea, select {
 
 .btn-premium.primary {
   background: #1a73e8;
-  color: white;
+  color: var(--on-primary);
   border-color: #1a73e8;
   box-shadow: 0 1px 2px rgba(26, 115, 232, 0.2);
 }
@@ -2446,14 +2486,14 @@ button, input, textarea, select {
 }
 
 .btn-premium.secondary {
-  background: white;
-  border-color: #dadce0;
-  color: #3c4043;
+  background: var(--bg);
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 
 .btn-premium.secondary:hover {
-  background: #f8f9fa;
-  border-color: #bdc1c6;
+  background: var(--surface-alt);
+  border-color: color-mix(in srgb, var(--line-strong), var(--text-muted) 20%);
   color: #1a73e8;
 }
 
@@ -2512,7 +2552,7 @@ button, input, textarea, select {
   cursor: wait;
 }
 .attachment-chip.error {
-  background: #fdecec;
+  background: var(--danger-soft);
   color: var(--danger);
   cursor: default;
 }
@@ -2575,14 +2615,14 @@ button, input, textarea, select {
 .reader-pane .empty-state::before {
   width: 56px;
   height: 56px;
-  background-color: #f5f5f5;
+  background-color: var(--surface-hover);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%23ccc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
   background-size: 28px;
 }
 
 .panel {
   border: 1px solid var(--line);
-  background: #fdfdfd;
+  background: var(--surface);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -2856,8 +2896,8 @@ button, input, textarea, select {
 }
 
 .help-card {
-  border: 1px solid rgba(225, 229, 234, 0.6);
-  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 20px;
@@ -3003,7 +3043,7 @@ details[open] .help-accordion-chevron {
   height: 32px;
   border-radius: 10px;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-weight: 700;
   font-size: 0.9rem;
   display: flex;
@@ -3060,7 +3100,7 @@ details[open] .help-accordion-chevron {
 
 .help-glossary-item:hover {
   background: var(--surface-hover);
-  border-color: rgba(60, 64, 67, 0.15);
+  border-color: var(--line-strong);
 }
 
 .help-glossary-term {
@@ -3185,7 +3225,7 @@ details[open] .help-accordion-chevron {
 }
 
 .badge.ok {
-  background: #e6f4ea;
+  background: var(--ok-soft);
   color: var(--ok);
 }
 
@@ -4118,7 +4158,7 @@ details[open] .help-accordion-chevron {
 }
 .public-help-lang:hover {
   background: var(--surface-hover);
-  border-color: rgba(60, 64, 67, 0.18);
+  border-color: var(--line-strong);
 }
 
 .public-help-signin {
@@ -4127,7 +4167,7 @@ details[open] .help-accordion-chevron {
   padding: 8px 16px;
   border-radius: 999px;
   background: var(--primary);
-  color: #ffffff;
+  color: var(--on-primary);
   font-weight: 600;
   font-size: 0.85rem;
   text-decoration: none;
@@ -4267,7 +4307,7 @@ details[open] .help-accordion-chevron {
   padding: 10px 22px;
   border-radius: 999px;
   background: var(--primary);
-  color: #ffffff;
+  color: var(--on-primary);
   font-weight: 600;
   font-size: 0.9rem;
   text-decoration: none;
@@ -4673,6 +4713,7 @@ details[open] .help-accordion-chevron {
 }
 .pa-dark .dm-bot {
   background: #0a0c18;
+  box-shadow: 0 0 0 1px #eff3f4;
 }
 /* Sign-in and concept pages scroll as one page (not an inner box); the
    backdrop stays put. */

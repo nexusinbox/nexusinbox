@@ -13,6 +13,7 @@ import { AuthLogoutButton } from "./AuthLogoutButton";
 import { AuthSessionStatus } from "./AuthSessionStatus";
 import { DisplayNamePrompt } from "./DisplayNamePrompt";
 import { NewVersionNotice } from "./NewVersionNotice";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Logo } from "./Logo";
 import { RealtimeSubscriber } from "./RealtimeSubscriber";
@@ -331,6 +332,7 @@ export function AppShell({
           <LanguageSwitcher />
           <AuthLogoutButton />
         </div>
+        <ThemeSwitcher />
       </aside>
 
       <section className="x-main">

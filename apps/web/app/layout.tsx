@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { QueryProvider } from "./_providers/QueryProvider";
 import { I18nProvider } from "../lib/i18n";
+import { THEME_BOOT_SCRIPT } from "../lib/ui/theme-boot";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -52,10 +53,19 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // (set by middleware.ts) into all auto-generated <script> tags. Without this,
   // static pages would be served with scripts that lack the nonce and get
   // blocked by 'strict-dynamic'.
-  await headers();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
-    <html lang="en">
+    // data-theme is set by the boot script before React hydrates.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Browsers hide the nonce after load, so React would see a mismatch. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
+        />
+      </head>
       <body>
         <I18nProvider>
           <QueryProvider>{children}</QueryProvider>

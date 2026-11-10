@@ -430,17 +430,17 @@ function AIAssistantCard() {
         />
       </div>
       <p className="settings-card-desc">{t("integrations.aiDesc")}</p>
-      <p className="settings-card-desc" style={{ fontSize: 12, color: "#5f6368" }}>
+      <p className="settings-card-desc" style={{ fontSize: 12, color: "var(--text-muted)" }}>
         {t("integrations.aiPrivacyNote")}
       </p>
 
       {connected ? (
         <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: "#5f6368" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {t("integrations.aiKeyFingerprint", { fingerprint: fingerprint! })}
           </span>
           {model ? (
-            <span style={{ fontSize: 12, color: "#5f6368" }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {t("integrations.aiModel", { model })}
             </span>
           ) : null}
@@ -479,7 +479,7 @@ function AIAssistantCard() {
             style={{
               padding: "6px 10px",
               borderRadius: 4,
-              border: "1px solid #dadce0",
+              border: "1px solid var(--line-strong)",
               fontSize: 13,
               fontFamily: "ui-monospace, SFMono-Regular, monospace",
             }}

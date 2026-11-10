@@ -30,7 +30,7 @@ const card: React.CSSProperties = {
   borderRadius: 16,
   padding: "22px 24px",
 };
-const muted: React.CSSProperties = { color: "#6b7280", fontSize: 13 };
+const muted: React.CSSProperties = { color: "var(--text-muted)", fontSize: 13 };
 const permRow: React.CSSProperties = {
   display: "flex",
   gap: 8,
@@ -116,28 +116,28 @@ function Consent() {
       </p>
       <div>
         <div style={{ ...permRow, borderTop: 0 }}>
-          <span style={{ color: "#0f7b4b", fontWeight: 700 }}>✓</span>
+          <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓</span>
           {t("oauthConsent.canRead")}
         </div>
         {canDraft ? (
           <div style={permRow}>
-            <span style={{ color: "#0f7b4b", fontWeight: 700 }}>✓</span>
+            <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓</span>
             {t("oauthConsent.canDraft")}
           </div>
         ) : null}
         <div style={permRow}>
-          <span style={{ color: "#b3261e", fontWeight: 700 }}>✕</span>
+          <span style={{ color: "var(--danger)", fontWeight: 700 }}>✕</span>
           {t("oauthConsent.cannotSend")}
         </div>
         <div style={permRow}>
-          <span style={{ color: "#b3261e", fontWeight: 700 }}>✕</span>
+          <span style={{ color: "var(--danger)", fontWeight: 700 }}>✕</span>
           {t("oauthConsent.cannotOther")}
         </div>
       </div>
       <p
         style={{
-          background: "#fff6e0",
-          color: "#8a5a00",
+          background: "var(--warn-soft)",
+          color: "var(--warn)",
           borderRadius: 10,
           padding: "8px 12px",
           fontSize: 13,

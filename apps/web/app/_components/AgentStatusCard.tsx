@@ -182,7 +182,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
                 marginTop: 8,
                 padding: "10px 12px",
                 borderRadius: 10,
-                background: "#fff7e6",
+                background: "var(--warn-soft)",
                 color: "var(--warn)",
                 fontSize: 13,
               }}

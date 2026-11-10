@@ -49,8 +49,8 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
           style={{
             margin: "6px 16px 4px",
             fontSize: 13,
-            color: "#0f7b4b",
-            background: "#e7f6ee",
+            color: "var(--ok)",
+            background: "var(--ok-soft)",
             borderRadius: 10,
             padding: "6px 12px",
           }}

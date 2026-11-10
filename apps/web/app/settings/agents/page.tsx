@@ -96,7 +96,7 @@ function CredentialModeBadge({
   };
   const unknownStyle: CSSProperties = {
     background: "rgba(128, 128, 128, 0.14)",
-    color: "#5f6368",
+    color: "var(--text-muted)",
     border: "1px solid rgba(128, 128, 128, 0.28)",
   };
   const standardStyle: CSSProperties = {
@@ -159,7 +159,7 @@ function AgentModePanel({
           }
         : {
             background: "rgba(128, 128, 128, 0.14)",
-            color: "#5f6368",
+            color: "var(--text-muted)",
             border: "1px solid rgba(128, 128, 128, 0.28)",
           };
 
@@ -252,7 +252,7 @@ function WhereaboutsRow({
 }) {
   const indicator = (() => {
     if (status === "checking") return { color: "var(--text-muted)", text: "…" };
-    if (status === "present") return { color: "#137333", text: "✓" };
+    if (status === "present") return { color: "var(--ok)", text: "✓" };
     if (status === "absent") return { color: "var(--text-muted)", text: "—" };
     return { color: "var(--text-muted)", text: "◯" }; // info
   })();
@@ -437,7 +437,7 @@ function StatCell({
   tone: "neutral" | "ok" | "warn" | "muted";
 }) {
   const color = (() => {
-    if (tone === "ok") return "#137333";
+    if (tone === "ok") return "var(--ok)";
     if (tone === "warn") return "#b45309";
     if (tone === "muted") return "var(--text-muted)";
     return "var(--text)";
@@ -520,7 +520,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
       ) : auditQuery.isError ? (
         <p
           className="item-sub"
-          style={{ marginTop: 10, fontSize: 12, color: "#b00020" }}
+          style={{ marginTop: 10, fontSize: 12, color: "var(--danger)" }}
         >
           {t("agents.autoReplyVisibilityError")}
         </p>
@@ -625,7 +625,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                                   : "var(--surface-alt)",
                             color:
                               action === "auto_accept"
-                                ? "#137333"
+                                ? "var(--ok)"
                                 : action === "auto_decline"
                                   ? "#b45309"
                                   : "var(--text)",
@@ -1998,7 +1998,7 @@ export default function AgentsSettingsPage() {
                                               style={{
                                                 fontSize: 12,
                                                 borderColor: "rgba(220, 38, 38, 0.7)",
-                                                color: "#b91c1c",
+                                                color: "var(--danger)",
                                               }}
                                               disabled={purgeCredential.isPending}
                                               onClick={async () => {

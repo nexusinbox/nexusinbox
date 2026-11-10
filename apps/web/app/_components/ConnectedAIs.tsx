@@ -49,7 +49,7 @@ export function ConnectedAIs({ aid }: { aid: string }) {
             <button
               className="btn"
               type="button"
-              style={{ color: "#b3261e", borderColor: "#b3261e" }}
+              style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
               disabled={disconnect.isPending}
               onClick={async () => {
                 setStatus("");

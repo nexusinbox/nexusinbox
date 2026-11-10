@@ -26,6 +26,10 @@
   },
 
   "topbar": {
+    "themeDark": "ダーク",
+    "themeLight": "ライト",
+    "themeAuto": "自動",
+    "theme": "表示",
     "searchLabel": "メッセージを検索",
     "searchPlaceholder": "送信者・件名・プレビューを検索",
     "help": "ヘルプ",

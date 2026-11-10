@@ -687,7 +687,7 @@ export function BlockSenderPanel({
             padding: "10px 12px",
             textAlign: "left",
             borderColor: "rgba(220, 38, 38, 0.2)",
-            color: "#b91c1c",
+            color: "var(--danger)",
           }}
         >
           <span style={{ fontSize: 12, fontWeight: 700 }}>
@@ -1101,7 +1101,7 @@ function BridgedRestoreButton({
           ))}
           <p
             className="item-sub"
-            style={{ margin: "8px 0 0 0", fontSize: 11, color: "#5f6368" }}
+            style={{ margin: "8px 0 0 0", fontSize: 11, color: "var(--text-muted)" }}
           >
             {t("inbox.bridgedRestoreTtlHint")}
           </p>

@@ -44,9 +44,9 @@ export function RetentionNotice() {
         padding: "6px 10px",
         fontSize: 11,
         lineHeight: 1.5,
-        color: "#5f6368",
+        color: "var(--text-muted)",
         background: "rgba(251,188,4,0.12)",
-        borderBottom: "1px solid rgba(60,64,67,0.12)",
+        borderBottom: "1px solid var(--line)",
       }}
     >
       <span style={{ flex: 1 }}>{t("inbox.retentionNotice")}</span>
@@ -58,7 +58,7 @@ export function RetentionNotice() {
           border: "none",
           background: "transparent",
           cursor: "pointer",
-          color: "#5f6368",
+          color: "var(--text-muted)",
           fontSize: 14,
           lineHeight: 1,
           padding: 0,

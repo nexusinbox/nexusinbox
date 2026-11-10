@@ -63,7 +63,7 @@ export function NewVersionNotice() {
         padding: "10px 14px",
         borderRadius: 12,
         background: "var(--text)",
-        color: "#fff",
+        color: "var(--bg)",
         boxShadow: "var(--shadow-md)",
         fontSize: 14,
       }}

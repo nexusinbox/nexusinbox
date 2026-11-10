@@ -164,7 +164,7 @@ export default function HelpPage() {
         <Para k="guide.ai.museNote" />
         <Para k="guide.ai.claude" />
         <Para k="guide.ai.others" />
-        <div style={{ ...BOX, background: "#fff7e6", color: "var(--warn)" }}>
+        <div style={{ ...BOX, background: "var(--warn-soft)", color: "var(--warn)" }}>
           <RichText text={t("guide.ai.provider")} />
         </div>
         <h3 style={{ fontSize: 16, margin: "18px 0 4px" }}>{t("guide.ai.localTitle")}</h3>

@@ -392,7 +392,6 @@ function ContactsPageInner() {
                   <Avatar did={contact.did} name={contact.readable ? contact.person_name : "?"} />
                   <div className="dm-row-body">
                     <span className="dm-name">{name}</span>
-                    <span className="ct-addr">{contact.did}</span>
                     {contact.note ? <span className="ct-note">{contact.note}</span> : null}
                   </div>
                   <div className="ct-actions">

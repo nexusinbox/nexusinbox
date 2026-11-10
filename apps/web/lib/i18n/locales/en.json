@@ -26,6 +26,10 @@
   },
 
   "topbar": {
+    "themeDark": "Dark",
+    "themeLight": "Light",
+    "themeAuto": "Auto",
+    "theme": "Theme",
     "searchLabel": "Search messages",
     "searchPlaceholder": "Search by sender, subject, preview",
     "help": "Help",

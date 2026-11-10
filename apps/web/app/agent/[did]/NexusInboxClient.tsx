@@ -436,7 +436,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
               display: "flex",
               gap: 6,
               padding: "8px 10px",
-              borderBottom: "1px solid rgba(60,64,67,0.12)",
+              borderBottom: "1px solid var(--line)",
               flexWrap: "wrap",
               alignItems: "center",
             }}
@@ -457,7 +457,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                 minWidth: 0,
                 padding: "4px 8px",
                 fontSize: 12,
-                border: "1px solid rgba(60,64,67,0.24)",
+                border: "1px solid var(--line-strong)",
                 borderRadius: 4,
               }}
             />
@@ -492,7 +492,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
             </select>
             {isFiltering ? (
               <span
-                style={{ fontSize: 11, color: "#5f6368" }}
+                style={{ fontSize: 11, color: "var(--text-muted)" }}
                 data-testid="thread-list-hit-count"
               >
                 {t("agentView.search.hits", { count: hitCount })}
@@ -651,7 +651,7 @@ export function NexusInboxClient({ did }: NexusInboxClientProps) {
                                 ? "#0f9d58"
                                 : thread.autoReplyDecision === "auto_decline"
                                   ? "#d93025"
-                                  : "#5f6368",
+                                  : "var(--text-muted)",
                           }}
                         >
                           {t(`inbox.autoReply.decision.${thread.autoReplyDecision}`)}

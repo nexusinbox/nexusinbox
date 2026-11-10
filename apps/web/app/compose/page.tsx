@@ -853,7 +853,7 @@ function ComposePageInner() {
                       return (
                         <div key={kind}>
                           <div
-                            style={{ padding: "6px 10px 2px", fontSize: 12, fontWeight: 700, color: "#6b7280" }}
+                            style={{ padding: "6px 10px 2px", fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}
                           >
                             {kind === "contact" ? t("compose.toGroupContacts") : t("compose.toGroupOwn")}
                           </div>
@@ -1133,7 +1133,7 @@ function AIDraftBanner({
         </strong>
         <span>{text}</span>
         {status === "done" ? (
-          <span style={{ display: "block", marginTop: 4, color: "#5f6368" }}>
+          <span style={{ display: "block", marginTop: 4, color: "var(--text-muted)" }}>
             {t("compose.aiDraftReviewWarning")}
           </span>
         ) : null}
@@ -1188,7 +1188,7 @@ function AIDraftToolbar({
         alignItems: "center",
       }}
     >
-      <span style={{ fontSize: 12, color: "#5f6368", marginRight: 4 }}>
+      <span style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 4 }}>
         {t("compose.aiDraftTone.label")}
       </span>
       {tones.map((tone) => {
@@ -1207,9 +1207,9 @@ function AIDraftToolbar({
               fontSize: 12,
               border: selected
                 ? "1px solid #1a73e8"
-                : "1px solid rgba(60,64,67,0.2)",
+                : "1px solid var(--line-strong)",
               background: selected ? "rgba(26,115,232,0.08)" : "transparent",
-              color: selected ? "#1a73e8" : "#3c4043",
+              color: selected ? "#1a73e8" : "var(--text)",
               cursor: busy ? "not-allowed" : "pointer",
               fontWeight: selected ? 600 : 400,
             }}
@@ -1227,9 +1227,9 @@ function AIDraftToolbar({
           padding: "4px 10px",
           borderRadius: 999,
           fontSize: 12,
-          border: "1px solid rgba(60,64,67,0.2)",
+          border: "1px solid var(--line-strong)",
           background: "transparent",
-          color: "#3c4043",
+          color: "var(--text)",
           cursor: busy ? "not-allowed" : "pointer",
           marginLeft: "auto",
         }}
