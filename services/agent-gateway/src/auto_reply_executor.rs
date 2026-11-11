@@ -142,12 +142,53 @@ pub struct MessageContent {
     pub encrypted_content: String,
     pub encrypted_key: String,
     pub content_type: Option<String>,
+    /// The content key for each device of the recipient / of the sender
+    /// (docs/38). Empty on older messages.
+    pub encrypted_keys: Vec<KeyWrap>,
+    pub sender_encrypted_keys: Vec<KeyWrap>,
+}
+
+/// A message's content key wrapped for one device (docs/38).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct KeyWrap {
+    pub did: String,
+    pub key: String,
+}
+
+/// One of an agent's devices that can read its messages (docs/38).
+#[derive(Debug, Clone)]
+pub struct DeviceKey {
+    pub did: String,
+    pub encryption_public_key: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct RecipientPubkey {
     pub did: String,
     pub encryption_public_key: String,
+    /// Every device of the agent, newest first (docs/38). Empty when the
+    /// API did not list them.
+    pub devices: Vec<DeviceKey>,
+}
+
+impl MessageContent {
+    /// The wraps this device should try, best first: its own entries in
+    /// the per-device lists (docs/38) when its DID is known, otherwise
+    /// every listed wrap (the daemon opens only its own), then the single
+    /// recipient wrap.
+    fn wraps_for(&self, did: Option<&str>) -> Vec<&str> {
+        let mut out: Vec<&str> = self
+            .encrypted_keys
+            .iter()
+            .chain(self.sender_encrypted_keys.iter())
+            .filter(|w| did.is_none_or(|d| w.did == d))
+            .map(|w| w.key.as_str())
+            .collect();
+        if !self.encrypted_key.is_empty() && !out.contains(&self.encrypted_key.as_str()) {
+            out.push(self.encrypted_key.as_str());
+        }
+        out
+    }
 }
 
 /// The six fields the daemon signs (its `SignEnvelopeParams`). They must be
@@ -306,10 +347,17 @@ async fn dispatch_one<B: ExecutorBackend>(
     if content.content_type.as_deref() != Some(A2A_CONTENT_TYPE) {
         return mark_handled(backend, id, "not_a2a").await;
     }
-    let content_key = match backend
-        .daemon_unwrap_content_key(&content.encrypted_key)
-        .await
-    {
+    // This computer's own wrap first when the sender made one (docs/38).
+    // The DID is the one already learnt; asking the daemon happens when
+    // the reply is sealed.
+    let mut unwrapped: Result<String, String> = Err("no wrapped key".into());
+    for wrapped in content.wraps_for(state.our_did.as_deref()) {
+        unwrapped = backend.daemon_unwrap_content_key(wrapped).await;
+        if unwrapped.is_ok() {
+            break;
+        }
+    }
+    let content_key = match unwrapped {
         Ok(k) => k,
         Err(e) => return failed(id, "unwrap_content_key", &e),
     };
@@ -501,6 +549,17 @@ async fn seal_reply<B: ExecutorBackend>(
         .await
         .map_err(|e| format!("wrap_content_key: {e}"))?;
     let sender_wrapped_key = sender_copy(backend, &content_key).await;
+    // Every device of both agents gets a copy (docs/38). Best effort: the
+    // reply still goes out with the single wraps.
+    let encrypted_keys = device_wraps(backend, &recipient.devices, &content_key).await;
+    let own_devices = match backend.resolve_recipient(&sender_did).await {
+        Ok(me) => me.devices,
+        Err(e) => {
+            eprintln!("[auto-reply] listing this agent's devices failed: {e}");
+            Vec::new()
+        }
+    };
+    let sender_encrypted_keys = device_wraps(backend, &own_devices, &content_key).await;
     let signing = EnvelopeSigningParams {
         sender_did,
         recipient_did: recipient.did,
@@ -535,7 +594,39 @@ async fn seal_reply<B: ExecutorBackend>(
     if let Some(key) = sender_wrapped_key {
         body["envelope"]["sender_encrypted_key"] = Value::String(key);
     }
+    if !encrypted_keys.is_empty() {
+        body["envelope"]["encrypted_keys"] = serde_json::json!(encrypted_keys);
+    }
+    if !sender_encrypted_keys.is_empty() {
+        body["envelope"]["sender_encrypted_keys"] = serde_json::json!(sender_encrypted_keys);
+    }
     Ok(body)
+}
+
+/// The content key wrapped by the daemon for each device. A device whose
+/// wrap fails is left out.
+async fn device_wraps<B: ExecutorBackend>(
+    backend: &B,
+    devices: &[DeviceKey],
+    content_key: &str,
+) -> Vec<KeyWrap> {
+    let mut out: Vec<KeyWrap> = Vec::with_capacity(devices.len());
+    for device in devices {
+        if out.iter().any(|w| w.did == device.did) || device.encryption_public_key.is_empty() {
+            continue;
+        }
+        match backend
+            .daemon_wrap_content_key(&device.encryption_public_key, content_key)
+            .await
+        {
+            Ok(key) => out.push(KeyWrap {
+                did: device.did.clone(),
+                key,
+            }),
+            Err(e) => eprintln!("[auto-reply] wrapping for {} failed: {e}", device.did),
+        }
+    }
+    out
 }
 
 /// The content key wrapped for the daemon's own X25519 key. Best effort: a
@@ -830,6 +921,8 @@ mod tests {
                 encrypted_content: encrypted,
                 encrypted_key: "x25519v1:incoming:wrapped:key:data".into(),
                 content_type: Some(A2A_CONTENT_TYPE.into()),
+                encrypted_keys: Vec::new(),
+                sender_encrypted_keys: Vec::new(),
             },
         );
         MockBackend {
@@ -838,6 +931,7 @@ mod tests {
             pubkey: RecipientPubkey {
                 did: "did:key:zSender".into(),
                 encryption_public_key: "fake-pub-key".into(),
+                devices: Vec::new(),
             },
             content_key,
             policy: Some(json!({
@@ -1324,6 +1418,49 @@ mod tests {
         assert_eq!(backend.marked(), vec![("msg-1".to_string(), None)]);
         assert!(state.failures.is_empty());
         assert_eq!(backend.count("claim:"), 0);
+    }
+
+    #[test]
+    fn a_device_tries_its_own_wraps_first() {
+        let wrap = |did: &str, key: &str| KeyWrap {
+            did: did.into(),
+            key: key.into(),
+        };
+        let content = MessageContent {
+            encrypted_content: String::new(),
+            encrypted_key: "x25519v1:single".into(),
+            content_type: None,
+            encrypted_keys: vec![
+                wrap("did:key:zPc", "x25519v1:pc"),
+                wrap("did:key:zWeb", "x25519v1:web"),
+            ],
+            sender_encrypted_keys: vec![wrap("did:key:zMine", "x25519v1:mine")],
+        };
+        assert_eq!(
+            content.wraps_for(Some("did:key:zPc")),
+            vec!["x25519v1:pc", "x25519v1:single"]
+        );
+        assert_eq!(
+            content.wraps_for(Some("did:key:zMine")),
+            vec!["x25519v1:mine", "x25519v1:single"]
+        );
+        // DID not learnt yet: every listed wrap, the daemon opens its own.
+        assert_eq!(
+            content.wraps_for(None),
+            vec![
+                "x25519v1:pc",
+                "x25519v1:web",
+                "x25519v1:mine",
+                "x25519v1:single"
+            ]
+        );
+        // Older messages: the single wrap only.
+        let old = MessageContent {
+            encrypted_keys: Vec::new(),
+            sender_encrypted_keys: Vec::new(),
+            ..content
+        };
+        assert_eq!(old.wraps_for(Some("did:key:zPc")), vec!["x25519v1:single"]);
     }
 
     #[tokio::test]

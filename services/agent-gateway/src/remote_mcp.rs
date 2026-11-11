@@ -805,12 +805,29 @@ async fn read_message(
 const DRAFT_BODY_MAX_CHARS: usize = 20_000;
 const DRAFT_SUBJECT_MAX_CHARS: usize = 200;
 
-/// The wrapped content keys this agent may be able to open, best first: its
-/// own copy of a message it sent (`sender_encrypted_key`, docs/35 §5), then
-/// the recipient's.
+/// The wrapped content keys this agent may be able to open, best first: the
+/// wraps made for this computer in the per-device lists (docs/38), its own
+/// copy of a message it sent (`sender_encrypted_key`, docs/35 §5), then the
+/// recipient's.
 fn content_key_wraps<'a>(content: &'a serde_json::Value, my_did: &str) -> Vec<&'a str> {
     let field = |k: &str| content.get(k).and_then(|v| v.as_str()).unwrap_or("");
-    let mut wraps = Vec::with_capacity(2);
+    let mut wraps = Vec::with_capacity(3);
+    if !my_did.is_empty() {
+        for list in ["encrypted_keys", "sender_encrypted_keys"] {
+            for w in content
+                .get(list)
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
+                if w.get("did").and_then(|v| v.as_str()) == Some(my_did) {
+                    if let Some(key) = w.get("key").and_then(|v| v.as_str()) {
+                        wraps.push(key);
+                    }
+                }
+            }
+        }
+    }
     if !my_did.is_empty()
         && field("sender_did") == my_did
         && !field("sender_encrypted_key").is_empty()
@@ -1305,6 +1322,25 @@ mod tests {
         assert_eq!(
             content_key_wraps(&without_copy, me),
             ["x25519v1:for:recipient"]
+        );
+    }
+
+    #[test]
+    fn this_computers_listed_wraps_come_first() {
+        // docs/38: per-device lists; this computer's entries lead.
+        let me = "did:key:zMe";
+        let content = serde_json::json!({
+            "sender_did": "did:key:zThem",
+            "encrypted_key": "x25519v1:for:newest",
+            "encrypted_keys": [
+                { "did": "did:key:zOtherDevice", "key": "x25519v1:other" },
+                { "did": me, "key": "x25519v1:mine" }
+            ],
+            "sender_encrypted_keys": [{ "did": "did:key:zThem", "key": "x25519v1:theirs" }]
+        });
+        assert_eq!(
+            content_key_wraps(&content, me),
+            ["x25519v1:mine", "x25519v1:for:newest"]
         );
     }
 

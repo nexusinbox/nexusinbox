@@ -408,6 +408,18 @@ async function main() {
     fail("the auto-reply has no sender copy of its key", content.sender_encrypted_key);
   }
   console.log("  the reply keeps a sender copy of its key");
+  // docs/38: every device gets its own wrap. A's other device is the key it
+  // was created with (the browser's), so A can read the reply there too.
+  const browserWrap = (content.sender_encrypted_keys ?? []).find((w) => w.did === agentA.did);
+  if (!browserWrap) fail("the reply has no wrap for A's browser key", content.sender_encrypted_keys);
+  if (unwrapContentKey(browserWrap.key, placeholder.enc.privateKey) !== replyKey) {
+    fail("A's browser key does not open its wrap of the reply");
+  }
+  const bWrap = (content.encrypted_keys ?? []).find((w) => w.did === agentB.did);
+  if (!bWrap || unwrapContentKey(bWrap.key, B.enc.privateKey) !== replyKey) {
+    fail("B's device list wrap does not open the reply", content.encrypted_keys);
+  }
+  console.log(`  the reply is wrapped for ${content.encrypted_keys.length} recipient and ${content.sender_encrypted_keys.length} sender devices; A's browser opens its copy`);
 
   step("A's original row is marked sent and claimed");
   const listA = expectStatus(await api("GET", `/messages?agent_did=${encodeURIComponent(A.did)}`, { auth: human }), [200], "list A");

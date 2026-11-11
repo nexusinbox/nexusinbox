@@ -343,6 +343,79 @@ describe("Isolated mode runtime (Gateway)", () => {
     });
   });
 
+  it("read_message opens this computer's own wrap first (docs/38)", async () => {
+    const rpcTransport = buildFakeTransport({
+      whoami: GATEWAY_WHOAMI,
+      read_message: {
+        encrypted_content: "hi",
+        encrypted_key: "x25519v1:for-newest-device",
+        encrypted_keys: [
+          { did: "did:key:self-browser", key: "x25519v1:for-browser" },
+          { did: "did:key:self-current", key: "x25519v1:for-this-computer" },
+        ],
+        nonce: "n",
+        sender_did: "did:key:bob-current",
+        recipient_did: "did:key:self-browser",
+        subject_encrypted: "s",
+      },
+      unwrap_content_key: { content_key: "ck" },
+    });
+    const { runtime } = await createGatewayRuntime({ rpcTransport });
+    await runtime.readMessage({ message_id: "m-1" });
+    const unwrapCalls = rpcTransport.mock.calls.filter((c) => c[0] === "unwrap_content_key");
+    expect(unwrapCalls[0]?.[1]).toEqual({ encrypted_key: "x25519v1:for-this-computer" });
+  });
+
+  it("send wraps the content key for every device of both agents (docs/38)", async () => {
+    let captured: { envelope: Record<string, unknown> } | null = null;
+    const key = (n: number) =>
+      Buffer.from(Uint8Array.from({ length: 32 }, (_, i) => (i + n) % 256)).toString("base64url");
+    const rpcTransport = buildFakeTransport({
+      whoami: { ...GATEWAY_WHOAMI, encryption_public_key: key(1) },
+      resolve_recipient: (params: Record<string, unknown>) =>
+        params.identifier === "did:key:self-current"
+          ? {
+              ...GATEWAY_WHOAMI,
+              encryption_public_key: key(1),
+              devices: [
+                { did: "did:key:self-current", encryption_public_key: key(1) },
+                { did: "did:key:self-browser", encryption_public_key: key(2) },
+              ],
+            }
+          : {
+              ...RECIPIENT_BOB,
+              devices: [
+                { did: "did:key:bob-current", encryption_public_key: RECIPIENT_BOB.encryption_public_key },
+                { did: "did:key:bob-browser", encryption_public_key: key(3) },
+              ],
+            },
+      send_message: (params: Record<string, unknown>) => {
+        captured = params as { envelope: Record<string, unknown> };
+        return { message_id: "m-SENT", status: "delivered" };
+      },
+    });
+    const { runtime } = await createGatewayRuntime({ rpcTransport });
+    await runtime.sendTextMessage({
+      from_agent: "aid:ai:self",
+      to: "aid:ai:bob",
+      subject: "s",
+      body_markdown: "b",
+      mode: "send",
+      confirmed_by_user: true,
+      provider_hint: "test",
+    });
+    const envelope = (captured as unknown as { envelope: Record<string, Array<{ did: string; key: string }>> })
+      .envelope;
+    expect(envelope.encrypted_keys.map((w) => w.did)).toEqual(["did:key:bob-current", "did:key:bob-browser"]);
+    expect(envelope.sender_encrypted_keys.map((w) => w.did)).toEqual([
+      "did:key:self-current",
+      "did:key:self-browser",
+    ]);
+    for (const w of [...envelope.encrypted_keys, ...envelope.sender_encrypted_keys]) {
+      expect(w.key.startsWith("x25519v1:")).toBe(true);
+    }
+  });
+
   it("send_text_message send (confirmed) calls Gateway with unsigned envelope + records result message_id", async () => {
     const audit: AuditEntry[] = [];
     let capturedSendParams: Record<string, unknown> | null = null;

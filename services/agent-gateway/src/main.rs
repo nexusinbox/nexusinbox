@@ -308,6 +308,34 @@ struct RecipientResolution {
     did: String,
     signing_public_key: Option<String>,
     encryption_public_key: Option<String>,
+    /// Every device of the agent, newest first (docs/38). Passed through
+    /// so clients can wrap the content key for each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    devices: Vec<DeviceKeyJson>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct DeviceKeyJson {
+    did: String,
+    encryption_public_key: String,
+}
+
+/// `[{did, key}]` lists from a message's content (docs/38).
+fn key_wraps_from(body: &serde_json::Value, field: &str) -> Vec<auto_reply_executor::KeyWrap> {
+    body.get(field)
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|w| {
+                    Some(auto_reply_executor::KeyWrap {
+                        did: w.get("did")?.as_str()?.to_string(),
+                        key: w.get("key")?.as_str()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -1513,6 +1541,8 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
                 .get("content_type")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            encrypted_keys: key_wraps_from(&body, "encrypted_keys"),
+            sender_encrypted_keys: key_wraps_from(&body, "sender_encrypted_keys"),
         })
     }
 
@@ -1540,6 +1570,24 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "recipient has no encryption_public_key".to_string())?
                 .into(),
+            devices: body
+                .get("devices")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|d| {
+                            Some(auto_reply_executor::DeviceKey {
+                                did: d.get("did")?.as_str()?.to_string(),
+                                encryption_public_key: d
+                                    .get("encryption_public_key")?
+                                    .as_str()?
+                                    .to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 
@@ -2687,7 +2735,14 @@ mod tests {
             }
             ("GET", "/recipients/resolve?identifier=did%3Akey%3AzProposer") => (
                 200,
-                r#"{"input":"did:key:zProposer","aid":"aid:ai:proposer","did":"did:key:zProposer","signing_public_key":"sig","encryption_public_key":"cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"}"#.into(),
+                r#"{"input":"did:key:zProposer","aid":"aid:ai:proposer","did":"did:key:zProposer","signing_public_key":"sig","encryption_public_key":"cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk","devices":[{"did":"did:key:zProposer","encryption_public_key":"cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"}]}"#.into(),
+            ),
+            // This agent's own devices: the daemon and a browser (docs/38).
+            ("GET", "/recipients/resolve?identifier=did%3Akey%3Az6MkDaemonViewer") => (
+                200,
+                format!(
+                    r#"{{"input":"{DAEMON_DID}","aid":"aid:ai:viewer","did":"{DAEMON_DID}","signing_public_key":"sig","encryption_public_key":"{DAEMON_ENCRYPTION_KEY}","devices":[{{"did":"{DAEMON_DID}","encryption_public_key":"{DAEMON_ENCRYPTION_KEY}"}},{{"did":"did:key:zViewerBrowser","encryption_public_key":"YnJvd3Nlci1rZXk"}}]}}"#
+                ),
             ),
             ("POST", "/messages") => (200, format!(r#"{{"message_id":"{REPLY_ID}","status":"sent"}}"#)),
             ("PATCH", p) if p == format!("/messages/{MSG_A}/auto-reply-sent") => {
@@ -2724,12 +2779,16 @@ mod tests {
                     "GET",
                     "/recipients/resolve?identifier=did%3Akey%3AzProposer"
                 ),
+                (
+                    "GET",
+                    "/recipients/resolve?identifier=did%3Akey%3Az6MkDaemonViewer"
+                ),
                 ("POST", "/messages"),
                 ("PATCH", mark_path.as_str()),
             ]
         );
 
-        let sent = seen[5].body.clone().expect("POST /messages body");
+        let sent = seen[6].body.clone().expect("POST /messages body");
         let envelope = &sent["envelope"];
         assert_eq!(sent["sender_did"], DAEMON_DID);
         assert_eq!(sent["recipient_did"], "did:key:zProposer");
@@ -2743,6 +2802,18 @@ mod tests {
             envelope["sender_encrypted_key"],
             "x25519v1:wrapped:for:daemon:key"
         );
+        // A copy for every device of both agents (docs/38).
+        assert_eq!(
+            envelope["encrypted_keys"],
+            json!([{ "did": "did:key:zProposer", "key": "x25519v1:wrapped:for:proposer:key" }])
+        );
+        assert_eq!(
+            envelope["sender_encrypted_keys"],
+            json!([
+                { "did": DAEMON_DID, "key": "x25519v1:wrapped:for:daemon:key" },
+                { "did": "did:key:zViewerBrowser", "key": "x25519v1:wrapped:for:proposer:key" }
+            ])
+        );
         assert_eq!(envelope["metadata"]["thread_id"], MSG_A);
         assert_eq!(
             envelope["metadata"]["auto_reply_origin"],
@@ -2753,7 +2824,7 @@ mod tests {
             a2a_rust::A2A_CONTENT_TYPE
         );
         assert_eq!(
-            seen[6].body,
+            seen[7].body,
             Some(json!({ "executor_mode": "daemon_protocol_v1", "reply_message_id": REPLY_ID }))
         );
 
@@ -2766,6 +2837,10 @@ mod tests {
                 "get_public_key",
                 "wrap_content_key",
                 "get_public_key",
+                "wrap_content_key",
+                // The proposer's device, then this agent's two (docs/38).
+                "wrap_content_key",
+                "wrap_content_key",
                 "wrap_content_key",
                 "sign_envelope"
             ]
@@ -2789,7 +2864,7 @@ mod tests {
         // sign_envelope gets exactly the daemon's six fields, with the
         // values the POST body then carries.
         assert_eq!(
-            daemon_calls[5].1,
+            daemon_calls[8].1,
             json!({
                 "sender_did": sent["sender_did"],
                 "recipient_did": sent["recipient_did"],

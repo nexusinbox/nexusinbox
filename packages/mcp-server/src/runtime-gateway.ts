@@ -31,8 +31,11 @@
 import { encryptText, serializeEncryptedPayload } from "@nexusinbox/crypto";
 import {
   NexusInboxGatewayClient,
+  contentKeyWrapsFor,
   generateContentKey,
+  wrapContentKeyForDevices,
   wrapContentKeyForRecipient,
+  type DeviceKey,
   type GatewayWhoAmI,
   type MessageContentResponse,
   type MessageListResponse,
@@ -223,6 +226,8 @@ function buildGatewayRuntime(
         body: input.body_markdown,
         recipientEncPubKey: recipientPublicKey,
         senderEncPubKey: whoami.encryption_public_key,
+        recipientDevices: recipient.devices,
+        senderDevices: await ownDevices(gw, whoami.did),
       });
       const result = await gw.sendMessage({
         recipientDid: recipient.did,
@@ -293,6 +298,8 @@ function buildGatewayRuntime(
         body: input.body_markdown,
         recipientEncPubKey: recipientPublicKey,
         senderEncPubKey: whoami.encryption_public_key,
+        recipientDevices: recipient.devices,
+        senderDevices: await ownDevices(gw, whoami.did),
         threadId,
       });
       const result = await gw.sendMessage({
@@ -339,17 +346,38 @@ async function decryptIncomingViaGateway(
   body: string;
 }> {
   const content = await gw.readMessage(messageId);
-  const wrappedKey =
-    content.sender_did === ownDid && content.sender_encrypted_key
-      ? content.sender_encrypted_key
-      : content.encrypted_key;
-  const contentKey = await gw.unwrapContentKey(wrappedKey);
-  const { subject, body } = await decryptEnvelopeTextWithContentKey({
-    encrypted_content: content.encrypted_content,
-    subject_encrypted: content.subject_encrypted ?? "",
-    contentKey,
-  });
-  return { content, subject, body };
+  // This computer's own wrap first when the sender made one (docs/38),
+  // then the single wraps older messages carry.
+  let lastError: unknown = new Error("no content key wrap for this device");
+  for (const wrappedKey of contentKeyWrapsFor(content, ownDid)) {
+    let contentKey: string;
+    try {
+      contentKey = await gw.unwrapContentKey(wrappedKey);
+    } catch (error) {
+      lastError = error;
+      continue;
+    }
+    const { subject, body } = await decryptEnvelopeTextWithContentKey({
+      encrypted_content: content.encrypted_content,
+      subject_encrypted: content.subject_encrypted ?? "",
+      contentKey,
+    });
+    return { content, subject, body };
+  }
+  throw lastError;
+}
+
+/**
+ * This agent's devices (the browser, other computers), for its copies of
+ * the content key (docs/38). Best effort: without them the message still
+ * goes out with the single sender copy.
+ */
+async function ownDevices(gw: NexusInboxGatewayClient, ownDid: string): Promise<DeviceKey[] | undefined> {
+  try {
+    return (await gw.resolveRecipient(ownDid)).devices;
+  } catch {
+    return undefined;
+  }
 }
 
 function prefixReSubject(subject: string): string {
@@ -378,6 +406,9 @@ async function buildUnsignedEnvelope(args: {
   recipientEncPubKey: string;
   /** The daemon's own X25519 key (whoami); adds a sender copy when set. */
   senderEncPubKey?: string | null;
+  /** Every device of the recipient agent and of this agent (docs/38). */
+  recipientDevices?: DeviceKey[];
+  senderDevices?: DeviceKey[];
   threadId?: string | null;
 }): Promise<Omit<SendEnvelope, "signature">> {
   const contentKey = generateContentKey();
@@ -389,10 +420,15 @@ async function buildUnsignedEnvelope(args: {
   const senderKey = args.senderEncPubKey
     ? await wrapContentKeyForRecipient(contentKey, args.senderEncPubKey)
     : undefined;
+  // A copy for every device of both agents (docs/38).
+  const encryptedKeys = await wrapContentKeyForDevices(contentKey, args.recipientDevices);
+  const senderEncryptedKeys = await wrapContentKeyForDevices(contentKey, args.senderDevices);
   return {
     encrypted_content: serializeEncryptedPayload(encBody),
     encrypted_key: encKey,
     ...(senderKey ? { sender_encrypted_key: senderKey } : {}),
+    ...(encryptedKeys.length ? { encrypted_keys: encryptedKeys } : {}),
+    ...(senderEncryptedKeys.length ? { sender_encrypted_keys: senderEncryptedKeys } : {}),
     nonce: encBody.iv,
     metadata: {
       subject_encrypted: serializeEncryptedPayload(encSubject),
