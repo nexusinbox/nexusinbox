@@ -83,11 +83,22 @@ export type Agent = {
   dids?: string[];
   /** The devices that can read this agent's new messages (docs/38 stage 4). */
   devices?: AgentDevice[];
+  /** The latest device list the agent's root key signed (docs/40 §4.2). */
+  device_list?: DeviceListRef;
+};
+
+/** A signed device list as the server returns it (docs/40 §4.2). */
+export type DeviceListRef = {
+  version: number;
+  /** Compact JWS by the agent's root key; check it with @nexusinbox/core/device-list. */
+  jws: string;
 };
 
 /** One device in an agent's recipient set (docs/38 stage 4). */
 export type AgentDevice = {
   did: string;
+  /** The device's X25519 key, as senders wrap for it (docs/40). */
+  encryption_public_key?: string;
   /** "browser": the key the agent was created with; "computer": a connected computer. */
   kind: "browser" | "computer" | "other";
   /** The computer's name, e.g. "macOS". */

@@ -17,6 +17,10 @@
     "./a2a": {
       "types": "./dist/a2a.d.ts",
       "default": "./dist/a2a.js"
+    },
+    "./device-list": {
+      "types": "./dist/device-list.d.ts",
+      "default": "./dist/device-list.js"
     }
   },
   "scripts": {

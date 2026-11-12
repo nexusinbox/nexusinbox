@@ -4,11 +4,26 @@
 // messages, so a device nobody here added stands out. A computer can be
 // removed (its credential revoked, which also takes its key out of the
 // recipient set).
+//
+// Approving (docs/40 stage 1): the browser the agent was created in signs
+// the list of devices it approves. Devices it has not approved, or whose
+// key differs from the approved one, are marked; only that browser can
+// approve.
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { elapsed, parseServerTime } from "../../lib/agents/agent-status";
+import {
+  approvalOf,
+  approvedWith,
+  checkDeviceList,
+  holdsRootKey,
+  storeDeviceList,
+  type Approval,
+  type ListStatus,
+} from "../../lib/agents/device-list";
 import { deviceState, saveSeenDevices, type DeviceState } from "../../lib/agents/devices";
+import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useRevokeAgentCredentialMutation } from "../../lib/api/hooks";
 import type { Agent, AgentDevice } from "../../lib/api/types";
 import { hasRecipientPrivateKey } from "../../lib/crypto/recipient-keyring";
@@ -24,12 +39,37 @@ export function deviceName(t: (key: string, vars?: Record<string, string | numbe
   return t("agentStatus.deviceOther");
 }
 
+/** The list's status and whether this browser can approve (holds the root key). */
+export function useDeviceList(agent: Agent): { status: ListStatus | null; rootHere: boolean } {
+  const [status, setStatus] = useState<ListStatus | null>(null);
+  const [rootHere, setRootHere] = useState(false);
+  const key = `${agent.aid}|${agent.device_list?.jws ?? ""}|${(agent.devices ?? [])
+    .map((d) => `${d.did}:${d.encryption_public_key ?? ""}`)
+    .join(",")}`;
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [next, root] = await Promise.all([checkDeviceList(agent), holdsRootKey(agent)]);
+      if (!cancelled) {
+        setStatus(next);
+        setRootHere(root);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  return { status, rootHere };
+}
+
 export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
   const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
   const revoke = useRevokeAgentCredentialMutation();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<"remove" | "approve" | null>(null);
+  const [busy, setBusy] = useState(false);
   const devices = agent.devices ?? [];
+  const { status, rootHere } = useDeviceList(agent);
 
   // Which listed keys this browser holds ("この端末").
   const [heldHere, setHeldHere] = useState<Set<string>>(new Set());
@@ -60,15 +100,45 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
     return t(`agentStatus.ago.${unit}`, { n: value });
   };
 
+  const refreshed = async (): Promise<Agent | undefined> => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+    const data = await queryClient.fetchQuery({
+      queryKey: queryKeys.agents(),
+      queryFn: () => defaultApiClient.listAgents(),
+    });
+    return data.agents.find((a) => a.aid === agent.aid);
+  };
+
+  const approve = async (dids: string[]) => {
+    if (!status) return;
+    setFailed(null);
+    setBusy(true);
+    try {
+      await storeDeviceList(agent, approvedWith(agent, status, dids));
+      await refreshed();
+    } catch {
+      setFailed("approve");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (d: AgentDevice) => {
     if (!d.credential_id) return;
     if (!window.confirm(t("agentStatus.deviceRemoveConfirm", { name: deviceName(t, d) }))) return;
-    setFailed(false);
+    setFailed(null);
     try {
       await revoke.mutateAsync(d.credential_id);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+      const fresh = await refreshed();
+      // Sign the list again without it, keeping only what was approved.
+      if (fresh && rootHere && status?.kind === "ok") {
+        const keep = approvedWith(agent, status, []);
+        keep.delete(d.did);
+        await storeDeviceList(fresh, keep).catch(() => undefined);
+        await refreshed();
+      }
     } catch {
-      setFailed(true);
+      setFailed("remove");
     }
   };
 
@@ -81,29 +151,61 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
           : state === "silent"
             ? { color: "var(--warn)", background: "var(--warn-soft)", text: t("agentStatus.deviceStopped") }
             : null;
-    if (!tone) return null;
-    return (
-      <span
-        style={{
-          marginLeft: 6,
-          fontSize: 11,
-          fontWeight: 700,
-          borderRadius: 6,
-          padding: "1px 7px",
-          color: tone.color,
-          background: tone.background,
-          verticalAlign: 1,
-        }}
-      >
-        {tone.text}
-      </span>
-    );
+    return tone ? <Pill {...tone} /> : null;
   };
+
+  const approvalBadge = (approval: Approval) => {
+    if (approval === "pending") {
+      return <Pill color="var(--warn)" background="var(--warn-soft)" text={t("deviceList.pending")} />;
+    }
+    if (approval === "mismatch") {
+      return <Pill color="var(--danger)" background="var(--danger-soft)" text={t("deviceList.mismatch")} />;
+    }
+    return null;
+  };
+
+  const listed = status?.kind === "ok";
+  const allApproved = listed && devices.every((d) => approvalOf(d, status) === "approved");
 
   return (
     <div data-testid="agent-devices">
+      {status?.kind === "broken" ? (
+        <p className="item-sub" role="alert" style={{ margin: "0 0 8px", color: "var(--danger)" }}>
+          {t("deviceList.broken")}
+        </p>
+      ) : null}
+      {(status?.kind === "none" && devices.length > 1) || status?.kind === "broken" ? (
+        <div
+          data-testid="device-list-approve"
+          style={{ borderRadius: 12, background: "var(--primary-soft)", padding: "10px 12px", marginBottom: 8 }}
+        >
+          {rootHere ? (
+            <>
+              <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceList.approveTitle")}</p>
+              <p className="item-sub" style={{ margin: "2px 0 0" }}>
+                {t("deviceList.approveBody")}
+              </p>
+              <button
+                type="button"
+                className="btn primary"
+                style={{ marginTop: 8 }}
+                disabled={busy}
+                onClick={() => void approve(devices.map((d) => d.did))}
+                data-testid="device-list-approve-all"
+              >
+                {t("deviceList.approveAll", { n: devices.length })}
+              </button>
+            </>
+          ) : (
+            <p className="item-sub" style={{ margin: 0 }}>
+              {t("deviceList.otherBrowser")}
+            </p>
+          )}
+        </div>
+      ) : null}
       {devices.map((d) => {
         const state = deviceState(d, now, heldHere.has(d.did));
+        const approval = listed ? approvalOf(d, status) : null;
         const seen = d.kind === "computer" ? ago(d.last_used_at ?? d.activated_at) : null;
         return (
           <div
@@ -117,14 +219,30 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={STRONG}>{deviceName(t, d)}</span>
               {badge(state)}
+              {approval ? approvalBadge(approval) : null}
               <p className="item-sub" style={{ margin: "2px 0 0" }}>
-                {d.kind === "browser"
-                  ? t("agentStatus.deviceCreated", { date: date(d.activated_at) })
-                  : [t("agentStatus.deviceJoined", { date: date(d.activated_at) }), seen ? t("agentStatus.deviceSeen", { ago: seen }) : null]
-                      .filter(Boolean)
-                      .join(" · ")}
+                {[
+                  d.kind === "browser"
+                    ? t("agentStatus.deviceCreated", { date: date(d.activated_at) })
+                    : t("agentStatus.deviceJoined", { date: date(d.activated_at) }),
+                  seen ? t("agentStatus.deviceSeen", { ago: seen }) : null,
+                  approval === "pending" && !rootHere ? t("deviceList.pendingOther") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
+            {approval === "pending" && rootHere ? (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void approve([d.did])}
+                disabled={busy}
+                data-testid="agent-device-approve"
+              >
+                {t("deviceList.approve")}
+              </button>
+            ) : null}
             {d.credential_id ? (
               <button
                 type="button"
@@ -141,12 +259,32 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
       })}
       <p className="item-sub" style={{ margin: "4px 0 0" }}>
         {t("agentStatus.devicesNote")}
+        {allApproved ? ` ${t("deviceList.approved")}` : ""}
       </p>
       {failed ? (
         <p className="item-sub" style={{ margin: "4px 0 0", color: "var(--danger)" }} role="status">
-          {t("agentStatus.deviceRemoveFailed")}
+          {failed === "remove" ? t("agentStatus.deviceRemoveFailed") : t("deviceList.failed")}
         </p>
       ) : null}
     </div>
+  );
+}
+
+function Pill({ color, background, text }: { color: string; background: string; text: string }) {
+  return (
+    <span
+      style={{
+        marginLeft: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        borderRadius: 6,
+        padding: "1px 7px",
+        color,
+        background,
+        verticalAlign: 1,
+      }}
+    >
+      {text}
+    </span>
   );
 }

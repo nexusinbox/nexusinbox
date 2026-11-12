@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>読める端末を認める（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .head { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 18px; }
+  .body { padding: 18px 22px; }
+  .sec { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 8px; }
+  .row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .label { color: var(--muted); font-size: 13px; }
+  .dev { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px dashed var(--line); }
+  .dev:first-child { border-top: 0; padding-top: 0; }
+  .ico { width: 34px; height: 34px; border-radius: 10px; background: var(--soft); display: grid; place-items: center; flex: none; }
+  .dev b { display: block; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .b-here { color: var(--primary); background: var(--soft); }
+  .b-ok { color: var(--ok); background: var(--ok-soft); }
+  .b-warn { color: var(--warn); background: var(--warn-soft); }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .grow { flex: 1; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .banner { margin: 12px 16px; border: 1px solid #f0c36d; background: var(--warn-soft); border-radius: 14px; padding: 12px 14px; }
+  .banner b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .list { border-top: 1px solid var(--line); }
+  .msg { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .face { width: 36px; height: 36px; border-radius: 50%; background: #3fa66b; color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .cmp { grid-template-columns: 1fr; } }
+  .box { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+  .box h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+  .strike { text-decoration: line-through; color: var(--muted); }
+  aside .box { background: var(--card); margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  .b-danger { color: var(--danger); background: #fdecef; }
+  .banner.danger { border-color: var(--danger); background: #fdecef; }
+  .note { margin-top: 10px; border-radius: 12px; background: var(--soft); padding: 10px 12px; font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>読める端末を認める（案）</h1>
+  <p class="lead">docs/40 段階 1。エージェントを作ったブラウザが「この端末たちが読んでよい」と署名した一覧（名簿）を作る。段階 2 からは、送る側が名簿にある端末にだけ包むので、サーバが端末をこっそり足しても読めなくなる。<span class="new">新</span> が変わるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① はじめて（今ある端末を認める）</button>
+    <button data-s="s2">② 認めたあと</button>
+    <button data-s="s3">③ パソコンを足したとき</button>
+    <button data-s="s4">④ ほかのブラウザで見たとき</button>
+    <button data-s="s5">⑤ おかしいとき</button>
+  </div>
+
+  <!-- ① first time -->
+  <section id="s1" class="app">
+    <div class="head">エージェント › 秘書 › 状態</div>
+    <div class="body">
+      <div class="row">
+        <div class="label">読める端末</div>
+        <div>
+          <div class="note"><b>この一覧を認めてください <span class="new">新</span></b><br>
+            <span class="muted">あなたが認めた端末にだけ、メッセージが届くようになります。知らない端末があれば、認める前に「外す」を押してください。</span>
+            <div class="actions"><button class="btn primary">この 2 台を認める</button></div>
+          </div>
+          <div class="dev" style="margin-top:12px">
+            <div class="ico">🌐</div>
+            <div class="grow"><b>ブラウザ <span class="badge b-here">この端末</span></b>
+              <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（macOS） <span class="badge b-ok">動作中</span></b>
+              <span class="muted">11/10 14:02 につないだ · 2 分前に確認</span></div>
+            <button class="btn">外す</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="body muted" style="border-top:1px solid var(--line)">「メッセージ」画面にも同じ案内を 1 回だけ出す（「確かめる」でこの画面へ）。認めるのは、エージェントを作ったブラウザだけができる。</div>
+  </section>
+
+  <!-- ② after -->
+  <section id="s2" class="app" hidden>
+    <div class="head">エージェント › 秘書 › 状態</div>
+    <div class="body">
+      <div class="row">
+        <div class="label">読める端末</div>
+        <div>
+          <div class="dev">
+            <div class="ico">🌐</div>
+            <div class="grow"><b>ブラウザ <span class="badge b-here">この端末</span></b>
+              <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（macOS） <span class="badge b-ok">動作中</span></b>
+              <span class="muted">11/10 14:02 につないだ · 2 分前に確認</span></div>
+            <button class="btn">外す</button>
+          </div>
+          <p class="muted" style="margin:8px 0 0">新しく届くメッセージは、ここにある端末すべてで読めます。<span class="new">新</span> この一覧はあなたが認めたものです。</p>
+        </div>
+      </div>
+    </div>
+    <div class="body muted" style="border-top:1px solid var(--line)">認めた端末には印を付けない（いつもの状態は静かに）。「外す」を押すと、このブラウザが外したあとの一覧に署名し直す（押す手間は今と同じ）。</div>
+  </section>
+
+  <!-- ③ new computer -->
+  <section id="s3" class="app" hidden>
+    <div class="head">エージェント › 秘書 › 状態</div>
+    <div class="body">
+      <div class="row">
+        <div class="label">読める端末</div>
+        <div>
+          <div class="dev">
+            <div class="ico">🌐</div>
+            <div class="grow"><b>ブラウザ <span class="badge b-here">この端末</span></b>
+              <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（Linux） <span class="badge b-warn">まだ認めていません</span> <span class="new">新</span></b>
+              <span class="muted">11/12 09:40 につないだ · 1 分前に確認</span></div>
+            <button class="btn primary">認める</button><button class="btn" style="margin-left:6px">外す</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="banner">
+      <b>「秘書」を読める端末が増えました</b>
+      <span class="muted">パソコン（Linux） · 11/12 09:40 につながりました。あなたがつないだものでなければ、すぐに外すか、緊急停止してください。</span>
+      <div class="actions"><button class="btn primary">わたしがつないだ（認める）</button><button class="btn">端末を見る</button><button class="btn danger">緊急停止</button></div>
+    </div>
+    <div class="body muted" style="border-top:1px solid var(--line)">はじめての設定やエージェント画面で、このブラウザからつないだ直後は、自動で認める（知らせも出さない）。段階 2 で接続コードに秘密を足すと、このとき「本当にそのパソコンの鍵か」も確かめてから認めるようになる。</div>
+  </section>
+
+  <!-- ④ other browser -->
+  <section id="s4" class="app" hidden>
+    <div class="head">エージェント › 秘書 › 状態（エージェントを作ったのとは別のブラウザ）</div>
+    <div class="body">
+      <div class="row">
+        <div class="label">読める端末</div>
+        <div>
+          <div class="dev">
+            <div class="ico">🌐</div>
+            <div class="grow"><b>ブラウザ</b>
+              <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（Linux） <span class="badge b-warn">まだ認めていません</span></b>
+              <span class="muted">11/12 09:40 につないだ · エージェントを作ったブラウザで認めてください <span class="new">新</span></span></div>
+            <button class="btn">外す</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ⑤ wrong -->
+  <section id="s5" class="app" hidden>
+    <div class="head">メッセージ</div>
+    <div class="banner danger">
+      <b>「秘書」の端末の一覧が、あなたが認めたものと違います <span class="new">新</span></b>
+      <span class="muted">パソコン（macOS） の鍵が、認めたときと変わっています。運営のサーバか、だれかがすり替えようとしている可能性があります。</span>
+      <div class="actions"><button class="btn">端末を見る</button><button class="btn danger">緊急停止</button></div>
+    </div>
+    <div class="list">
+      <div class="msg"><div class="face">ア</div><div><b>アレックスさんの秘書</b><div class="muted">来週の打ち合わせ、木曜 14:00 か…</div></div></div>
+    </div>
+    <div class="body muted">出すのは: 名簿の署名を確かめられないとき、名簿にある端末の鍵がサーバの返す鍵と違うとき、名簿の版が前に見たものより古いとき。エージェント画面では、その端末に <span class="badge b-danger">認めたときと鍵が違います</span> を付ける。</div>
+  </section>
+</main>
+
+<aside>
+  <div class="box">
+    <h3>作るのに要ること</h3>
+    <ul>
+      <li><b>API</b>（手元で実装・テスト済み）: 名簿の保存 <code>PUT /agents/{id}/device-list</code>（エージェントを作った鍵の署名だけ受け付ける、版は増える一方）、<code>GET /agents</code> と宛先の解決に最新の名簿。マイグレーション 1 本</li>
+      <li><b>core</b>（済み）: 名簿の署名と確認</li>
+      <li><b>Web</b>: 上の ①〜⑤。送る側はまだ名簿を使わない（段階 2）</li>
+      <li>このブラウザが前に見た名簿の版を覚え、古い版に戻されたら ⑤ を出す</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>決めてほしいこと</h3>
+    <ul>
+      <li>認めた端末には印を付けず、まだのものだけ目立たせるか（推奨: そうする）</li>
+      <li>このブラウザからつないだ直後は自動で認めるか（推奨: 認める。段階 2 で接続コードの秘密による確認を足すまでのつなぎ）</li>
+      <li>はじめての「この一覧を認めてください」を「メッセージ」画面にも 1 回出すか（推奨: 出す）</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+</script>
+</body>
+</html>

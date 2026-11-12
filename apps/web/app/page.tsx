@@ -11,6 +11,7 @@ import { AppShell } from "./_components/AppShell";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
 import { InviteCard, useInviteName } from "./_components/InviteCard";
+import { DeviceListNotice } from "./_components/DeviceListNotice";
 import { NewDeviceNotice } from "./_components/NewDeviceNotice";
 import { StoppedComputerNotice } from "./_components/StoppedComputerNotice";
 import {
@@ -559,6 +560,8 @@ function MessagesPageInner() {
       <InboxAgentBar agents={agentList} />
       {/* A device joined one of these agents since this browser looked (docs/38). */}
       <NewDeviceNotice agents={agentList} />
+      {/* The signed device list: ask to approve, or warn when it differs (docs/40). */}
+      <DeviceListNotice agents={agentList} />
       {/* A computer that stopped (e.g. after a restart) stops auto-replies too (docs/39). */}
       <StoppedComputerNotice agents={agentList} />
 

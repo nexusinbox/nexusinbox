@@ -504,6 +504,43 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
+  /agents/{id}/device-list:
+    put:
+      summary: Store a device list the agent's root key signed
+      description: |
+        Human session only (docs/40 §4.2). The list must be signed by the
+        agent's root key, name only active devices of the agent with the
+        encryption keys the server holds for them (1 to 10), and carry a
+        version above the latest stored one. Every version is kept.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutDeviceListRequest'
+      responses:
+        '200':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutDeviceListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not an agent of the caller
+        '409':
+          description: The root key is not active, or a list with this or a later version is stored
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /agents/{id}/emergency-shutdown:
     post:
       summary: Revoke every credential and token under an agent
@@ -1280,6 +1317,9 @@ components:
             properties:
               did:
                 type: string
+              encryption_public_key:
+                type: string
+                description: The device's X25519 key; the root browser signs it into the device list (docs/40).
               kind:
                 type: string
                 enum: [browser, computer, other]
@@ -1293,7 +1333,9 @@ components:
               credential_id:
                 type: [string, 'null']
                 description: Revoking this credential takes the computer out of the recipient set.
-            required: [did, kind, activated_at]
+            required: [did, encryption_public_key, kind, activated_at]
+        device_list:
+          $ref: '#/components/schemas/DeviceListRef'
       required: [id, aid, did, label, is_active, auto_reply, unread_count, created_at]
 
     CreateAgentRequest:
@@ -1345,6 +1387,8 @@ components:
             above are the newest device, for clients that wrap once.
           items:
             $ref: '#/components/schemas/DeviceKey'
+        device_list:
+          $ref: '#/components/schemas/DeviceListRef'
       required: [input, aid, did, signing_public_key, encryption_public_key, devices]
 
     DeviceKey:
@@ -1355,6 +1399,38 @@ components:
         encryption_public_key:
           type: string
       required: [did, encryption_public_key]
+
+    DeviceListRef:
+      type: object
+      description: |
+        The latest device list the agent's root key (the browser key it
+        was created with, the agent's `did`) signed (docs/40 §4.2). Absent
+        until the root browser signs one. `jws` is a compact JWS, header
+        `{"alg":"EdDSA","typ":"nexusinbox-device-list","kid":<root DID>}`,
+        payload `{"v":1,"aid","root","version","issued_at","devices":[{"did","enc","kind"}]}`.
+        Clients check the signature themselves; the server cannot sign.
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        jws:
+          type: string
+      required: [version, jws]
+
+    PutDeviceListRequest:
+      type: object
+      properties:
+        jws:
+          type: string
+          maxLength: 16384
+      required: [jws]
+
+    PutDeviceListResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+      required: [version]
 
     KeyWrap:
       type: object

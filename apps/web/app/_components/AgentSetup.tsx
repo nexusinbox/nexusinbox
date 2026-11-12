@@ -148,7 +148,7 @@ export function ConnectComputer({
   onConnected,
 }: {
   agentId: string;
-  onConnected: (device: string) => void;
+  onConnected: (device: string, credentialId: string) => void;
 }) {
   const { t } = useTranslation();
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -199,7 +199,7 @@ export function ConnectComputer({
           const credential = credentials.find((c) => c.credential_id === pairing.credentialId);
           if (!stopped && credential?.status === "active") {
             setConnected(true);
-            onConnected(credential.label);
+            onConnected(credential.label, credential.credential_id);
           }
         })
         .catch(() => undefined);

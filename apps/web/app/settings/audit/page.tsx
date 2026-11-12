@@ -56,6 +56,7 @@ const EVENTS: Record<string, { kind: Kind; critical?: boolean }> = {
   emergency_shutdown: { kind: "stop", critical: true },
   credential_activated: { kind: "connect" },
   credential_revoked: { kind: "disconnect" },
+  device_list_signed: { kind: "settings" },
   credential_activation_failed: { kind: "warn" },
   credential_auto_revoked: { kind: "warn", critical: true },
   credential_compromised: { kind: "warn", critical: true },

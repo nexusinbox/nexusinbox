@@ -121,10 +121,11 @@ function OnboardingFlow() {
           <ConnectStep
             agent={agent}
             device={device}
-            onConnected={(connected) => {
+            onConnected={(connected, credentialId) => {
               setDevice(connected);
-              // Connected here: no "new device" notice for it (docs/38).
-              void acknowledgeDevicesAfterConnect(queryClient, agent.aid);
+              // Connected here: no "new device" notice for it (docs/38), and
+              // approve it (docs/40 stage 1).
+              void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId);
             }}
             onBack={() => setStep("where")}
             onNext={() => setStep("replies")}
@@ -265,7 +266,7 @@ function ConnectStep({
 }: {
   agent: NewAgent;
   device: string | null;
-  onConnected: (device: string) => void;
+  onConnected: (device: string, credentialId: string) => void;
   onBack: () => void;
   onNext: () => void;
 }) {

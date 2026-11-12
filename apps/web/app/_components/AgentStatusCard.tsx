@@ -209,11 +209,12 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
             </p>
             <ConnectComputer
               agentId={agent.id}
-              onConnected={() => {
+              onConnected={(_device, credentialId) => {
                 setConnectStage("idle");
                 void queryClient.invalidateQueries({ queryKey: queryKeys.agentCredentials() });
-                // The person connected it here: no "new device" notice for it.
-                void acknowledgeDevicesAfterConnect(queryClient, agent.aid);
+                // The person connected it here: no "new device" notice for
+                // it, and approve it (docs/40 stage 1).
+                void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId);
               }}
             />
             <button

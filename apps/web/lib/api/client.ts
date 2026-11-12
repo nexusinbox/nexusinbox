@@ -257,6 +257,14 @@ export class NexusInboxApiClient {
     return this.request<AuditLogResponse>("/agent-audit-log" + (qs ? "?" + qs : ""));
   }
 
+  /** Store a device list the agent's root key signed (docs/40 §4.2). */
+  async putDeviceList(agentId: string, jws: string): Promise<{ version: number }> {
+    return this.request<{ version: number }>(
+      "/agents/" + encodeURIComponent(agentId) + "/device-list",
+      { method: "PUT", body: JSON.stringify({ jws }) },
+    );
+  }
+
   async emergencyShutdown(agentId: string): Promise<EmergencyShutdownResponse> {
     return this.request<EmergencyShutdownResponse>(
       "/agents/" + encodeURIComponent(agentId) + "/emergency-shutdown",

@@ -5,10 +5,14 @@
 // connected it, the server (or someone holding it) may have added a key to
 // read new messages, so the notice offers the emergency stop right away.
 // What this browser has seen lives in this browser only.
+//
+// In the browser the agent was created in, "I connected it" also approves
+// the device into the signed list (docs/40 stage 1).
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { approvedWith, checkDeviceList, holdsRootKey, storeDeviceList } from "../../lib/agents/device-list";
 import { loadSeenDevices, saveSeenDevices, unseenDevices } from "../../lib/agents/devices";
 import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useEmergencyShutdownMutation } from "../../lib/api/hooks";
@@ -19,9 +23,15 @@ import { deviceName } from "./AgentDevices";
 
 /**
  * After the person connects a computer in this browser, record the agent's
- * device list as seen, so the computer they just added raises no notice.
+ * device list as seen, so the computer they just added raises no notice,
+ * and, in the browser the agent was created in, approve that computer
+ * (the one whose credential was just activated) into the signed list.
  */
-export async function acknowledgeDevicesAfterConnect(queryClient: QueryClient, aid: string): Promise<void> {
+export async function acknowledgeDevicesAfterConnect(
+  queryClient: QueryClient,
+  aid: string,
+  credentialId?: string,
+): Promise<void> {
   try {
     await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
     const data = await queryClient.fetchQuery({
@@ -30,40 +40,69 @@ export async function acknowledgeDevicesAfterConnect(queryClient: QueryClient, a
     });
     const agent = data.agents.find((a) => a.aid === aid);
     if (agent?.devices) saveSeenDevices(aid, agent.devices);
+    const connected = agent?.devices?.find((d) => credentialId && d.credential_id === credentialId);
+    if (agent && connected && (await holdsRootKey(agent))) {
+      const status = await checkDeviceList(agent);
+      if (status.kind !== "broken") {
+        await storeDeviceList(agent, approvedWith(agent, status, [connected.did]));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+      }
+    }
   } catch {
-    // The notice may show once; the person can dismiss it.
+    // The notice may show once; the person can approve from there.
   }
 }
 
-type Pending = { agent: Agent; devices: AgentDevice[] };
+type Pending = { agent: Agent; devices: AgentDevice[]; rootHere: boolean };
 
 export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
   const { t, locale } = useTranslation();
+  const queryClient = useQueryClient();
   const shutdown = useEmergencyShutdownMutation();
   const [pending, setPending] = useState<Pending[]>([]);
   const [note, setNote] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   const key = agents.map((a) => `${a.aid}:${(a.devices ?? []).map((d) => d.did).join(",")}`).join("|");
   useEffect(() => {
-    const next: Pending[] = [];
-    for (const agent of agents) {
-      const devices = agent.devices ?? [];
-      if (devices.length === 0) continue;
-      const seen = loadSeenDevices(agent.aid);
-      // First look at this agent from this browser: just remember it.
-      if (seen === null) {
-        saveSeenDevices(agent.aid, devices);
-        continue;
+    let cancelled = false;
+    void (async () => {
+      const next: Pending[] = [];
+      for (const agent of agents) {
+        const devices = agent.devices ?? [];
+        if (devices.length === 0) continue;
+        const seen = loadSeenDevices(agent.aid);
+        // First look at this agent from this browser: just remember it.
+        if (seen === null) {
+          saveSeenDevices(agent.aid, devices);
+          continue;
+        }
+        const added = unseenDevices(devices, seen);
+        if (added.length > 0) next.push({ agent, devices: added, rootHere: await holdsRootKey(agent) });
       }
-      const added = unseenDevices(devices, seen);
-      if (added.length > 0) next.push({ agent, devices: added });
-    }
-    setPending(next);
+      if (!cancelled) setPending(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [key]);
 
   const acknowledge = (agent: Agent) => {
     saveSeenDevices(agent.aid, agent.devices ?? []);
     setPending((list) => list.filter((p) => p.agent.aid !== agent.aid));
+  };
+
+  // "I connected it": in the root browser, approve the new devices too.
+  const mine = async ({ agent, devices, rootHere }: Pending) => {
+    acknowledge(agent);
+    if (!rootHere) return;
+    try {
+      const status = await checkDeviceList(agent);
+      if (status.kind === "broken") return;
+      await storeDeviceList(agent, approvedWith(agent, status, devices.map((d) => d.did)));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+    } catch {
+      setNote({ tone: "error", text: t("deviceList.failed") });
+    }
   };
 
   const stop = async (agent: Agent) => {
@@ -82,7 +121,9 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
 
   return (
     <div data-testid="new-device-notice">
-      {pending.map(({ agent, devices }) => (
+      {pending.map((p) => {
+        const { agent, devices, rootHere } = p;
+        return (
         <div
           key={agent.aid}
           role="alert"
@@ -105,8 +146,8 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
             </p>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            <button type="button" className="dm-btn accent" onClick={() => acknowledge(agent)} data-testid="new-device-mine">
-              {t("deviceNotice.mine")}
+            <button type="button" className="dm-btn accent" onClick={() => void mine(p)} data-testid="new-device-mine">
+              {rootHere ? t("deviceNotice.mineApprove") : t("deviceNotice.mine")}
             </button>
             <Link href={`/settings/agents?agent=${encodeURIComponent(agent.did)}`} className="dm-btn">
               {t("deviceNotice.view")}
@@ -123,7 +164,8 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
             </button>
           </div>
         </div>
-      ))}
+        );
+      })}
       {note ? (
         <p
           role="status"

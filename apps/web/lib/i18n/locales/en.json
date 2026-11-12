@@ -835,6 +835,10 @@
         "label": "Computer registration revoked",
         "text": "Revoked the computer registration of {agent}"
       },
+      "device_list_signed": {
+        "label": "Device list approved",
+        "text": "Approved the devices that can read {agent}"
+      },
       "credential_activation_failed": {
         "label": "Computer registration failed",
         "text": "Registering the computer for {agent} failed"
@@ -1641,10 +1645,31 @@
     "notice": "A new version is out. Reload to get the latest screens.",
     "reload": "Reload"
   },
+  "deviceList": {
+    "approveTitle": "Approve this list",
+    "approveBody": "Messages will reach only the devices you approve. If you do not know a device, remove it before approving.",
+    "approveAll": "Approve these {n} devices",
+    "otherBrowser": "Approve this list in the browser the agent was created in.",
+    "pending": "Not approved yet",
+    "pendingOther": "Approve it in the browser the agent was created in",
+    "approve": "Approve",
+    "mismatch": "Key differs from the one you approved",
+    "approved": "You approved this list.",
+    "broken": "The device list cannot be checked. The server, or someone else, may be trying to swap in a device.",
+    "failed": "Could not approve. Please try again.",
+    "noticeTitle": "Check the devices that can read \"{agent}\"",
+    "noticeBody": "Messages will reach only the devices you approve.",
+    "noticeView": "Check",
+    "noticeLater": "Later",
+    "wrongTitle": "The device list of \"{agent}\" is not the one you approved",
+    "wrongMismatch": "The key of {device} has changed since you approved it. The server, or someone else, may be trying to swap it.",
+    "wrongBroken": "The list's signature does not check out, or it is older than one seen before. The server, or someone else, may be trying to swap in a device."
+  },
   "deviceNotice": {
     "title": "A new device can read \"{agent}\"",
     "body": "{device} connected {date}. If you did not connect it, remove it or use the emergency stop now.",
     "mine": "I connected it",
+    "mineApprove": "I connected it (approve)",
     "view": "See devices",
     "stop": "Emergency stop",
     "stopped": "Emergency stop done. Every computer and AI connected to \"{agent}\" has been stopped.",
