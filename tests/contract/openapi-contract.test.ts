@@ -123,7 +123,6 @@ describe("OpenAPI contract — non-interactive agent endpoints", () => {
     "/agent-auth/refresh",
     "/agent-auth/revoke",
     "/agent-audit-log",
-    "/agent-audit-log/bridge",
     "/agents/{id}/emergency-shutdown",
   ];
 
@@ -141,7 +140,6 @@ describe("OpenAPI contract — non-interactive agent endpoints", () => {
     ["/agent-auth/token", "post"],
     ["/agent-auth/refresh", "post"],
     ["/agent-auth/revoke", "post"],
-    ["/agent-audit-log/bridge", "post"],
   ];
 
   it.each(PUBLIC_OPS)("%s %s declares no auth requirement", async (path, method) => {
@@ -420,18 +418,6 @@ describe("OpenAPI contract — non-interactive agent endpoints", () => {
         tokens_revoked: 0,
       }),
     ).toBe(false);
-  });
-
-  // ---- Bridge audit ingest ---------------------------------------------
-
-  it("validates BridgeAuditIngestRequest / Response shape", async () => {
-    const doc = await loadOpenApi();
-    const reqValidate = compile(doc, "BridgeAuditIngestRequest");
-    const respValidate = compile(doc, "BridgeAuditIngestResponse");
-    expect(reqValidate({ jws: "eyJhbGciOiJFZERTQSJ9.e30.sig" })).toBe(true);
-    expect(reqValidate({})).toBe(false);
-    expect(respValidate({ accepted: true })).toBe(true);
-    expect(respValidate({})).toBe(false);
   });
 });
 

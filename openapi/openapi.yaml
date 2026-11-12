@@ -504,36 +504,6 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
-  /agent-audit-log/bridge:
-    post:
-      summary: Ingest a Signer Daemon bridge audit event (JWS-authenticated)
-      description: |
-        Write-only endpoint for the Signer Daemon fire-and-forget audit
-        forwarder. Each event is signed as a standalone JWS with the
-        agent's Ed25519 signing key — independent of the access-token
-        lifecycle. Verification chain: JWS EdDSA check → `iss` matches
-        credential `aid` → `aud` byte-equal to the expected ingest URL
-        → `iat` within ±60s → `jti` not replayed within the window →
-        `bridge_event.event` is in the allow-list.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BridgeAuditIngestRequest'
-      responses:
-        '200':
-          description: Accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BridgeAuditIngestResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
   /agents/{id}/emergency-shutdown:
     post:
       summary: Revoke every credential and token under an agent
@@ -1137,8 +1107,8 @@ components:
       schema:
         type: string
       description: |
-        Prefix filter on `event`, e.g. `bridged_` to bucket the bridge
-        lifecycle. Ignored unless `event` is absent. Only
+        Prefix filter on `event`, e.g. `attachment_` to bucket a family
+        of events. Ignored unless `event` is absent. Only
         `[A-Za-z0-9_]` characters (length ≤ 64) are accepted; anything
         else is silently dropped to prevent LIKE wildcard injection.
     AuditLimit:
@@ -1951,7 +1921,7 @@ components:
           description: |
             Event name, e.g. `credential_created`, `credential_revoked`,
             `token_issued`, `token_refreshed`, `token_reuse_detected`,
-            `emergency_shutdown`, `bridged_*`.
+            `emergency_shutdown`.
         detail:
           type: object
           additionalProperties: true
@@ -1973,25 +1943,6 @@ components:
         total:
           type: integer
       required: [events, total]
-
-    BridgeAuditIngestRequest:
-      type: object
-      properties:
-        jws:
-          type: string
-          description: |
-            JWS compact serialization. Payload fields: `iss` (aid),
-            `sub` (credential_id UUID), `aud`, `iat`, `jti`, and a
-            `bridge_event` object whose `event` must match the server's
-            allow-list.
-      required: [jws]
-
-    BridgeAuditIngestResponse:
-      type: object
-      properties:
-        accepted:
-          type: boolean
-      required: [accepted]
 
     EmergencyShutdownResponse:
       type: object

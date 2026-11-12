@@ -535,8 +535,8 @@ export type AuditLogQuery = {
   aid?: string;
   event?: string;
   /**
-   * Prefix match on the `event` column — useful for grouping
-   * `bridged_*` Phase 3c.3 events into a single dashboard view.
+   * Prefix match on the `event` column — useful for grouping a
+   * family of events (e.g. `attachment_*`) into one view.
    * Server silently ignores non-alphanumeric/underscore input to
    * defang LIKE wildcard injection.
    */

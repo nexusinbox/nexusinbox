@@ -31,6 +31,14 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // The old per-agent inbox (/agent, /agent/<DID>) is gone; bookmarks land
+  // on Messages, filtered to that agent.
+  async redirects() {
+    return [
+      { source: "/agent", destination: "/", permanent: false },
+      { source: "/agent/:did", destination: "/?agent=:did", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

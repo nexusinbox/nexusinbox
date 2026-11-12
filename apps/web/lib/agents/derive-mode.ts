@@ -1,13 +1,11 @@
-// Pure helper for the agent mode badge + Bridge-panel gate. Lives
-// outside the page component so the priority rules can be unit-tested
-// in isolation; both the badge in `<AgentModePanel>` and the gate in
-// `<BridgeTokenPanel>` import from here so they cannot drift.
+// Pure helper for the agent mode badge. Lives outside the page
+// component so the priority rules can be unit-tested in isolation.
 //
 // Spec:
 //   1. Any active `web_keystore` → "standard"
 //      (browser holds a key → user can decrypt locally)
 //   2. Any active `signer_daemon` → "daemon_isolated"
-//      (key lives only in the daemon → Web UI needs Bridged restore)
+//      (key lives only in the daemon)
 //   3. Else (only `unknown` rows or no active rows) → "default"
 //      (pre-migration / nothing activated → fall back to Standard UX
 //      while signalling the unconfirmed state via a separate hint)
@@ -33,10 +31,8 @@ export function deriveAgentMode(
   // Priority 2: any signer_daemon wins. Use `some`, not `every` — the
   // common transition state (one MCP --init credential tagged 'unknown'
   // alongside a freshly bootstrapped Isolated credential) must still
-  // resolve to "daemon_isolated" so the Bridge panel surfaces and the
-  // user can pair / decrypt. The earlier `every` form silently hid the
-  // panel until every legacy credential was revoked, which is the
-  // opposite of helpful.
+  // resolve to "daemon_isolated". The earlier `every` form kept the
+  // badge at "default" until every legacy credential was revoked.
   if (active.some((cred) => cred.key_holder === "signer_daemon")) {
     return "daemon_isolated";
   }

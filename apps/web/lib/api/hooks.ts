@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { clearAllBridgeTokens } from "../bridge/token-store";
 import { disconnectCalendar } from "../calendar/gcalAuth";
 import { loadAddressBook, resetContactsKey, sealForSave } from "../contacts/address-book";
 import { disconnectLLM } from "../llm/llmAuth";
@@ -415,12 +414,11 @@ export function useAuthLogoutMutation() {
     onSettled: async () => {
       // Session-scoped secrets die with the session, even when the
       // server call failed (the button navigates to /login regardless).
-      // All are re-obtainable: re-pair the bridge, re-enter the LLM key,
+      // All are re-obtainable: re-enter the LLM key,
       // reconnect Google Calendar (its token lives about an hour anyway;
       // revoked here so a shared machine keeps no calendar access). The
       // E2E private keys in IndexedDB are deliberately left alone — this
       // browser may hold the only copy.
-      clearAllBridgeTokens();
       await disconnectLLM();
       await disconnectCalendar().catch(() => {});
     },
@@ -434,7 +432,6 @@ export function useDeleteAccountMutation() {
     onSuccess: async () => {
       // Same clean-up as logout: the session is gone with the account.
       await queryClient.clear();
-      clearAllBridgeTokens();
       await disconnectLLM();
       await disconnectCalendar().catch(() => {});
     },

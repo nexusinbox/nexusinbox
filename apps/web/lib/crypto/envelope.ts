@@ -144,11 +144,7 @@ export async function decryptEnvelopeTextWithState(
  * — skips the X25519 / keyring lookup that the standard path does.
  *
  * Useful when something else already recovered the content key on
- * this device, e.g. the bridged-restore flow (docs/22): the Signer
- * Daemon unwraps `encrypted_key` over its localhost bridge and
- * returns just the `content_key`; the browser then calls this to
- * finish the AES-GCM decrypt locally without the recipient's X25519
- * private key ever entering the page.
+ * this device, e.g. a draft's review key (lib/crypto/review-key.ts).
  */
 export async function decryptEnvelopeTextWithContentKey(
   maybeEncrypted: string,

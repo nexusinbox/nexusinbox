@@ -37,15 +37,13 @@ describe("web security headers", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
-  it("lists only loopback sources browsers accept for the daemon bridge", () => {
-    for (const isDev of [false, true]) {
-      const csp = buildCsp("test-nonce", "/", { isDev });
-      const connect = csp.split("; ").find((d) => d.startsWith("connect-src "))!;
-      const sources = connect.split(" ").slice(1);
-      expect(sources).toContain("http://127.0.0.1:*");
-      // An IP-literal host source is invalid CSP; browsers drop it noisily.
-      expect(sources.some((s) => s.includes("["))).toBe(false);
-    }
+  it("does not let production pages reach this computer's loopback", () => {
+    // The page talks to nothing on the person's own machine (docs/22 was
+    // retired); a loopback source would only widen what an XSS can reach.
+    const csp = buildCsp("test-nonce", "/", { isDev: false });
+    const connect = csp.split("; ").find((d) => d.startsWith("connect-src "))!;
+    const sources = connect.split(" ").slice(1);
+    expect(sources.some((s) => s.includes("127.0.0.1") || s.includes("localhost"))).toBe(false);
   });
 
   it("lets the browser reach the BYOK endpoints (AI draft, Calendar) by exact URL", () => {

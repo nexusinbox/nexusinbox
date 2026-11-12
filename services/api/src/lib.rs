@@ -10017,38 +10017,6 @@ fn generate_token(prefix: &str) -> String {
 /// Maximum sends per credential per day (Policy L3, configurable)
 const POLICY_L3_MAX_SENDS_PER_CREDENTIAL_PER_DAY: i64 = 200;
 
-/// Event types the bridge-audit ingest endpoint (Phase 3c.3 of
-/// docs/22) is allowed to write. Keeping this strict stops a
-/// compromised daemon from forging arbitrary events on behalf of
-/// an agent — it can only stamp bridge lifecycle rows.
-const BRIDGE_AUDIT_ALLOWED_EVENTS: &[&str] = &[
-    "bridged_decrypt",
-    "bridged_status",
-    "bridged_pair_requested",
-    "bridged_pair_succeeded",
-    "bridged_pair_failed",
-    "bridged_pair_revoked",
-];
-
-/// Max clock skew accepted on `iat` in the ingest JWS. Matches the
-/// 60-second window used by `/agent-auth/token`'s enrollment_proof
-/// check, so daemons don't need separate clock-sync tolerance.
-const BRIDGE_AUDIT_IAT_SKEW_SECONDS: i64 = 60;
-
-/// How long the server remembers a (credential_id, jti) to reject
-/// replays of the same signed envelope. 2× the iat skew window so
-/// any event that would still look "fresh" to the iat check is
-/// still inside the replay window and must have a unique jti.
-const BRIDGE_AUDIT_REPLAY_WINDOW_SECS: i64 = 120;
-
-/// Scope string for bridge-audit replay rows. Including the
-/// credential_id means two daemons whose jti generators happen to
-/// collide (e.g. reused uuid after a process restart on one side)
-/// are not mistaken for replays of each other.
-fn bridge_audit_replay_scope(credential_id: Uuid) -> String {
-    format!("bridge_audit|{credential_id}")
-}
-
 /// How long the server remembers a (credential_id, jti) pair to
 /// reject replays of the same `/agent-auth/token` assertion. Must
 /// be strictly larger than the iat acceptance window (60 s) so any
@@ -10060,10 +10028,11 @@ fn agent_auth_replay_scope(credential_id: Uuid) -> String {
     format!("agent_auth|{credential_id}")
 }
 
-/// Mirror of {@link check_and_record_bridge_audit_replay} for the
-/// interactive token-issuance endpoint. Separate scope so the two
-/// replay windows don't interfere — a jti the daemon reused across
-/// the two endpoints should fail both.
+/// Atomic "was this (credential_id, jti) pair seen in the last 120s?"
+/// check for the token-issuance endpoint. Prefers the shared Postgres
+/// `replay_nonces` table; falls back to the in-memory `seen_auth_proofs`
+/// HashMap only when a DB isn't configured (tests, local dev). Fail-closed
+/// on DB errors.
 async fn check_and_record_agent_auth_replay(
     state: &AppState,
     credential_id: Uuid,
@@ -10082,30 +10051,6 @@ async fn check_and_record_agent_auth_replay(
     Ok(check_and_record_auth_replay_in_memory(state, &composite))
 }
 
-/// Atomic "was this (credential_id, jti) pair seen in the last 120s?"
-/// check. Prefers the shared Postgres `replay_nonces` table; falls
-/// back to the in-memory `seen_auth_proofs` HashMap only when a DB
-/// isn't configured (tests, local dev). Fail-closed on DB errors.
-async fn check_and_record_bridge_audit_replay(
-    state: &AppState,
-    credential_id: Uuid,
-    jti: &str,
-) -> Result<bool, String> {
-    let maybe_pool = state.database_pool().await?;
-    if let Some(pool) = maybe_pool {
-        let scope = bridge_audit_replay_scope(credential_id);
-        return check_and_record_replay_in_db(&pool, &scope, jti, BRIDGE_AUDIT_REPLAY_WINDOW_SECS)
-            .await;
-    }
-    if database_required() {
-        return Err("database is required but unavailable".to_string());
-    }
-    // In-memory: include the scope in the map key so different
-    // credentials' jti namespaces stay disjoint.
-    let composite = format!("{}|{}", bridge_audit_replay_scope(credential_id), jti);
-    Ok(check_and_record_auth_replay_in_memory(state, &composite))
-}
-
 /// Compose an absolute URL the server would claim as the canonical
 /// location of `path` (which must include the leading `/`). Preference
 /// order:
@@ -10120,8 +10065,7 @@ async fn check_and_record_bridge_audit_replay(
 ///      that haven't wired the env var yet.
 ///
 /// Used for byte-equal `aud` validation on any signed assertion the
-/// server accepts (`/agent-auth/token`, `/agent-audit-log/bridge`,
-/// …) — callers should NOT roll their own aud derivation.
+/// server accepts (`/agent-auth/token`, …) — callers should NOT roll their own aud derivation.
 fn expected_api_url(headers: &axum::http::HeaderMap, path: &str) -> Option<String> {
     debug_assert!(path.starts_with('/'), "path must start with '/'");
     if let Ok(raw) = std::env::var("AGENT_INBOX_PUBLIC_API_URL") {
@@ -10142,230 +10086,6 @@ fn expected_api_url(headers: &axum::http::HeaderMap, path: &str) -> Option<Strin
         .filter(|s| s == "http" || s == "https")
         .unwrap_or_else(|| "https".to_string());
     Some(format!("{scheme}://{host}{path}"))
-}
-
-#[derive(Deserialize)]
-struct BridgeAuditIngestRequest {
-    /// JWS compact serialization. Payload must include `iss` (aid),
-    /// `sub` (credential_id uuid), `iat`, `jti`, `aud`, and a
-    /// `bridge_event` object carrying the event fields below.
-    jws: String,
-}
-
-#[derive(Serialize)]
-struct BridgeAuditIngestResponse {
-    accepted: bool,
-}
-
-/// `POST /agent-audit-log/bridge` — accept a signer-daemon bridge
-/// audit event and insert it into `agent_audit_log` without going
-/// through the interactive agent-token dance (docs/22 §8 Phase 3c).
-///
-/// The caller is expected to be a Signer Daemon fire-and-forget
-/// audit forwarder that doesn't hold an access token. Auth is a
-/// single-use JWS signed by the agent's Ed25519 signing key — the
-/// same key the `/agent-credentials/:id/activate` flow registered.
-/// Per-event signing keeps the write endpoint independent of the
-/// access-token lifecycle (no token cache, no DPoP, no refresh)
-/// while still being cryptographically bound to the credential.
-///
-/// Verification chain:
-///   1. JWS parse + EdDSA signature check against
-///      `agent_credentials.signing_public_key`.
-///   2. `iss` matches the credential's aid.
-///   3. `aud` byte-equal match against the expected ingest URL
-///      (derived from `AGENT_INBOX_PUBLIC_API_URL` if set, else the
-///      `Host` / `X-Forwarded-Proto` headers). No suffix / prefix
-///      matching — a JWS that was signed for any other endpoint is
-///      rejected even if it happens to end with the same path.
-///   4. `iat` inside ±60 s of server time.
-///   5. `jti` present and not seen in the last
-///      `BRIDGE_AUDIT_REPLAY_WINDOW_SECS` (per credential_id) —
-///      keeps an attacker who sniffed one JWS from replaying it.
-///   6. `bridge_event.event` is in the strict allow-list.
-///
-/// Everything after that is treated as opaque detail JSON.
-async fn ingest_bridge_audit_event(
-    State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-    JsonBody(payload): JsonBody<BridgeAuditIngestRequest>,
-) -> Result<Json<BridgeAuditIngestResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Every shape-level guard runs *before* we touch the DB pool so
-    // a malformed request doesn't masquerade as "database unavailable"
-    // — the caller needs to know whether the problem is their payload
-    // or our infra.
-    let parts: Vec<&str> = payload.jws.split('.').collect();
-    if parts.len() != 3 {
-        return Err(validation_error("jws must be a compact three-part JWS"));
-    }
-    let payload_bytes = URL_SAFE_NO_PAD
-        .decode(parts[1])
-        .map_err(|_| validation_error("invalid base64url in JWS payload"))?;
-    let claims: serde_json::Value = serde_json::from_slice(&payload_bytes)
-        .map_err(|e| validation_error(&format!("invalid JWS payload JSON: {e}")))?;
-
-    let credential_id_str = claims
-        .get("sub")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| validation_error("JWS payload missing sub"))?;
-    let credential_id = Uuid::parse_str(credential_id_str)
-        .map_err(|_| validation_error("JWS sub is not a valid credential UUID"))?;
-
-    // DB is only needed from here down — credential lookup + insert.
-    let pool = state
-        .database_pool()
-        .await
-        .map_err(|msg| internal_server_error(&msg))?
-        .ok_or_else(database_required_but_unavailable_error)?;
-
-    let cred_row = sqlx::query(
-        r#"
-        SELECT aid, user_id, status, signing_public_key
-        FROM agent_credentials
-        WHERE id = $1
-        "#,
-    )
-    .bind(credential_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| internal_error("credential lookup failed", e))?
-    .ok_or_else(|| {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "unauthorized".into(),
-                message: "credential not found".into(),
-            }),
-        )
-    })?;
-
-    let status: String = cred_row.get("status");
-    if status != "active" {
-        return Err(unauthorized_error("credential is not active"));
-    }
-    let stored_aid: String = cred_row.get("aid");
-    let stored_user_id: Uuid = cred_row.get("user_id");
-    let stored_pubkey: Option<String> = cred_row.get("signing_public_key");
-    let stored_pubkey = stored_pubkey
-        .ok_or_else(|| unauthorized_error("credential has no signing_public_key on record"))?;
-
-    // 1. Signature verify.
-    let pub_bytes = URL_SAFE_NO_PAD
-        .decode(&stored_pubkey)
-        .map_err(|_| internal_server_error("stored signing_public_key is not base64url"))?;
-    let verifying_key = VerifyingKey::from_bytes(
-        pub_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| internal_server_error("stored signing_public_key must be 32 bytes"))?,
-    )
-    .map_err(|_| internal_server_error("stored signing_public_key is not a valid Ed25519 key"))?;
-    let signing_input = format!("{}.{}", parts[0], parts[1]);
-    let sig_bytes = URL_SAFE_NO_PAD
-        .decode(parts[2])
-        .map_err(|_| validation_error("invalid base64url in JWS signature"))?;
-    let sig = Signature::from_bytes(
-        sig_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| validation_error("JWS signature must be 64 bytes"))?,
-    );
-    verifying_key
-        .verify(signing_input.as_bytes(), &sig)
-        .map_err(|_| unauthorized_error("JWS signature verification failed"))?;
-
-    // 2. iss must match the credential's aid.
-    let iss = claims
-        .get("iss")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| validation_error("JWS payload missing iss"))?;
-    if iss != stored_aid {
-        return Err(unauthorized_error("JWS iss does not match credential aid"));
-    }
-
-    // 3. aud must BYTE-EQUAL the expected ingest URL. Suffix matching
-    //    was the old rule — it let any signed envelope whose aud ended
-    //    with `/agent-audit-log/bridge` through, even if the aud host
-    //    was an attacker-controlled mirror. Exact match kills that
-    //    whole class of cross-endpoint replay.
-    let aud = claims
-        .get("aud")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| validation_error("JWS payload missing aud"))?;
-    let expected_aud = expected_api_url(&headers, "/agent-audit-log/bridge").ok_or_else(|| {
-        internal_server_error(
-            "server cannot determine expected audit aud (set AGENT_INBOX_PUBLIC_API_URL)",
-        )
-    })?;
-    if aud != expected_aud {
-        return Err(unauthorized_error(
-            "JWS aud does not match the bridge audit ingest URL",
-        ));
-    }
-
-    // 4. iat freshness.
-    let iat = claims
-        .get("iat")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| validation_error("JWS payload missing iat"))?;
-    let now = Utc::now().timestamp();
-    if (now - iat).abs() > BRIDGE_AUDIT_IAT_SKEW_SECONDS {
-        return Err(validation_error("JWS iat outside ±60s freshness window"));
-    }
-
-    // 5. jti present + not-seen-recently. Bounded 120s window per
-    //    (credential_id, jti) stops a passive capture of one envelope
-    //    from being POST'd twice. Fail-closed on DB error.
-    let jti = claims
-        .get("jti")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| validation_error("JWS payload missing jti"))?;
-    if jti.is_empty() || jti.len() > 128 {
-        return Err(validation_error(
-            "JWS jti must be a non-empty ≤128 char string",
-        ));
-    }
-    let accepted = check_and_record_bridge_audit_replay(&state, credential_id, jti)
-        .await
-        .map_err(|e| internal_error("bridge audit replay check failed", e))?;
-    if !accepted {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "replay_rejected".into(),
-                message: "bridge audit JWS jti was already seen; duplicate rejected".into(),
-            }),
-        ));
-    }
-
-    // 6. bridge_event object + event allow-list.
-    let event_obj = claims
-        .get("bridge_event")
-        .ok_or_else(|| validation_error("JWS payload missing bridge_event"))?;
-    let event_type = event_obj
-        .get("event")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| validation_error("bridge_event.event is required"))?;
-    if !BRIDGE_AUDIT_ALLOWED_EVENTS.contains(&event_type) {
-        return Err(validation_error(
-            "bridge_event.event is not in the allow-list",
-        ));
-    }
-
-    // Strip any top-level JWS envelope fields that aren't part of
-    // the event itself. The detail column stores *exactly* what the
-    // daemon emitted, so log readers can correlate across stderr
-    // and DB without translation.
-    record_audit_event(
-        pool,
-        stored_user_id,
-        Some(credential_id),
-        Some(stored_aid.clone()),
-        event_type,
-        event_obj.clone(),
-    );
-
-    Ok(Json(BridgeAuditIngestResponse { accepted: true }))
 }
 
 /// Record an audit event to the database (fire-and-forget).
@@ -10662,8 +10382,8 @@ struct AuditLogQuery {
     /// straight equality match (no parsing).
     aid: Option<String>,
     event: Option<String>,
-    /// Prefix match on `event`, e.g. `"bridged_"` to bucket the
-    /// whole Phase 3c.3 bridge lifecycle. Mutually exclusive with
+    /// Prefix match on `event`, e.g. `"credential_"` to bucket a
+    /// family of events. Mutually exclusive with
     /// `event` — if both are supplied, the exact match wins. Only
     /// user-safe characters (letters / underscores) are accepted;
     /// anything else is silently ignored to stop SQL LIKE wildcard
@@ -10718,7 +10438,7 @@ async fn agent_auth_token(
 
     // ---- 2b. Validate `aud` byte-equal to the expected token URL.
     // Without this, an attacker who captures an assertion signed for
-    // some OTHER endpoint (e.g. `/agent-audit-log/bridge`) could
+    // some OTHER endpoint could
     // replay it here to mint a fresh AT+RT pair — the Signer Daemon
     // uses the same Ed25519 key for every assertion it emits. Suffix
     // matching is deliberately NOT used: a JWS targeting any other
@@ -16136,7 +15856,6 @@ fn app_with_state(state: AppState) -> Router {
         .route("/agent-auth/revoke", post(agent_auth_revoke))
         .route("/agent-auto-reply/config", get(get_agent_auto_reply_config))
         .route("/agent-audit-log", get(list_agent_audit_log))
-        .route("/agent-audit-log/bridge", post(ingest_bridge_audit_event))
         .route(
             "/agents/{id}/emergency-shutdown",
             post(agent_emergency_shutdown),
@@ -17159,15 +16878,12 @@ mod internal_tests {
     }
 
     // -----------------------------------------------------------------
-    // Bridge audit ingest — aud derivation + replay protection.
-    // Pure-function unit tests; the full signature + DB path is
-    // exercised by the hermetic suite in
-    // `tests/bridge_audit_ingest_test.rs`.
+    // expected_api_url — env var wins over request headers.
     // -----------------------------------------------------------------
 
     #[test]
     #[serial]
-    fn bridge_audit_aud_prefers_env_var_over_host_header() {
+    fn expected_api_url_prefers_env_var_over_host_header() {
         // SAFETY: these tests are marked `#[serial]` so env var writes
         // don't race with other suites.
         let previous = std::env::var("AGENT_INBOX_PUBLIC_API_URL").ok();
@@ -17177,9 +16893,8 @@ mod internal_tests {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert("host", "evil.attacker.example".parse().unwrap());
         headers.insert("x-forwarded-proto", "http".parse().unwrap());
-        let aud =
-            expected_api_url(&headers, "/agent-audit-log/bridge").expect("env branch must resolve");
-        assert_eq!(aud, "https://api.example.test/agent-audit-log/bridge");
+        let aud = expected_api_url(&headers, "/agent-auth/token").expect("env branch must resolve");
+        assert_eq!(aud, "https://api.example.test/agent-auth/token");
         unsafe {
             match previous {
                 Some(v) => std::env::set_var("AGENT_INBOX_PUBLIC_API_URL", v),
@@ -17190,7 +16905,7 @@ mod internal_tests {
 
     #[test]
     #[serial]
-    fn bridge_audit_aud_falls_back_to_host_header_when_env_unset() {
+    fn expected_api_url_falls_back_to_host_header_when_env_unset() {
         let previous = std::env::var("AGENT_INBOX_PUBLIC_API_URL").ok();
         unsafe {
             std::env::remove_var("AGENT_INBOX_PUBLIC_API_URL");
@@ -17198,9 +16913,9 @@ mod internal_tests {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert("host", "api.nexusinbox.ai".parse().unwrap());
         headers.insert("x-forwarded-proto", "https".parse().unwrap());
-        let aud = expected_api_url(&headers, "/agent-audit-log/bridge")
-            .expect("host branch must resolve");
-        assert_eq!(aud, "https://api.nexusinbox.ai/agent-audit-log/bridge");
+        let aud =
+            expected_api_url(&headers, "/agent-auth/token").expect("host branch must resolve");
+        assert_eq!(aud, "https://api.nexusinbox.ai/agent-auth/token");
         unsafe {
             if let Some(v) = previous {
                 std::env::set_var("AGENT_INBOX_PUBLIC_API_URL", v);
@@ -17210,13 +16925,13 @@ mod internal_tests {
 
     #[test]
     #[serial]
-    fn bridge_audit_aud_returns_none_when_no_env_and_no_host() {
+    fn expected_api_url_returns_none_when_no_env_and_no_host() {
         let previous = std::env::var("AGENT_INBOX_PUBLIC_API_URL").ok();
         unsafe {
             std::env::remove_var("AGENT_INBOX_PUBLIC_API_URL");
         }
         let headers = axum::http::HeaderMap::new();
-        assert!(expected_api_url(&headers, "/agent-audit-log/bridge").is_none());
+        assert!(expected_api_url(&headers, "/agent-auth/token").is_none());
         unsafe {
             if let Some(v) = previous {
                 std::env::set_var("AGENT_INBOX_PUBLIC_API_URL", v);
@@ -17224,44 +16939,8 @@ mod internal_tests {
         }
     }
 
-    #[tokio::test]
-    async fn bridge_audit_replay_accepts_first_rejects_second_in_memory() {
-        let state = make_state();
-        let cred = Uuid::new_v4();
-        let first = check_and_record_bridge_audit_replay(&state, cred, "jti-abc")
-            .await
-            .expect("first sighting returns Ok");
-        assert!(first, "first sighting must be accepted");
-        let second = check_and_record_bridge_audit_replay(&state, cred, "jti-abc")
-            .await
-            .expect("second sighting returns Ok");
-        assert!(!second, "replay of same (credential, jti) must be rejected");
-    }
-
-    #[tokio::test]
-    async fn bridge_audit_replay_different_credentials_do_not_collide() {
-        let state = make_state();
-        let cred_a = Uuid::new_v4();
-        let cred_b = Uuid::new_v4();
-        assert!(
-            check_and_record_bridge_audit_replay(&state, cred_a, "jti-shared")
-                .await
-                .expect("Ok"),
-            "cred A first sighting must be accepted",
-        );
-        assert!(
-            check_and_record_bridge_audit_replay(&state, cred_b, "jti-shared")
-                .await
-                .expect("Ok"),
-            "cred B must see the same jti as first, not a replay",
-        );
-    }
-
     // -----------------------------------------------------------------
     // Agent-auth token ingest — aud derivation + replay protection.
-    // Same structural guarantees as bridge audit above; the two
-    // endpoints share the expected_api_url helper and mirror each
-    // other's replay scope shape.
     // -----------------------------------------------------------------
 
     #[test]
@@ -17404,29 +17083,6 @@ mod internal_tests {
         assert_eq!(
             err.1.error, "not_found",
             "mismatch must be masked as 404 not 403 (stealth)"
-        );
-    }
-
-    #[tokio::test]
-    async fn agent_auth_replay_scope_is_disjoint_from_bridge_audit() {
-        // A jti issued for the bridge-audit endpoint must NOT shadow
-        // a same-value jti issued for the token endpoint — the two
-        // belong to different scope namespaces. Mixing them would
-        // let a captured bridge-audit jti lock out a live daemon
-        // trying to exchange a token (or vice versa).
-        let state = make_state();
-        let cred = Uuid::new_v4();
-        assert!(
-            check_and_record_bridge_audit_replay(&state, cred, "shared-jti")
-                .await
-                .expect("Ok"),
-            "bridge-audit first sighting",
-        );
-        assert!(
-            check_and_record_agent_auth_replay(&state, cred, "shared-jti")
-                .await
-                .expect("Ok"),
-            "agent-auth sees this as first-seen (different scope)",
         );
     }
 

@@ -501,7 +501,7 @@ export default function DeveloperHelpPage() {
 
       {/* Operating modes — Basics card: overview only (names + summaries). */}
       {/* The full behavioural detail (modeBDetail / modeADetail / */}
-      {/* daemon-isolated message reading / bridged restore) lives in the */}
+      {/* daemon-isolated message reading) lives in the */}
       {/* Advanced group so first-time visitors don't drown in operator */}
       {/* concerns. */}
       <details
@@ -687,10 +687,6 @@ export default function DeveloperHelpPage() {
                 </p>
               </div>
 
-              <div className="help-code-block">
-                <h3 className="help-code-title">{t("help.bridgedRestoreTitle")}</h3>
-                <p className="help-code-desc"><RichText text={t("help.bridgedRestoreDetail")} /></p>
-              </div>
             </div>
           </details>
 

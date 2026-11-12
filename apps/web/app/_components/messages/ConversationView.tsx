@@ -466,17 +466,11 @@ export function ConversationView({
           } else if (mine) {
             body = <div className="dm-bubble muted">{t("messages.mineLocked")}</div>;
           } else {
-            const content = queryClient.getQueryData<MessageContentResponse>(
-              apiQueryKeys.messageContent(entry.id),
-            );
             body = (
               <MessageUnavailableCard
                 state={r.state === "no_key" ? "unavailable_on_this_device" : "decrypt_failed"}
                 messageId={entry.id}
                 recipientDid={entry.recipient_did}
-                encryptedContent={content?.encrypted_content ?? ""}
-                encryptedKey={content?.encrypted_key ?? ""}
-                subjectEncrypted={entry.subject_encrypted ?? ""}
               />
             );
           }

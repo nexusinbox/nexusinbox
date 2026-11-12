@@ -36,8 +36,6 @@ use tokio::{
 };
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
-mod bridge;
-mod bridge_audit_forwarder;
 mod keychain;
 
 pub(crate) fn derive_did_from_verifying_key(verifying_key: &VerifyingKey) -> String {
@@ -190,63 +188,6 @@ struct Cli {
     /// Typically the UID of the Gateway process.
     #[arg(long)]
     allowed_uid: Option<u32>,
-
-    // ------------------------------------------------------------
-    // Bridged-restore HTTP listener (docs/22 Phase 3a).
-    // ------------------------------------------------------------
-    /// Enable the loopback HTTP listener so the Web UI can request
-    /// on-demand `unwrap_content_key` operations. Off by default —
-    /// Phase 3a explicitly ships behind a flag so legacy deployments
-    /// remain signing-only.
-    #[arg(long, default_value = "false")]
-    bridge_enable: bool,
-
-    /// TCP port for the bridge listener. Always binds to 127.0.0.1
-    /// (enforced in the bridge module); cannot be exposed on a
-    /// non-loopback interface.
-    #[arg(long, default_value = "43417")]
-    bridge_port: u16,
-
-    /// Allowed `Origin:` header for bridge requests. Exact match, no
-    /// wildcard. Defaults to the canonical production Web origin so
-    /// local dev against `http://localhost:3000` needs an explicit
-    /// override.
-    #[arg(long, default_value = "https://app.nexusinbox.ai")]
-    bridge_allowed_origin: String,
-
-    /// Optional long-lived shared secret accepted in the
-    /// `X-NexusInbox-Bridge` header alongside any Phase 3b pairing
-    /// tokens. Read from `--bridge-token` or the
-    /// `AGENT_INBOX_BRIDGE_TOKEN` env var. Leaving both unset puts
-    /// the daemon in pairing-only mode — a short-lived pairing code
-    /// is printed to stderr at startup and the Web UI trades it for
-    /// a real bearer via `POST /v1/pair`. Phase 3a deployments that
-    /// already set `AGENT_INBOX_BRIDGE_TOKEN` keep working unchanged.
-    #[arg(long, env = "AGENT_INBOX_BRIDGE_TOKEN")]
-    bridge_token: Option<String>,
-
-    /// Policy L3 (docs/22 §4.1): max bridged decrypts per rolling
-    /// day. Defaults to 50 — enough for a legit user restoring a
-    /// few messages a day, tight enough to cap the blast radius of
-    /// a leaked token.
-    #[arg(long, default_value = "50")]
-    bridge_decrypts_per_day: u32,
-
-    /// Policy L3: max bridged decrypts per rolling minute. Stops
-    /// burst exfiltration before the daily window even fills up.
-    /// Default 3 matches docs/22 §4.1 recommendation.
-    #[arg(long, default_value = "3")]
-    bridge_decrypts_per_min: u32,
-
-    /// Phase 3c.3 — when set, the daemon forwards every bridge
-    /// audit event to `<api-url>/agent-audit-log/bridge` using a
-    /// per-event JWS signed with the agent's credential. The local
-    /// stderr JSON-Lines stream stays on regardless; this just
-    /// adds central observability. Off by default because it
-    /// opens an outbound HTTP connection — ops should opt in per
-    /// deployment.
-    #[arg(long, default_value = "false")]
-    bridge_forward_audit: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -1795,96 +1736,6 @@ async fn main() {
 
     if let Some(uid) = state.allowed_uid {
         eprintln!("[INFO]   Allowed UID:   {}", uid);
-    }
-
-    // Spin up the Phase 3a bridge listener if the operator opted in.
-    // Runs as its own Tokio task alongside the UDS accept loop below;
-    // bridge failures are logged to stderr but don't kill the signing
-    // RPC path.
-    if cli.bridge_enable {
-        if state.encryption_secret.is_none() {
-            eprintln!(
-                "[ERROR] --bridge-enable requires --encryption-key-file \
-                 (bridge unwrap has nothing to unwrap without it)."
-            );
-            std::process::exit(1);
-        }
-        let bridge_addr: std::net::SocketAddr = std::net::SocketAddr::new(
-            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-            cli.bridge_port,
-        );
-        let bridge_state = Arc::clone(&state);
-        // Phase 3b: --bridge-token is now optional. When absent, the
-        // daemon uses the pairing-code flow exclusively (printed to
-        // stderr on startup). When present, it is kept as a backward-
-        // compat shared secret alongside paired tokens so Phase 3a
-        // operators don't have to change anything.
-        let mut bridge_config = bridge::BridgeConfig::with_shared_secret(
-            cli.bridge_token.clone(),
-            cli.bridge_allowed_origin.clone(),
-        );
-        // CLI flags override the baked-in defaults from
-        // `with_shared_secret`. Validated minimally (non-zero) so a
-        // `0` value doesn't make the daemon trivially brick every
-        // unwrap.
-        if cli.bridge_decrypts_per_day == 0 || cli.bridge_decrypts_per_min == 0 {
-            eprintln!(
-                "[ERROR] --bridge-decrypts-per-day and --bridge-decrypts-per-min must be > 0."
-            );
-            std::process::exit(1);
-        }
-        bridge_config.decrypts_per_day_max = cli.bridge_decrypts_per_day;
-        bridge_config.decrypts_per_min_max = cli.bridge_decrypts_per_min;
-        eprintln!(
-            "[INFO]   Bridge rate:   {} / day, {} / minute (Policy L3)",
-            bridge_config.decrypts_per_day_max, bridge_config.decrypts_per_min_max
-        );
-        if cli.bridge_token.is_some() {
-            eprintln!(
-                "[INFO]   Bridge:        ENABLED on {} (origin {}) + shared-secret compat",
-                bridge_addr, cli.bridge_allowed_origin
-            );
-        } else {
-            eprintln!(
-                "[INFO]   Bridge:        ENABLED on {} (origin {}); pairing-only mode",
-                bridge_addr, cli.bridge_allowed_origin
-            );
-        }
-
-        // Phase 3c.3 audit forwarder. Spawned only when the operator
-        // opts in AND we actually have the credential / api-url
-        // needed to authenticate the ingest JWS. The stderr sink
-        // keeps running regardless, so "forwarder off" is still a
-        // fully-audited deployment.
-        let audit_tee = if cli.bridge_forward_audit {
-            let fwd_signing = bridge_state.signing_key.clone();
-            let tx = bridge_audit_forwarder::spawn(bridge_audit_forwarder::ForwarderConfig {
-                api_base_url: cli.api_url.clone(),
-                aid: bridge_state.aid.clone(),
-                credential_id: bridge_state.credential_id.clone(),
-                signing_key: fwd_signing,
-            });
-            eprintln!(
-                "[INFO]   Bridge audit:  forwarding to {} (stderr stays on)",
-                cli.api_url
-            );
-            Some(tx)
-        } else {
-            eprintln!(
-                "[INFO]   Bridge audit:  stderr only (pass --bridge-forward-audit to tee to API)"
-            );
-            None
-        };
-
-        tokio::spawn(async move {
-            if let Err(e) =
-                bridge::run_bridge(bridge_state, bridge_config, bridge_addr, audit_tee).await
-            {
-                eprintln!("[ERROR] Bridge listener exited: {e}");
-            }
-        });
-    } else {
-        eprintln!("[INFO]   Bridge:        disabled (pass --bridge-enable to turn on)");
     }
 
     loop {

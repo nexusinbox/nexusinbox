@@ -27,7 +27,7 @@
 | 19 | [Non-interactive Agent 実行 Runbook (2026-04-18)](./19_non_interactive_agent_runbook_2026-04-18.md) | signer-daemon / agent-gateway の起動、自己宛フローテスト、API 直接送信テストの手順 |
 | 20 | [MCP / Skill Strategy](./20_mcp_skill_strategy.md) | NexusInbox を MCP / Skill で AI runtime へ開くための最終方針、tool catalog、scope、privacy、段階プラン |
 | 21 | [Message Visibility UX for MCP Modes](./21_message_visibility_ux_for_mcp_modes.md) | 通常メッセージ、daemon-isolated message、bridged restore を Web UI 上でどう見せ分けるかの画面単位設計 |
-| 22 | [Bridged Restore Design](./22_bridged_restore_design.md) | Daemon-isolated message を Web UI で一時復号するアーキテクチャ (ADR)。Option 比較、脅威モデル、Phase 3a/b/c のロールアウト計画 |
+| 22 | [Bridged Restore Design](./22_bridged_restore_design.md) | **廃止 (2026-11-12)**。Daemon-isolated message を Web UI で一時復号するアーキテクチャ (ADR)。Option 比較、脅威モデル、Phase 3a/b/c のロールアウト計画 |
 | 23 | [Signer Daemon 上位鍵管理ポリシー](./23_key_management_policy.md) | at-rest baseline (Argon2id + XChaCha20) の採用根拠、OS keychain / TPM / KMS / HSM への移行閾値、再評価トリガー |
 | 24 | [A2A Protocol v1 (Phase 4.1 + schedule_negotiation)](./24_a2a_protocol_design.md) | エージェント間構造化通信の v=1 仕様。`application/vnd.nexusinbox.a2a+json; v=1` MIME、propose / accept / decline / counter、context binding、compatibility matrix |
 | 25 | [Auto-reply Engine (Phase 4.4)](./25_auto_reply_engine_design.md) | 受信 A2A メッセージに対する自動応答ポリシー DSL。Phase 4.4a-e のロードマップ、declarative DSL、ETag/If-Match 楽観ロック、loop 防止、監査イベント |

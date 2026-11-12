@@ -50,19 +50,10 @@ sha2 = "0.10"
 # UUID
 uuid = { version = "1", features = ["v4"] }
 
-# CLI args (env feature for --bridge-token / AGENT_INBOX_BRIDGE_TOKEN)
-clap = { version = "4", features = ["derive", "env"] }
+# CLI args
+clap = { version = "4", features = ["derive"] }
 
-# Bridged-restore HTTP listener (docs/22 §4.1). axum is the smallest
-# battle-tested HTTP stack that integrates with the daemon's existing
-# Tokio runtime; tower provides the middleware hooks we need for
-# Origin / pairing-token enforcement without writing ad-hoc code.
-axum = "0.7"
-tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.5", features = ["cors"] }
-
-# Phase 3c.3: daemon optionally forwards bridge audit events to the
-# API's `/agent-audit-log/bridge` endpoint. rustls-tls so we don't
+# Talks to the API for enrollment (`--enroll`). rustls-tls so we don't
 # pull in OpenSSL for what is otherwise a lean binary.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
@@ -73,8 +64,3 @@ libc = "0.2"
 # The key passphrase in the login keychain for start at login (docs/39).
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
-
-[dev-dependencies]
-# Lets bridge unit tests drain response bodies without spinning up a
-# real TCP listener.
-http-body-util = "0.1"

@@ -168,7 +168,7 @@ The surfaces that must move together:
 1. **Implementation** — the Rust / TS / SDK change itself.
 2. **Design docs** — `docs/20_mcp_skill_strategy.md`,
    `docs/21_message_visibility_ux_for_mcp_modes.md`,
-   `docs/22_bridged_restore_design.md` (whichever is closest).
+   `docs/38_multi_device_delivery.md` (whichever is closest).
 3. **Help / onboarding copy** — `apps/web/app/help/**` and any
    onboarding / empty-state copy that describes what the feature
    does.
@@ -187,13 +187,13 @@ The surfaces that must move together:
 Triggers that require this synchronised update:
 
 - Anything that changes **who sees plaintext** (Isolated mode / Standard mode, MCP
-  visibility, bridged-restore ciphertext handling).
+  visibility, which devices a message is wrapped for).
 - Anything that changes **who holds the private key** (`web_keystore`
-  vs `signer_daemon` vs `unknown`, pairing / restore flow).
+  vs `signer_daemon` vs `unknown`).
 - Anything that changes **what a token can do** (scope names, DPoP
   binding, rate caps, policy tiers L1/L2/L3).
 - Anything that changes **what is logged** (new audit event types,
-  new `detail` fields that humans read, new bridge event shapes).
+  new `detail` fields that humans read).
 - Anything that changes **what a token can do automatically** —
   auto-reply policies, scheduled executions, anything that lets an
   agent send a message without a human tap. See [docs/25](docs/25_auto_reply_engine_design.md)

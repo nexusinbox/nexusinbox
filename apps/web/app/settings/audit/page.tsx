@@ -22,8 +22,7 @@ type Kind =
   | "stop"
   | "login"
   | "warn"
-  | "file"
-  | "computer";
+  | "file";
 
 const ICON: Record<Kind, string> = {
   reply: "💬",
@@ -35,11 +34,10 @@ const ICON: Record<Kind, string> = {
   login: "🔑",
   warn: "⚠️",
   file: "📎",
-  computer: "💻",
 };
 
-// Every event the API records (services/api record_audit_event and the
-// bridge allow-list). Sentences and labels live in `audit.events.<name>`.
+// Every event the API records (services/api record_audit_event).
+// Sentences and labels live in `audit.events.<name>`.
 const EVENTS: Record<string, { kind: Kind; critical?: boolean }> = {
   auto_reply_sent: { kind: "reply" },
   auto_reply_evaluated: { kind: "settings" },
@@ -75,12 +73,6 @@ const EVENTS: Record<string, { kind: Kind; critical?: boolean }> = {
   attachment_upload_abandoned: { kind: "file" },
   attachment_upload_rejected_rate_limit: { kind: "warn" },
   attachment_quarantined: { kind: "warn" },
-  bridged_decrypt: { kind: "computer" },
-  bridged_status: { kind: "computer" },
-  bridged_pair_requested: { kind: "computer" },
-  bridged_pair_succeeded: { kind: "computer" },
-  bridged_pair_failed: { kind: "warn" },
-  bridged_pair_revoked: { kind: "computer" },
 };
 
 // Quick filters: the API matches these as an event-name prefix.
@@ -88,7 +80,6 @@ const PRESETS: { prefix: string; labelKey: string }[] = [
   { prefix: "auto_reply_", labelKey: "audit.presetAutoReply" },
   { prefix: "agent_draft_", labelKey: "audit.presetDrafts" },
   { prefix: "attachment_", labelKey: "audit.presetFiles" },
-  { prefix: "bridged_", labelKey: "audit.presetComputer" },
 ];
 
 function str(value: unknown): string {

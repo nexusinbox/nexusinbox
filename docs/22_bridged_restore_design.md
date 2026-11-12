@@ -1,13 +1,20 @@
 # 22. Bridged Restore — Daemon-Isolated Message on Web
 
 **Date**: 2026-04-22
-**Status**: Design / ADR (Phase 3 of docs/21)
+**Status**: 廃止 (2026-11-12)。下の「廃止」を参照。以下は当時の設計の記録
 **Scope**: Isolated mode (Signer Daemon) が握っている message を、ユーザーの明示操作時にのみ Web UI 上で一時表示するためのアーキテクチャ選定と採用方針
 
 関連:
 - [15_non_interactive_agent_access_design.md](./15_non_interactive_agent_access_design.md)
 - [20_mcp_skill_strategy.md](./20_mcp_skill_strategy.md)
 - [21_message_visibility_ux_for_mcp_modes.md](./21_message_visibility_ux_for_mcp_modes.md)
+
+## 廃止 (2026-11-12)
+
+- やめたもの: 署名デーモンの loopback HTTP の窓口 (`--bridge-*`)、API の `POST /agent-audit-log/bridge`、Web のペアリングの欄と「このメッセージだけ復元」のボタン、本番 CSP の `connect-src` のループバック (`http://127.0.0.1:*` / `http://localhost:*`)
+- 理由: 配布している `nexusinbox` コマンドは `--bridge-enable` を一度も付けておらず、誰も使えない状態だった。複数端末 (docs/38、v0.3.0) で新しいメッセージはブラウザの鍵にも包まれるので、要るのはそれより前に届いたものだけで、それも保存期間 (90 日) で 2027 年 2 月ごろに消える。使われない入口を 2 つ (デーモンの HTTP、API の受け口) 残すより、消したほうが安全
+- ブラウザで開けない古いメッセージは、パソコンの MCP やクラウドの AI の `read_message` で読む (説明カードの「Claude Desktop で開く」は残した)
+- 監査ログに残った `bridged_*` の記録はそのまま (保存期間で消える)。マイグレーションは変えていない
 
 ---
 

@@ -14,8 +14,9 @@ in [docs/20_mcp_skill_strategy.md](../../docs/20_mcp_skill_strategy.md).
 NexusInbox MCP runs in one of two modes:
 
 - **Interactive** *(recommended)* — keys live in a Signer Daemon
-  process, reachable from both the Web UI (via Bridged restore) and
-  any AI runtime (via the Agent Gateway). This is the everyday
+  process, reachable from any AI runtime (via the Agent Gateway);
+  new messages are also wrapped for the browser's key, so the Web UI
+  reads the same inbox. This is the everyday
   "human + AI on the same inbox" setup the help page leads with.
 - **Autonomous** *(lighter setup)* — keys live in a single client's
   keystore. Bot-style agents driven from one runtime; no daemon to

@@ -178,19 +178,9 @@ export function buildCsp(
     ? "frame-ancestors 'self'"
     : "frame-ancestors 'none'";
 
-  // Loopback Signer Daemon bridge (docs/22 Phase 3a). Listed in both
-  // dev and prod `connect-src` so the Web UI can reach a user-run
-  // daemon at http://127.0.0.1:<port> without CSP blocking the
-  // fetch. Safe because the browser still honours Private Network
-  // Access preflights and the daemon itself enforces Origin + bearer
-  // token; CSP is the belt, PNA + bearer is the braces. No IPv6 entry:
-  // CSP host sources cannot be IPv6 literals, so browsers dropped
-  // `http://[::1]:*` with a console error on every page.
-  const bridgeConnect = "http://127.0.0.1:* http://localhost:*";
-
   // Attachment downloads are fetched from a Cloudflare R2 presigned URL
   // (AGENT_INBOX_S3_ENDPOINT, shaped `<account>.r2.cloudflarestorage.com`).
-  // Without this entry the production CSP blocks the ConversationThread
+  // Without this entry the production CSP blocks the conversation's
   // attachment fetch. See attachmentStorageSource for pinning it.
   const r2Connect = attachmentStorageSource();
 
@@ -216,8 +206,8 @@ export function buildCsp(
 
   // Same `isDev` as script-src so tests can assert the production shape.
   const connectSrc = isDev
-    ? `connect-src 'self' http://localhost:* ws://localhost:* ${bridgeConnect} ${r2Connect} ${byokConnect}${worldIdConnect}`
-    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${bridgeConnect} ${r2Connect} ${byokConnect}${worldIdConnect}`;
+    ? `connect-src 'self' http://localhost:* ws://localhost:* ${r2Connect} ${byokConnect}${worldIdConnect}`
+    : `connect-src 'self' ${process.env.NEXT_PUBLIC_WS_URL ?? "wss://app.nexusinbox.ai/ws"} ${r2Connect} ${byokConnect}${worldIdConnect}`;
 
   return [
     "default-src 'self'",

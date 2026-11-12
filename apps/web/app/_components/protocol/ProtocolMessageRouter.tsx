@@ -57,7 +57,7 @@ export type ProtocolMessageRouterProps = {
    * specific reply shape is a union across every A2A type; the
    * Card only emits the variant that matches its protocol.type so
    * downstream `buildReplyPayload` can narrow it via the type
-   * argument ConversationThread passes in.
+   * argument ConversationView passes in.
    */
   onRespond?: (reply: A2ARespondPayload) => void | Promise<void>;
 };

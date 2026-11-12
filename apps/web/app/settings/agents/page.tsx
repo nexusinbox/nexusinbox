@@ -25,21 +25,6 @@ import {
   deriveAgentMode,
   type AgentMode,
 } from "../../../lib/agents/derive-mode";
-import {
-  BridgeClient,
-  type BridgePairedSession,
-  type BridgeRatePolicy,
-} from "../../../lib/bridge/client";
-import {
-  BridgeSecureStorageUnavailableError,
-  clearBridgeSessionNonce,
-  clearBridgeToken,
-  generateBridgeSessionNonce,
-  loadBridgeSessionNonce,
-  loadBridgeToken,
-  saveBridgeSessionNonce,
-  saveBridgeToken,
-} from "../../../lib/bridge/token-store";
 import { secureLoadKey } from "../../../lib/crypto/keystore";
 import {
   agentDirName,
@@ -124,11 +109,9 @@ function CredentialModeBadge({
   );
 }
 
-// Agent-level mode display (docs/21 §4.5). Both `<AgentModePanel>` and
-// `<BridgeTokenPanel>` consume `deriveAgentMode` so the badge users see
-// and the gate that decides whether the Bridge panel surfaces stay in
-// lockstep. The helper lives in `lib/agents/derive-mode.ts` with its
-// own tests covering the priority rules.
+// Agent-level mode display (docs/21 §4.5). The helper lives in
+// `lib/agents/derive-mode.ts` with its own tests covering the priority
+// rules.
 
 function AgentModePanel({
   aid,
@@ -219,18 +202,12 @@ function AgentModePanel({
  *
  * Mode (Standard / Interactive / Default) tells you what the agent is
  * configured for; this panel tells you what the *current device* can
- * actually do with it. Three rows:
+ * actually do with it. Two rows:
  *
  *   1. Browser keystore — does THIS browser hold either the
  *      signing or X25519 private key for the agent's current did?
  *      Answered locally by `secureLoadKey()` against IndexedDB.
- *   2. Signer Daemon (Bridge) — has this browser been paired with a
- *      Signer Daemon for this aid? `loadBridgeToken()` returns the
- *      stored bearer; we don't actively probe the daemon endpoint
- *      here (the Bridge panel below already handles live status),
- *      we just report whether the pairing handshake has happened
- *      so the user knows Bridged restore is available.
- *   3. AI runtime keystore — there's no server-side signal for
+ *   2. AI runtime keystore — there's no server-side signal for
  *      whether a Claude Desktop / Code instance somewhere has
  *      `~/.nexusinbox/<credential>.json`. Render as an info row so
  *      the user understands the gap rather than guessing.
@@ -291,15 +268,13 @@ function WhereaboutsRow({
   );
 }
 
-function AgentKeyWhereaboutsPanel({ aid, did }: { aid: string; did: string }) {
+function AgentKeyWhereaboutsPanel({ did }: { did: string }) {
   const { t } = useTranslation();
   const [browserStatus, setBrowserStatus] = useState<WhereaboutsStatus>("checking");
-  const [daemonStatus, setDaemonStatus] = useState<WhereaboutsStatus>("checking");
 
   useEffect(() => {
     let cancelled = false;
     setBrowserStatus("checking");
-    setDaemonStatus("checking");
 
     // Browser keystore: presence of EITHER the signing or recipient
     // (X25519) key for the agent's current did is enough to consider
@@ -318,23 +293,10 @@ function AgentKeyWhereaboutsPanel({ aid, did }: { aid: string; did: string }) {
       }
     })();
 
-    // Bridge pairing: token presence is the best signal we have
-    // without paying for a live HTTP probe. The Bridge panel further
-    // down on this page does the live probe and shows its result;
-    // here we just answer "is this aid paired at all?".
-    (async () => {
-      try {
-        const token = await loadBridgeToken(aid);
-        if (!cancelled) setDaemonStatus(token ? "present" : "absent");
-      } catch {
-        if (!cancelled) setDaemonStatus("absent");
-      }
-    })();
-
     return () => {
       cancelled = true;
     };
-  }, [aid, did]);
+  }, [did]);
 
   const truncatedDid = did.length > 24 ? `${did.slice(0, 16)}…${did.slice(-8)}` : did;
 
@@ -355,18 +317,6 @@ function AgentKeyWhereaboutsPanel({ aid, did }: { aid: string; did: string }) {
               : browserStatus === "present"
                 ? t("agents.whereaboutsBrowserPresent")
                 : t("agents.whereaboutsBrowserAbsent")
-          }
-        />
-        <WhereaboutsRow
-          icon="🛡️"
-          label={t("agents.whereaboutsDaemonLabel")}
-          status={daemonStatus}
-          message={
-            daemonStatus === "checking"
-              ? t("agents.whereaboutsDaemonChecking")
-              : daemonStatus === "present"
-                ? t("agents.whereaboutsDaemonPaired")
-                : t("agents.whereaboutsDaemonUnpaired")
           }
         />
         <WhereaboutsRow
@@ -698,669 +648,6 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
   );
 }
 
-/**
- * Per-agent Signer Daemon bridge pairing panel (docs/22 Phase 3a).
- * Stores the shared bearer token in localStorage keyed by aid, and
- * probes the daemon so the user can see whether the Web UI can reach
- * it before trying to restore an actual message. Phase 3b will swap
- * this manual paste flow for an interactive pairing-code handshake.
- */
-/**
- * Compute sha256 hex of a UTF-8 string in the browser. Matches the
- * daemon's server-side hash so the Web UI can recognise its own
- * paired-session row in `GET /v1/status` without the bearer ever
- * leaving this browser.
- */
-async function sha256HexBrowser(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const hash = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer),
-  );
-  return Array.from(hash)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Best-effort guess at a friendly device label. Browser doesn't
- *  expose anything great so we synthesise from the first UA token,
- *  clamping to 64 chars so the daemon never needs to truncate. */
-function guessDeviceLabel(): string {
-  if (typeof navigator === "undefined") return "Paired browser";
-  const ua = navigator.userAgent ?? "";
-  // Match the browser name. Order matters — Edge masquerades as
-  // Chrome, Chrome masquerades as Safari, etc.
-  const browser = /Edg/.test(ua)
-    ? "Edge"
-    : /Firefox/.test(ua)
-      ? "Firefox"
-      : /Chrome/.test(ua)
-        ? "Chrome"
-        : /Safari/.test(ua)
-          ? "Safari"
-          : "Browser";
-  const platform =
-    /Mac/.test(ua) ? "Mac"
-    : /Win/.test(ua) ? "Windows"
-    : /Linux/.test(ua) ? "Linux"
-    : /iPhone|iPad/.test(ua) ? "iOS"
-    : /Android/.test(ua) ? "Android"
-    : "this device";
-  return `${browser} on ${platform}`.slice(0, 64);
-}
-
-function BridgeTokenPanel({
-  aid,
-  credentials,
-}: {
-  aid: string;
-  credentials: AgentCredential[];
-}) {
-  const { t } = useTranslation();
-  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:43417");
-  const [storedTokenHash, setStoredTokenHash] = useState<string | null>(null);
-  const [pairingCode, setPairingCode] = useState("");
-  const [deviceLabel, setDeviceLabel] = useState(() => guessDeviceLabel());
-  const [status, setStatus] = useState<
-    | { kind: "idle" }
-    | { kind: "pairing" }
-    | { kind: "probing" }
-    | { kind: "paired" }
-    | { kind: "offline" }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
-  const [pairedSessions, setPairedSessions] = useState<BridgePairedSession[]>(
-    [],
-  );
-  const [policy, setPolicy] = useState<BridgeRatePolicy | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [advancedToken, setAdvancedToken] = useState("");
-
-  const mode = useMemo<AgentMode>(
-    () => deriveAgentMode(aid, credentials),
-    [aid, credentials],
-  );
-
-  // Load stored token and compute its hash so we can recognise our
-  // own row in the paired_sessions list. The token itself stays in
-  // localStorage; only the sha256 lives in component state.
-  useEffect(() => {
-    let cancelled = false;
-    setStatus({ kind: "idle" });
-    setPairedSessions([]);
-    setPolicy(null);
-    setPairingCode("");
-    setAdvancedToken("");
-    setStoredTokenHash(null);
-    if (!aid) return;
-    // 3c.5: loadBridgeToken is async now — AES-GCM unwrap via the
-    // IndexedDB KEK. Thread through the existing cancellation
-    // pattern so a fast aid flip doesn't stamp stale state.
-    void (async () => {
-      const existing = await loadBridgeToken(aid);
-      if (cancelled || !existing) return;
-      setBaseUrl(existing.base_url);
-      const hash = await sha256HexBrowser(existing.token);
-      if (!cancelled) setStoredTokenHash(hash);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [aid]);
-
-  // Auto-probe when a token is stored so the UI immediately reflects
-  // "paired / offline" without the user hitting a button.
-  useEffect(() => {
-    if (!aid) return;
-    let cancelled = false;
-    void (async () => {
-      const existing = await loadBridgeToken(aid);
-      if (cancelled || !existing) return;
-      const nonce = loadBridgeSessionNonce(aid);
-      const result = await probe(existing.base_url, existing.token, nonce);
-      if (cancelled) return;
-      setPairedSessions(result.sessions);
-      setPolicy(result.policy);
-      setStatus(result.status);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Re-run whenever aid flips or a pair operation completes.
-  }, [aid, storedTokenHash]);
-
-  async function probe(
-    base: string,
-    token: string,
-    nonce: string | null,
-  ): Promise<{
-    sessions: BridgePairedSession[];
-    policy: BridgeRatePolicy | null;
-    status:
-      | { kind: "paired" }
-      | { kind: "offline" }
-      | { kind: "error"; message: string };
-  }> {
-    const client = new BridgeClient({
-      baseUrl: base,
-      token,
-      sessionNonce: nonce,
-    });
-    const result = await client.detect();
-    if (result.kind === "available") {
-      return {
-        sessions: result.paired_sessions,
-        policy: result.policy,
-        status: { kind: "paired" },
-      };
-    }
-    if (result.kind === "offline") {
-      return { sessions: [], policy: null, status: { kind: "offline" } };
-    }
-    return {
-      sessions: [],
-      policy: null,
-      status: {
-        kind: "error",
-        message: t(`agents.bridgeStatus.${result.kind}`),
-      },
-    };
-  }
-
-  // Gate: only Daemon-isolated agents (or those with a leftover
-  // token so the user can still revoke it) should see the panel.
-  const isGated = mode !== "daemon_isolated" && storedTokenHash === null;
-  if (isGated) return null;
-
-  async function submitPair() {
-    const code = pairingCode.trim().toUpperCase();
-    if (!code) return;
-    const resolvedBase = baseUrl.trim() || "http://127.0.0.1:43417";
-    setStatus({ kind: "pairing" });
-    // Generate the nonce up front so we have it whether the pair
-    // call succeeds or fails. Save it only on success.
-    const nonce = generateBridgeSessionNonce();
-    const client = new BridgeClient({ baseUrl: resolvedBase, token: null });
-    const result = await client.pair({
-      pairingCode: code,
-      deviceLabel: deviceLabel.trim() || undefined,
-      sessionNonce: nonce,
-    });
-    if (result.kind !== "ok") {
-      const messageKey =
-        result.kind === "rejected"
-          ? "agents.bridgePairRejected"
-          : result.kind === "offline"
-            ? "agents.bridgeStatus.offline"
-            : result.kind === "forbidden_origin"
-              ? "agents.bridgeStatus.forbidden_origin"
-              : result.kind === "bad_request"
-                ? "agents.bridgePairBadRequest"
-                : "agents.bridgePairDaemonError";
-      setStatus({ kind: "error", message: t(messageKey) });
-      return;
-    }
-    // 3c.5: saveBridgeToken is async — wraps the bearer with the
-    // per-origin AES-GCM KEK before writing localStorage. Await so
-    // the subsequent probe() sees the same envelope the next load
-    // will unwrap. The fail-closed hardening pass upgraded this to
-    // throw `BridgeSecureStorageUnavailableError` when the KEK is
-    // missing — we catch that here and abort the pair instead of
-    // silently persisting plaintext.
-    try {
-      await saveBridgeToken({ aid, base_url: resolvedBase, token: result.token });
-    } catch (err) {
-      if (err instanceof BridgeSecureStorageUnavailableError) {
-        setStatus({
-          kind: "error",
-          message: t("agents.bridgeSecureStorageUnavailable"),
-        });
-        return;
-      }
-      throw err;
-    }
-    saveBridgeSessionNonce(aid, nonce);
-    const hash = await sha256HexBrowser(result.token);
-    setStoredTokenHash(hash);
-    setPairingCode("");
-    setStatus({ kind: "probing" });
-    const probed = await probe(resolvedBase, result.token, nonce);
-    setPairedSessions(probed.sessions);
-    setPolicy(probed.policy);
-    setStatus(probed.status);
-  }
-
-  async function submitAdvanced() {
-    const token = advancedToken.trim();
-    if (!token) return;
-    const resolvedBase = baseUrl.trim() || "http://127.0.0.1:43417";
-    // Same fail-closed story as submitPair: if the browser has no
-    // secure keystore we refuse to persist the paste rather than
-    // falling back to plaintext.
-    try {
-      await saveBridgeToken({ aid, base_url: resolvedBase, token });
-    } catch (err) {
-      if (err instanceof BridgeSecureStorageUnavailableError) {
-        setStatus({
-          kind: "error",
-          message: t("agents.bridgeSecureStorageUnavailable"),
-        });
-        return;
-      }
-      throw err;
-    }
-    // Advanced fallback = manual token paste (shared secret or a
-    // 3b-era token). Neither carries a server-side nonce binding;
-    // clear any stale per-aid nonce so the client doesn't send one.
-    clearBridgeSessionNonce(aid);
-    const hash = await sha256HexBrowser(token);
-    setStoredTokenHash(hash);
-    setAdvancedToken("");
-    setStatus({ kind: "probing" });
-    const probed = await probe(resolvedBase, token, null);
-    setPairedSessions(probed.sessions);
-    setPolicy(probed.policy);
-    setStatus(probed.status);
-  }
-
-  async function revokeThis() {
-    const existing = aid ? await loadBridgeToken(aid) : null;
-    if (!existing) return;
-    const nonce = loadBridgeSessionNonce(aid);
-    const client = new BridgeClient({
-      baseUrl: existing.base_url,
-      token: existing.token,
-      sessionNonce: nonce,
-    });
-    await client.revokeSession();
-    clearBridgeToken(aid);
-    clearBridgeSessionNonce(aid);
-    setStoredTokenHash(null);
-    setPairedSessions([]);
-    setPolicy(null);
-    setStatus({ kind: "idle" });
-  }
-
-  async function revokeAll() {
-    const existing = aid ? await loadBridgeToken(aid) : null;
-    if (!existing) return;
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(t("agents.bridgeRevokeAllConfirm"))
-    ) {
-      return;
-    }
-    const nonce = loadBridgeSessionNonce(aid);
-    const client = new BridgeClient({
-      baseUrl: existing.base_url,
-      token: existing.token,
-      sessionNonce: nonce,
-    });
-    await client.revokeAllSessions();
-    clearBridgeToken(aid);
-    clearBridgeSessionNonce(aid);
-    setStoredTokenHash(null);
-    setPairedSessions([]);
-    setPolicy(null);
-    setStatus({ kind: "idle" });
-  }
-
-  const hasStored = storedTokenHash !== null;
-  return (
-    <div
-      className="panel"
-      style={{ marginTop: 10 }}
-      data-testid="bridge-token-panel"
-    >
-      <p
-        className="item-title"
-        style={{ display: "flex", alignItems: "center", gap: 8 }}
-      >
-        <span>{t("agents.bridgePanelTitle")}</span>
-        <span
-          title={t("agents.bridgeAdvancedTooltip")}
-          aria-label={t("agents.bridgeAdvancedTooltip")}
-          style={{
-            fontSize: 10,
-            fontWeight: 500,
-            padding: "1px 7px",
-            borderRadius: 999,
-            letterSpacing: 0.3,
-            whiteSpace: "nowrap",
-            background: "rgba(217, 119, 6, 0.14)",
-            color: "var(--warn)",
-            border: "1px solid rgba(217, 119, 6, 0.28)",
-          }}
-        >
-          {t("agents.bridgeAdvancedBadge")}
-        </span>
-      </p>
-      <p className="item-sub" style={{ marginTop: 4 }}>
-        {t("agents.bridgePanelDesc")}
-      </p>
-
-      {/* Pair dialog — primary flow for Phase 3b */}
-      {!hasStored ? (
-        <div
-          style={{
-            marginTop: 10,
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid var(--border, rgba(128,128,128,0.25))",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <p className="item-sub" style={{ margin: 0, fontSize: 12 }}>
-            {t("agents.bridgePairIntro")}
-          </p>
-          <label
-            className="item-sub"
-            style={{
-              fontSize: 11,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            {t("agents.bridgePairCodeLabel")}
-            <input
-              className="input"
-              value={pairingCode}
-              onChange={(event) =>
-                setPairingCode(event.target.value.toUpperCase())
-              }
-              placeholder="AIBX-XXXX-XXXX-XXXX"
-              autoComplete="off"
-              spellCheck={false}
-              style={{ fontSize: 13, fontFamily: "ui-monospace, monospace" }}
-            />
-          </label>
-          <label
-            className="item-sub"
-            style={{
-              fontSize: 11,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            {t("agents.bridgeDeviceLabel")}
-            <input
-              className="input"
-              value={deviceLabel}
-              onChange={(event) => setDeviceLabel(event.target.value)}
-              maxLength={64}
-              style={{ fontSize: 12 }}
-            />
-          </label>
-          <label
-            className="item-sub"
-            style={{
-              fontSize: 11,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            {t("agents.bridgeBaseUrl")}
-            <input
-              className="input"
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              style={{ fontSize: 12 }}
-              spellCheck={false}
-            />
-          </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => void submitPair()}
-              disabled={!pairingCode.trim() || status.kind === "pairing"}
-            >
-              {status.kind === "pairing"
-                ? t("agents.bridgePairBusy")
-                : t("agents.bridgePairBtn")}
-            </button>
-            {status.kind === "error" ? (
-              <span className="item-sub" style={{ fontSize: 12, color: "var(--danger)" }}>
-                {status.message}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Paired-sessions list — always visible when a token is stored */}
-      {hasStored ? (
-        <div
-          style={{
-            marginTop: 10,
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid var(--border, rgba(128,128,128,0.25))",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 6,
-            }}
-          >
-            <p className="item-sub" style={{ margin: 0, fontSize: 12, fontWeight: 500 }}>
-              {t("agents.bridgeSessionsTitle")}
-            </p>
-            <span
-              className="item-sub"
-              style={{
-                fontSize: 11,
-                color:
-                  status.kind === "paired"
-                    ? "var(--ok)"
-                    : status.kind === "offline"
-                      ? "var(--warn)"
-                      : status.kind === "error"
-                        ? "var(--danger)"
-                        : "var(--text-muted)",
-              }}
-            >
-              {status.kind === "paired"
-                ? t("agents.bridgeStatusOk")
-                : status.kind === "offline"
-                  ? t("agents.bridgeStatus.offline")
-                  : status.kind === "error"
-                    ? status.message
-                    : status.kind === "probing"
-                      ? t("agents.bridgeBtnChecking")
-                      : ""}
-            </span>
-          </div>
-          {pairedSessions.length === 0 ? (
-            <p className="item-sub" style={{ margin: 0, fontSize: 11 }}>
-              {status.kind === "offline"
-                ? t("agents.bridgeSessionsOffline")
-                : t("agents.bridgeSessionsEmpty")}
-            </p>
-          ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-              {pairedSessions.map((session, idx) => {
-                const isThisBrowser =
-                  !!storedTokenHash && session.id === storedTokenHash;
-                return (
-                  <li
-                    key={session.id ?? `shared-${idx}`}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 0",
-                      borderTop:
-                        idx === 0
-                          ? "none"
-                          : "1px solid var(--border, rgba(128,128,128,0.18))",
-                      opacity: session.shared_secret ? 0.65 : 1,
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <p
-                        className="item-sub"
-                        style={{
-                          margin: 0,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        {session.device_label}
-                        {isThisBrowser ? (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: "1px 5px",
-                              borderRadius: 999,
-                              background: "rgba(52, 168, 83, 0.14)",
-                              color: "var(--ok)",
-                              border: "1px solid rgba(52, 168, 83, 0.28)",
-                            }}
-                          >
-                            {t("agents.bridgeSessionsThis")}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="item-sub" style={{ margin: 0, fontSize: 10 }}>
-                        {t("agents.bridgeSessionsCreated", {
-                          at: session.created_at,
-                        })}
-                        {session.shared_secret
-                          ? ""
-                          : ` · ${t("agents.bridgeSessionsLastUsed", {
-                              at: session.last_used_at,
-                            })}`}
-                      </p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {policy ? (
-            <p
-              className="item-sub"
-              style={{
-                marginTop: 8,
-                marginBottom: 0,
-                fontSize: 11,
-                // Fade to warning colour when the per-day bucket is
-                // past 80 % so the user notices before they trip the
-                // cap mid-restore.
-                color:
-                  policy.bridged_decrypts_per_day_used >=
-                  Math.max(1, Math.floor(policy.bridged_decrypts_per_day_max * 0.8))
-                    ? "var(--warn)"
-                    : "var(--text-muted)",
-              }}
-              data-testid="bridge-rate-quota"
-            >
-              {t("agents.bridgeQuota", {
-                dayUsed: policy.bridged_decrypts_per_day_used,
-                dayMax: policy.bridged_decrypts_per_day_max,
-                minUsed: policy.bridged_decrypts_per_min_used,
-                minMax: policy.bridged_decrypts_per_min_max,
-              })}
-            </p>
-          ) : null}
-          <div
-            style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}
-          >
-            <button type="button" className="btn" onClick={() => void revokeThis()}>
-              {t("agents.bridgeRevokeThis")}
-            </button>
-            <button type="button" className="btn" onClick={() => void revokeAll()}>
-              {t("agents.bridgeRevokeAll")}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Advanced fallback — manual token paste for Phase 3a migration */}
-      <div style={{ marginTop: 10 }}>
-        <button
-          type="button"
-          className="btn"
-          style={{ fontSize: 11 }}
-          onClick={() => setShowAdvanced((prev) => !prev)}
-        >
-          {showAdvanced
-            ? t("agents.bridgeAdvancedHide")
-            : t("agents.bridgeAdvancedShow")}
-        </button>
-        {showAdvanced ? (
-          <div
-            style={{
-              marginTop: 8,
-              padding: 10,
-              borderRadius: 8,
-              border: "1px dashed var(--border, rgba(128,128,128,0.25))",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            <p className="item-sub" style={{ margin: 0, fontSize: 11 }}>
-              {t("agents.bridgeAdvancedIntro")}
-            </p>
-            <label
-              className="item-sub"
-              style={{ fontSize: 11, display: "flex", flexDirection: "column", gap: 2 }}
-            >
-              {t("agents.bridgeTokenLabel")}
-              <input
-                className="input"
-                type="password"
-                autoComplete="off"
-                value={advancedToken}
-                onChange={(event) => setAdvancedToken(event.target.value)}
-                placeholder={t("agents.bridgeTokenPlaceholderEmpty")}
-                style={{ fontSize: 12 }}
-                spellCheck={false}
-              />
-            </label>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void submitAdvanced()}
-              disabled={!advancedToken.trim()}
-              style={{ fontSize: 12, alignSelf: "flex-start" }}
-            >
-              {t("agents.bridgeBtnSave")}
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <Link
-        href="/help#help-modes"
-        className="item-sub"
-        style={{
-          fontSize: 12,
-          marginTop: 8,
-          display: "inline-block",
-          textDecoration: "underline",
-          color: "var(--primary-text)",
-        }}
-      >
-        {t("agents.bridgeHelpLink")} →
-      </Link>
-    </div>
-  );
-}
-
 export default function AgentsSettingsPage() {
   const { t } = useTranslation();
   const agentsQuery = useAgentsQuery();
@@ -1521,9 +808,8 @@ export default function AgentsSettingsPage() {
         />
       }
     >
-      {/* Action bar directly below the topbar search — mirrors the agent
-          switcher bar on /agent/{did} so create/refresh affordances stay in
-          a consistent location across settings screens. */}
+      {/* Action bar directly below the topbar search, so the create
+          affordance stays in a consistent location. */}
       <section className="agent-switcher-bar">
         <Link className="btn primary" href="/onboarding">
           {t("agents.newAgent")}
@@ -1805,16 +1091,8 @@ export default function AgentsSettingsPage() {
                     device can do with the agent right now. Renders
                     only when we know a current did to ask about. */}
                 {activeAgent.did ? (
-                  <AgentKeyWhereaboutsPanel
-                    aid={activeAgent.aid}
-                    did={activeAgent.did}
-                  />
+                  <AgentKeyWhereaboutsPanel did={activeAgent.did} />
                 ) : null}
-
-                <BridgeTokenPanel
-                  aid={activeAgent.aid}
-                  credentials={credentialsQuery.data?.credentials ?? []}
-                />
 
                 <div className="panel" style={{ marginTop: 10 }}>
                   <div
