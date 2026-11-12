@@ -2,7 +2,7 @@
 // notice when one appears that this browser has not seen. Which devices a
 // browser has seen is kept in that browser only; the server stores nothing.
 
-import type { AgentDevice } from "../api/types";
+import type { Agent, AgentDevice } from "../api/types";
 import { CONNECTED_WITHIN_MS, parseServerTime } from "./agent-status";
 
 export type DeviceState = "this" | "connected" | "silent" | "other";
@@ -47,4 +47,24 @@ export function saveSeenDevices(aid: string, devices: AgentDevice[]): void {
 export function unseenDevices(devices: AgentDevice[], seen: string[] | null): AgentDevice[] {
   if (seen === null) return [];
   return devices.filter((d) => !seen.includes(d.did));
+}
+
+// A computer quiet this long has stopped, not just missed a check-in.
+const NOTICE_AFTER_MS = 10 * 60_000;
+
+function lastSeen(d: AgentDevice): number | null {
+  return parseServerTime(d.last_used_at) ?? parseServerTime(d.activated_at);
+}
+
+/** Computers of these agents quiet for NOTICE_AFTER_MS or more. */
+export function stoppedComputers(agents: Agent[], now: number): Array<{ agent: Agent; device: AgentDevice; since: number }> {
+  const out: Array<{ agent: Agent; device: AgentDevice; since: number }> = [];
+  for (const agent of agents) {
+    for (const device of agent.devices ?? []) {
+      if (device.kind !== "computer") continue;
+      const since = lastSeen(device);
+      if (since !== null && now - since >= NOTICE_AFTER_MS) out.push({ agent, device, since });
+    }
+  }
+  return out;
 }

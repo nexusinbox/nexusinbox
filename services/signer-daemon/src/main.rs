@@ -38,6 +38,7 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
 mod bridge;
 mod bridge_audit_forwarder;
+mod keychain;
 
 pub(crate) fn derive_did_from_verifying_key(verifying_key: &VerifyingKey) -> String {
     const ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -94,6 +95,23 @@ struct Cli {
     /// error — signing-only deployments keep working unchanged.
     #[arg(long)]
     encryption_key_file: Option<PathBuf>,
+
+    /// macOS: read the key passphrase from the login keychain item that
+    /// --keychain-store saved under ACCOUNT, instead of from stdin. For
+    /// starting at login without anyone typing it (docs/39).
+    #[arg(long, value_name = "ACCOUNT")]
+    passphrase_from_keychain: Option<String>,
+
+    /// macOS: ask for the key passphrase once, check that it opens
+    /// --key-file (and --encryption-key-file), save it in the login
+    /// keychain under ACCOUNT, then exit. Only this program can read it
+    /// back without macOS asking (docs/39).
+    #[arg(long, value_name = "ACCOUNT")]
+    keychain_store: Option<String>,
+
+    /// macOS: delete the passphrase saved under ACCOUNT, then exit.
+    #[arg(long, value_name = "ACCOUNT")]
+    keychain_delete: Option<String>,
 
     /// Generate a new key pair (interactive: prompts for passphrase).
     /// When paired with --encryption-key-file, also generates an X25519
@@ -360,6 +378,34 @@ fn prompt_new_passphrase(plaintext: bool) -> Option<String> {
     Some(pass)
 }
 
+/// `--keychain-store`: the passphrase must open the key files before it is
+/// saved, so a typo is caught now rather than at the next login.
+fn run_keychain_store(cli: &Cli, account: &str) -> i32 {
+    let pass = read_passphrase("Enter the passphrase of this agent's keys: ");
+    if pass.is_empty() {
+        eprintln!("[ERROR] No passphrase entered; nothing saved.");
+        return 1;
+    }
+    let opens = |path: &Path| load_key_bytes_checked(path, &pass);
+    if let Err(e) = opens(&cli.key_file) {
+        eprintln!("[ERROR] {}: {e}", cli.key_file.display());
+        return 1;
+    }
+    if let Some(enc) = cli.encryption_key_file.as_ref() {
+        if let Err(e) = opens(enc) {
+            eprintln!("[ERROR] {}: {e}", enc.display());
+            return 1;
+        }
+    }
+    match keychain::store(account, &pass) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("[ERROR] {e}");
+            1
+        }
+    }
+}
+
 /// Prompt for a passphrase once when unlocking. Returns None in
 /// plaintext mode. Shared between Ed25519 + X25519 unlock paths so we
 /// ask the operator only once per boot.
@@ -444,6 +490,12 @@ fn save_key_bytes(path: &Path, key_bytes: &[u8; 32], passphrase: Option<&str>, o
 /// Read a 32-byte key from disk. Accepts either plaintext (32 raw
 /// bytes) or the encrypted format and decrypts with `passphrase` when
 /// provided.
+/// Whether `passphrase` opens the encrypted key file at `path`.
+fn load_key_bytes_checked(path: &Path, passphrase: &str) -> Result<(), String> {
+    let data = std::fs::read(path).map_err(|e| format!("cannot read the key file: {e}"))?;
+    decrypt_key(&data, passphrase).map(|_| ())
+}
+
 fn load_key_bytes(path: &Path, passphrase: Option<&str>) -> [u8; 32] {
     let data = std::fs::read(path).unwrap_or_else(|e| {
         eprintln!("[ERROR] Cannot read key file {}: {}", path.display(), e);
@@ -1584,11 +1636,32 @@ async fn main() {
         std::process::exit(2);
     }
 
+    if let Some(account) = cli.keychain_delete.as_deref() {
+        match keychain::delete(account) {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("[ERROR] {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    if let Some(account) = cli.keychain_store.as_deref() {
+        std::process::exit(run_keychain_store(&cli, account));
+    }
+
     // Key management — single passphrase prompt for both Ed25519 and
     // optional X25519 key files, so the operator doesn't have to type
-    // it twice per boot.
+    // it twice per boot. Started at login, it comes from the keychain.
     let passphrase: Option<String> = if cli.generate {
         prompt_new_passphrase(cli.unsafe_plaintext_key)
+    } else if let Some(account) = cli.passphrase_from_keychain.as_deref() {
+        match keychain::load(account) {
+            Ok(pass) => Some(pass),
+            Err(e) => {
+                eprintln!("[ERROR] {e}");
+                std::process::exit(1);
+            }
+        }
     } else if !cli.unsafe_plaintext_key {
         prompt_unlock_passphrase(false)
     } else {

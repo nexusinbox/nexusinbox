@@ -170,6 +170,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
             {t("agentStatus.silentSub")} {t("agentStatus.startHint")}
             <CommandLine command={daemonStartCommand(agentDirName(agent.label, agent.aid))} />
             <p style={{ margin: "6px 0 0" }}>{t("agentStatus.startDirNote")}</p>
+            <p style={{ margin: "6px 0 0" }}>{t("agentStatus.autostartHint")}</p>
           </div>
         ) : null}
         {connectStage === "idle" ? (

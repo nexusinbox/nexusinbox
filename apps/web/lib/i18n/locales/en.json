@@ -1193,7 +1193,7 @@
     "trouble": {
       "title": "Troubleshooting",
       "stoppedQ": "The computer \"has not checked in\"",
-      "stoppedA": "Run the command shown under Status in the agent settings (`nexusinbox start …`) in a terminal on the computer.",
+      "stoppedA": "Run the command shown under Status in the agent settings (`nexusinbox start …`) in a terminal on the computer. On a Mac, `nexusinbox autostart on` makes it start by itself when you log in (the passphrase is saved in your macOS keychain).",
       "preparingQ": "Cloud AIs stay at \"getting ready\"",
       "preparingA": "An old version of the program on the computer stays there. Update it and start it again (Mac: `brew upgrade nexusinbox`).",
       "autoReplyQ": "Automatic replies do not run",
@@ -1750,6 +1750,7 @@
   },
 
   "agentStatus": {
+    "autostartHint": "On a Mac, `nexusinbox autostart on` makes it start by itself when you log in (the passphrase is saved in your macOS keychain).",
     "connectAnother": "Connect a computer",
     "deviceRemoveFailed": "Could not remove it. Please try again.",
     "deviceRemoveConfirm": "Remove \"{name}\"? It will get no messages from then on. Using it again needs connecting it again.",
@@ -1769,7 +1770,7 @@
     "title": "Status",
     "silentSub": "The program on the computer seems to have stopped. Auto-replies stop with it.",
     "startHint": "Run this in a terminal on the computer to start it again.",
-    "startDirNote": "Use the folder shown when you connected, if it differs.",
+    "startDirNote": "Use the folder shown when you connected, if it differs. With a single agent on the computer, the folder can be left out.",
     "connectButton": "Also run on my computer",
     "connectConfirm": "You can still read and write in this browser after connecting. The computer keeps auto-replies and AI tools going while the browser is closed.",
     "connectYes": "Connect",
@@ -1808,5 +1809,11 @@
     "stop": "Emergency stop",
     "stopped": "Emergency stop done. Every computer and AI connected to \"{agent}\" has been stopped.",
     "stopFailed": "The emergency stop failed. Try again from the agent page."
+  },
+  "stoppedNotice": {
+    "title": "The computer for \"{agent}\" has stopped",
+    "body": "{device} · since {ago}. While it is stopped, auto-replies and cloud AIs stop too.",
+    "view": "Open the agent page",
+    "dismiss": "Dismiss"
   }
 }

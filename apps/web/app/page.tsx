@@ -12,6 +12,7 @@ import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
 import { InviteCard, useInviteName } from "./_components/InviteCard";
 import { NewDeviceNotice } from "./_components/NewDeviceNotice";
+import { StoppedComputerNotice } from "./_components/StoppedComputerNotice";
 import {
   Avatar,
   ConversationView,
@@ -558,6 +559,8 @@ function MessagesPageInner() {
       <InboxAgentBar agents={agentList} />
       {/* A device joined one of these agents since this browser looked (docs/38). */}
       <NewDeviceNotice agents={agentList} />
+      {/* A computer that stopped (e.g. after a restart) stops auto-replies too (docs/39). */}
+      <StoppedComputerNotice agents={agentList} />
 
       {showWelcomeNoAgents ? (
         // First-time user, no agents yet → the "what do I do first" card.
