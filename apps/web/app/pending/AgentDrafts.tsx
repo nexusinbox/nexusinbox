@@ -27,6 +27,8 @@ import {
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { Avatar } from "../_components/messages/ConversationView";
+import { SendStopNotice } from "../_components/messages/SendStopNotice";
+import { isSendStop, type SendStop } from "../../lib/crypto/device-wraps";
 
 export function AgentDrafts() {
   const { t, locale } = useTranslation();
@@ -44,6 +46,8 @@ export function AgentDrafts() {
   const [keyChecked, setKeyChecked] = useState(false);
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
   const [status, setStatus] = useState("");
+  // A send stopped by the recipient's device list (docs/40 §12.5), by draft.
+  const [sendStop, setSendStop] = useState<{ draftId: string; stop: SendStop } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,18 +88,23 @@ export function AgentDrafts() {
     }
   };
 
-  const handleSend = async (draft: AgentDraft) => {
+  const handleSend = async (draft: AgentDraft, acceptRoot?: string) => {
     setStatus("");
+    setSendStop(null);
     try {
       const senderEncryptedKey = await senderCopyForDraft(
         draft,
         opened[draft.id],
         agentsQuery.data?.agents ?? [],
       );
-      const wraps = await draftDeviceWraps(draft, opened[draft.id]);
+      const wraps = await draftDeviceWraps(draft, opened[draft.id], acceptRoot);
       await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey, ...wraps });
       setStatus(t("agentDrafts.sent"));
-    } catch {
+    } catch (error) {
+      if (isSendStop(error)) {
+        setSendStop({ draftId: draft.id, stop: error });
+        return;
+      }
       setStatus(t("agentDrafts.sendFailed"));
     }
   };
@@ -188,6 +197,14 @@ export function AgentDrafts() {
                       {myKey ? t("agentDrafts.unreadableBody") : t("agentDrafts.unreadable")}
                     </p>
                   )}
+                  {sendStop?.draftId === draft.id ? (
+                    <SendStopNotice
+                      stop={sendStop.stop}
+                      name={name}
+                      onClose={() => setSendStop(null)}
+                      onAccept={(root) => void handleSend(draft, root)}
+                    />
+                  ) : null}
                   <div className="dm-btns">
                     <button
                       className="dm-btn accent"

@@ -4,7 +4,7 @@
 // cards, AI drafts inline, and a composer at the bottom.
 
 import Link from "next/link";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { A2AProtocolType } from "@nexusinbox/core/a2a";
 import { parseProtocolBody, type A2AProtocolBlock } from "../protocol/parseProtocolBody";
@@ -63,7 +63,9 @@ import {
   type Conversation,
 } from "../../../lib/inbox/conversations";
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
-import { deviceWraps } from "../../../lib/crypto/device-wraps";
+import { deviceWraps, isSendStop, isUnlisted, planSend, type SendStop } from "../../../lib/crypto/device-wraps";
+import { latestAutoReplySkip, onAutoReplySkip } from "../../../lib/protocol/auto-reply-skips";
+import { SendStopNotice, UnlistedHint } from "./SendStopNotice";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
 
@@ -147,6 +149,19 @@ export function ConversationView({
   const updateStatus = useUpdateMessageStatusMutation();
   const sendMessage = useSendMessageMutation();
   const threadRef = useRef<HTMLDivElement>(null);
+  // A protocol reply stopped by the other agent's device list (docs/40 §12.5).
+  const [protocolStop, setProtocolStop] = useState<{
+    stop: SendStop;
+    retry: (root: string) => Promise<void>;
+  } | null>(null);
+  // An auto-reply this browser did not send to them (docs/40 §12.5).
+  const [skipTick, setSkipTick] = useState(0);
+  useEffect(() => onAutoReplySkip(() => setSkipTick((n) => n + 1)), []);
+  const autoReplySkip = useMemo(
+    // skipTick: read again when a skip is recorded.
+    () => (skipTick >= 0 ? latestAutoReplySkip(conversation.ownDids, conversation.counterpartDid) : null),
+    [conversation.ownDids, conversation.counterpartDid, skipTick],
+  );
 
   const [rendered, setRendered] = useState<Record<string, Rendered>>({});
   const [menuOpen, setMenuOpen] = useState(false);
@@ -246,11 +261,14 @@ export function ConversationView({
     originalProtocolId: string,
     subjectText: string,
     reply: A2ARespondPayload,
+    acceptRoot?: string,
   ): Promise<void> {
     const replySubject = subjectText.startsWith("Re:")
       ? subjectText
       : `Re: ${subjectText || t("common.noSubject")}`;
-    await sendProtocolReply({
+    setProtocolStop(null);
+    try {
+      await sendProtocolReply({
       protocolType,
       reply,
       threadId: entry.thread_id ?? entry.id,
@@ -261,7 +279,20 @@ export function ConversationView({
       proposerDid: entry.sender_did,
       senderEncryptionKey: conversation.ownAgent?.encryption_key,
       sendMessage: sendMessage.mutateAsync,
-    });
+      acceptRoot,
+      });
+    } catch (error) {
+      if (isSendStop(error)) {
+        setProtocolStop({
+          stop: error,
+          retry: (root) =>
+            handleProtocolRespond(entry, protocolType, originalProtocolId, subjectText, reply, root),
+        });
+        // The card shows this; the notice below says why.
+        throw new Error(t("sendStop.cardNote"));
+      }
+      throw error;
+    }
   }
 
   const handleArchive = async () => {
@@ -500,7 +531,27 @@ export function ConversationView({
           );
         })}
 
-        <ConversationDrafts conversation={conversation} agents={agents} />
+        {autoReplySkip ? (
+          <div className="dm-sys" data-testid="auto-reply-skipped">
+            {t(
+              autoReplySkip.reason === "root_changed"
+                ? "sendStop.autoSkippedChanged"
+                : autoReplySkip.reason === "no_device"
+                  ? "sendStop.autoSkippedNoDevice"
+                  : "sendStop.autoSkippedBroken",
+            )}
+          </div>
+        ) : null}
+
+        <ConversationDrafts conversation={conversation} agents={agents} name={name} />
+        {protocolStop ? (
+          <SendStopNotice
+            stop={protocolStop.stop}
+            name={name}
+            onClose={() => setProtocolStop(null)}
+            onAccept={(root) => void protocolStop.retry(root).catch(() => undefined)}
+          />
+        ) : null}
       </div>
 
       <Composer
@@ -508,6 +559,7 @@ export function ConversationView({
         ownDids={conversation.ownDids}
         ownAgent={conversation.ownAgent}
         counterpart={conversation.counterpartDid}
+        name={name}
         threadId={conversation.threadId ?? conversation.latest.entry.id}
         replyToId={conversation.latestReceived?.id ?? null}
       />
@@ -561,6 +613,7 @@ export function EmptyConversationView({
         ownDids={Array.from(new Set([ownAgent.did, ...(ownAgent.dids ?? [])]))}
         ownAgent={ownAgent}
         counterpart={counterpart}
+        name={name}
         threadId={null}
         replyToId={null}
       />
@@ -572,9 +625,11 @@ export function EmptyConversationView({
 function ConversationDrafts({
   conversation,
   agents,
+  name,
 }: {
   conversation: Conversation;
   agents: Agent[];
+  name: string;
 }) {
   const { t } = useTranslation();
   const draftsQuery = useAgentDraftsQuery();
@@ -584,6 +639,7 @@ function ConversationDrafts({
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
   const [keyId, setKeyId] = useState<string | null | undefined>(undefined);
   const [status, setStatus] = useState("");
+  const [sendStop, setSendStop] = useState<{ draftId: string; stop: SendStop } | null>(null);
 
   const ownAid = conversation.ownAgent?.aid;
   const drafts = useMemo(
@@ -638,13 +694,18 @@ function ConversationDrafts({
     );
   }
 
-  const handleSend = async (draft: AgentDraft) => {
+  const handleSend = async (draft: AgentDraft, acceptRoot?: string) => {
     setStatus("");
+    setSendStop(null);
     try {
       const senderEncryptedKey = await senderCopyForDraft(draft, opened[draft.id], agents);
-      const wraps = await draftDeviceWraps(draft, opened[draft.id]);
+      const wraps = await draftDeviceWraps(draft, opened[draft.id], acceptRoot);
       await sendDraft.mutateAsync({ id: draft.id, senderEncryptedKey, ...wraps });
-    } catch {
+    } catch (error) {
+      if (isSendStop(error)) {
+        setSendStop({ draftId: draft.id, stop: error });
+        return;
+      }
       setStatus(t("agentDrafts.sendFailed"));
     }
   };
@@ -680,6 +741,14 @@ function ConversationDrafts({
               ) : (
                 <p className="dm-muted">{t("agentDrafts.unreadableBody")}</p>
               )}
+              {sendStop?.draftId === draft.id ? (
+                <SendStopNotice
+                  stop={sendStop.stop}
+                  name={name}
+                  onClose={() => setSendStop(null)}
+                  onAccept={(root) => void handleSend(draft, root)}
+                />
+              ) : null}
               <div className="dm-btns">
                 <button
                   type="button"
@@ -721,6 +790,7 @@ function Composer({
   ownDids,
   ownAgent,
   counterpart,
+  name,
   threadId,
   replyToId,
 }: {
@@ -729,6 +799,8 @@ function Composer({
   ownAgent: Agent | undefined;
   /** The counterpart's DID, or an AID to resolve before sending. */
   counterpart: string;
+  /** The counterpart as the person knows them. */
+  name: string;
   /** Thread to continue; null starts a new one. */
   threadId: string | null;
   /** Newest received message, for the full form's reply. */
@@ -739,6 +811,14 @@ function Composer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
+  const [sendStop, setSendStop] = useState<SendStop | null>(null);
+  // Whether they have a device list yet (docs/40 Q8).
+  const resolvedQuery = useQuery({
+    queryKey: ["recipient-resolve", counterpart],
+    queryFn: () => defaultApiClient.resolveRecipient(counterpart),
+    staleTime: 60_000,
+    retry: false,
+  });
   // undefined: still checking; null: no signing key here.
   const [senderDid, setSenderDid] = useState<string | null | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -771,14 +851,17 @@ function Composer({
     ? `/compose?reply=${encodeURIComponent(replyToId)}`
     : `/compose?to=${encodeURIComponent(counterpart)}&as=${encodeURIComponent(ownDid)}`;
 
-  const send = async () => {
+  const send = async (acceptRoot?: string) => {
     const body = text.trim();
     if (!body || !senderDid || sending) return;
     setSending(true);
     setError(false);
+    setSendStop(null);
     try {
       const resolved = await defaultApiClient.resolveRecipient(counterpart);
-      const recipientEncryptionKey = resolved.encryption_public_key;
+      // Only devices their signed list names (docs/40 §12).
+      const plan = await planSend(resolved, counterpart, senderDid, { acceptRoot });
+      const recipientEncryptionKey = plan.recipient.encryption_public_key;
       if (!recipientEncryptionKey || !isValidX25519PublicKeyB64Url(recipientEncryptionKey)) {
         throw new Error("recipient has no usable encryption key");
       }
@@ -788,17 +871,16 @@ function Composer({
       const encryptedSubject = await encryptEnvelopeText("", { contentKey });
       const encryptedBody = await encryptEnvelopeText(body, { contentKey });
       const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncryptionKey);
-      const senderEncryptedKey = await wrapContentKeyForSender(contentKey, ownAgent?.encryption_key);
-      // Every device of both agents can read it (docs/38).
-      const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
+      const senderEncryptedKey = await wrapContentKeyForSender(
         contentKey,
-        resolved.devices,
-        senderDid,
+        plan.senderKey ?? ownAgent?.encryption_key,
       );
+      // Every device of both agents can read it (docs/38).
+      const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, plan);
       const signature = await signEnvelopePayload({
         signingPrivateKey,
         senderDid,
-        recipientDid: resolved.did,
+        recipientDid: plan.recipient.did,
         subjectEncrypted: encryptedSubject.serialized,
         encryptedContent: encryptedBody.serialized,
         encryptedKey: wrapped.wrappedKey,
@@ -806,7 +888,7 @@ function Composer({
       });
       await sendMessage.mutateAsync({
         senderDid,
-        recipientDid: resolved.did,
+        recipientDid: plan.recipient.did,
         subjectEncrypted: encryptedSubject.serialized,
         encryptedContent: encryptedBody.serialized,
         encryptedKey: wrapped.wrappedKey,
@@ -818,8 +900,9 @@ function Composer({
         senderEncryptedKeys,
       });
       setText("");
-    } catch {
-      setError(true);
+    } catch (err) {
+      if (isSendStop(err)) setSendStop(err);
+      else setError(true);
     } finally {
       setSending(false);
     }
@@ -843,6 +926,14 @@ function Composer({
         void send();
       }}
     >
+      {sendStop ? (
+        <SendStopNotice
+          stop={sendStop}
+          name={name}
+          onClose={() => setSendStop(null)}
+          onAccept={(root) => void send(root)}
+        />
+      ) : null}
       <div className="dm-composer-row">
         <textarea
           ref={textareaRef}
@@ -874,6 +965,7 @@ function Composer({
           </svg>
         </button>
       </div>
+      {resolvedQuery.data && isUnlisted(resolvedQuery.data) ? <UnlistedHint /> : null}
       <div className="dm-composer-foot">
         {error ? (
           <span className="dm-error" role="alert">

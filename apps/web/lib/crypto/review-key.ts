@@ -13,7 +13,7 @@ import { decryptEnvelopeTextWithContentKey } from "./envelope";
 import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
 import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForSender } from "./keywrap";
 import { generateX25519KeyPairMaterial } from "./recipient-keyring";
-import { agentDevices, deviceWraps } from "./device-wraps";
+import { deviceWraps, planSend } from "./device-wraps";
 
 const PRIVATE_KEY_ID = "nexusinbox.review-key.v1";
 const PUBLIC_KEY_STORAGE = "nexusinbox.review-key.pub.v1";
@@ -123,15 +123,19 @@ export async function openDraft(
  */
 /**
  * The approved draft's content key for every device of the recipient
- * agent and of the sending agent (docs/38). Empty lists when the draft is
- * not open here.
+ * agent and of the sending agent (docs/38), checked against the
+ * recipient's device list first: throws SendStop when it does not hold
+ * (docs/40 §12). Empty lists when the draft is not open here.
  */
 export async function draftDeviceWraps(
   draft: AgentDraft,
   opened: OpenedDraft | null | undefined,
+  acceptRoot?: string,
 ): Promise<{ encryptedKeys: KeyWrap[]; senderEncryptedKeys: KeyWrap[] }> {
+  const served = await defaultApiClient.resolveRecipient(draft.recipient_did);
+  const plan = await planSend(served, draft.recipient_did, draft.sender_did, { acceptRoot });
   if (!opened) return { encryptedKeys: [], senderEncryptedKeys: [] };
-  return deviceWraps(opened.contentKey, await agentDevices(draft.recipient_did), draft.sender_did);
+  return deviceWraps(opened.contentKey, plan);
 }
 
 export async function senderCopyForDraft(

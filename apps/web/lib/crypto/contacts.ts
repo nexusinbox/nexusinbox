@@ -7,6 +7,9 @@ export type ContactFields = {
   person_name: string;
   agent_label: string | null;
   note: string | null;
+  /** The contact's agent and the root its device list is signed by (docs/40 §12.4). */
+  aid?: string | null;
+  root?: string | null;
 };
 
 const SEALED_PREFIX = "cs1:";
@@ -62,6 +65,7 @@ export async function sealContactFields(
       person_name: fields.person_name,
       agent_label: fields.agent_label,
       note: fields.note,
+      ...(fields.aid && fields.root ? { aid: fields.aid, root: fields.root } : {}),
     }),
   );
   const ciphertext = await crypto.subtle.encrypt(
@@ -93,5 +97,8 @@ export async function openContactFields(
     person_name: parsed.person_name,
     agent_label: optional(parsed.agent_label),
     note: optional(parsed.note),
+    ...(typeof parsed.aid === "string" && typeof parsed.root === "string"
+      ? { aid: parsed.aid, root: parsed.root }
+      : {}),
   };
 }

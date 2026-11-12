@@ -23,7 +23,15 @@ import {
   wrapContentKeyForRecipient,
   wrapContentKeyForSender,
 } from "../../lib/crypto/keywrap";
-import { agentDevices, receivedWrap, wrapContentKeyForDevices } from "../../lib/crypto/device-wraps";
+import {
+  isSendStop,
+  isUnlisted,
+  planSend,
+  receivedWrap,
+  wrapContentKeyForDevices,
+  type SendStop,
+} from "../../lib/crypto/device-wraps";
+import { SendStopNotice, UnlistedHint } from "../_components/messages/SendStopNotice";
 import {
   encryptAttachment,
   generateAttachmentKey,
@@ -161,6 +169,9 @@ function ComposePageInner() {
     [apiAgents, contacts],
   );
 
+  const recipientName = (address: string): string | null =>
+    recipientOptions.find((o) => o.address === address || o.did === address)?.label ?? null;
+
   const [senderDid, setSenderDid] = useState<string>("");
   const [recipientDid, setRecipientDid] = useState<string>(toParam);
   // Compose-time hint: auto-resolve the recipient on valid
@@ -197,6 +208,10 @@ function ComposePageInner() {
   );
   const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
   const [status, setStatus] = useState<StatusState>(null);
+  // A send stopped by the recipient's device list (docs/40 §12.5).
+  const [sendStop, setSendStop] = useState<{ stop: SendStop; name: string | null } | null>(null);
+  // The recipient has no device list yet (docs/40 Q8).
+  const [recipientUnlisted, setRecipientUnlisted] = useState(false);
   const [hasSenderPrivateKey, setHasSenderPrivateKey] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -371,6 +386,7 @@ function ComposePageInner() {
     const input = recipientDid.trim();
     if (!input || (!isAidIdentifier(input) && !input.startsWith("did:key:"))) {
       setRecipientMode(null);
+      setRecipientUnlisted(false);
       return;
     }
     let cancelled = false;
@@ -380,12 +396,16 @@ function ComposePageInner() {
         .then((resolved) => {
           if (cancelled) return;
           setRecipientMode(resolved.key_holder ?? "unknown");
+          setRecipientUnlisted(isUnlisted(resolved));
         })
         .catch(() => {
           // 404 / malformed input — clear the hint rather than
           // surfacing an error; the submit path has its own
           // validation. Unknown recipients shouldn't flash a warning.
-          if (!cancelled) setRecipientMode(null);
+          if (!cancelled) {
+            setRecipientMode(null);
+            setRecipientUnlisted(false);
+          }
         });
     }, 350);
     return () => {
@@ -518,12 +538,17 @@ function ComposePageInner() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    await submit();
+  };
+
+  const submit = async (acceptRoot?: string) => {
+    setSendStop(null);
     if (readinessMessage) {
       setStatus({ kind: "error", message: readinessMessage });
       return;
     }
 
-    const senderEncryptionKey = selectedSender?.encryption_key;
+    let senderEncryptionKey = selectedSender?.encryption_key;
     if (!senderEncryptionKey) {
       setStatus({ kind: "error", message: t("compose.validationNoEncKey") });
       return;
@@ -549,8 +574,11 @@ function ComposePageInner() {
         }
         throw err;
       }
-      const recipientAddress = resolvedRecipient.did;
-      const recipientEncryptionKey = resolvedRecipient.encryption_public_key;
+      // Only devices the recipient's signed list names (docs/40 §12).
+      const plan = await planSend(resolvedRecipient, recipientInput, senderDid, { acceptRoot });
+      const recipientAddress = plan.recipient.did;
+      const recipientEncryptionKey = plan.recipient.encryption_public_key;
+      if (plan.senderKey) senderEncryptionKey = plan.senderKey;
       if (!recipientEncryptionKey) {
         setStatus({ kind: "error", message: t("compose.validationNoEncKey") });
         return;
@@ -570,8 +598,7 @@ function ComposePageInner() {
       // The sender's own copy, so this message can be read back (docs/35 §5).
       const senderEncryptedKey = await wrapContentKeyForSender(contentKey, senderEncryptionKey);
       // Every device of both agents can read it (docs/38).
-      const recipientDevices = resolvedRecipient.devices ?? [];
-      const senderDevices = (await agentDevices(senderDid)) ?? [];
+      const { recipientDevices, senderDevices } = plan;
       const encryptedKeys = await wrapContentKeyForDevices(contentKey, recipientDevices);
       const senderEncryptedKeys = await wrapContentKeyForDevices(contentKey, senderDevices);
 
@@ -705,7 +732,7 @@ function ComposePageInner() {
 
       await sendMessage.mutateAsync({
         senderDid,
-        recipientDid: recipientInput,
+        recipientDid: recipientAddress,
         subjectEncrypted: encryptedSubject.serialized,
         encryptedContent: encryptedBody.serialized,
         encryptedKey,
@@ -723,6 +750,11 @@ function ComposePageInner() {
       setBody("");
       setAttachments([]);
     } catch (err) {
+      if (isSendStop(err)) {
+        setStatus(null);
+        setSendStop({ stop: err, name: recipientName(recipientDid.trim()) });
+        return;
+      }
       // Mark any in-flight attachment as failed for UI feedback.
       setAttachments((prev) =>
         prev.map((a) =>
@@ -910,6 +942,7 @@ function ComposePageInner() {
               <p className="field-help">
                 {t("compose.toHelp")}
               </p>
+              {recipientUnlisted ? <UnlistedHint /> : null}
               {recipientMode === "signer_daemon" ? (
                 <p
                   className="field-help"
@@ -1053,6 +1086,14 @@ function ComposePageInner() {
               ) : null}
             </div>
 
+            {sendStop ? (
+              <SendStopNotice
+                stop={sendStop.stop}
+                name={sendStop.name}
+                onClose={() => setSendStop(null)}
+                onAccept={(root) => void submit(root)}
+              />
+            ) : null}
             {pageStatus ? (
               <div className={`form-status ${pageStatus.kind}`} role="status">
                 {pageStatus.message}

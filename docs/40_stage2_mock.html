@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>送る前に相手の端末を確かめる（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; --danger-soft: #fdecef; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .head { padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .head b { font-size: 16px; }
+  .face { width: 34px; height: 34px; border-radius: 50%; background: #3fa66b; color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
+  .thread { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-height: 140px; }
+  .bubble { max-width: 75%; padding: 8px 12px; border-radius: 16px; background: #eff3f4; font-size: 14px; }
+  .bubble.mine { align-self: flex-end; background: var(--primary); color: #fff; }
+  .sys { align-self: center; font-size: 12px; color: var(--muted); background: var(--warn-soft); border-radius: 999px; padding: 3px 12px; }
+  .composer { border-top: 1px solid var(--line); padding: 12px 18px; }
+  .input { border: 1px solid var(--line); border-radius: 20px; padding: 8px 14px; display: flex; align-items: center; gap: 8px; }
+  .input span { flex: 1; }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .btn.quiet { border-color: transparent; color: var(--muted); font-weight: 600; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .stop { border: 1px solid var(--danger); background: var(--danger-soft); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .stop.warn { border-color: #f0c36d; background: var(--warn-soft); }
+  .stop b { display: block; margin-bottom: 2px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .form { padding: 18px 22px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+  .box-in { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .variants { display: flex; gap: 6px; margin: 0 0 10px; flex-wrap: wrap; }
+  .variants button { font-size: 12px; border: 1px dashed var(--line); background: var(--card); border-radius: 8px; padding: 2px 10px; cursor: pointer; color: var(--muted); }
+  .variants button.on { border-style: solid; border-color: var(--danger); color: var(--danger); }
+  .foot { border-top: 1px solid var(--line); padding: 12px 18px; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>送る前に相手の端末を確かめる（案）</h1>
+  <p class="lead">docs/40 段階 2。送るときに相手の名簿を確かめ、名簿にある端末にだけ鍵を包む。合っているときは何も出さない（今と同じ）。下は、おかしいときにだけ出る画面。<span class="new">新</span> が増えるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① 鍵が変わった</button>
+    <button data-s="s2">② 名簿がおかしい</button>
+    <button data-s="s3">③ 読める端末が無い</button>
+    <button data-s="s4">④ 名簿の無い相手</button>
+    <button data-s="s5">⑤ 自動返信・下書き</button>
+  </div>
+
+  <!-- ① root changed -->
+  <section id="s1" class="app">
+    <div class="head"><div class="face">ア</div><b>アレックスさんの秘書</b></div>
+    <div class="thread">
+      <div class="bubble">来週の打ち合わせ、木曜 14:00 か金曜 10:00 でどうでしょう。</div>
+      <div class="bubble mine">木曜 14:00 でお願いします。</div>
+    </div>
+    <div class="composer">
+      <div id="s1a" class="stop">
+        <b>「アレックスさんの秘書」の鍵が変わりました <span class="new">新</span></b>
+        <span class="muted">前に送ったときと、相手のエージェントの鍵が違います。いまの NexusInbox では、鍵が正当に変わることはありません。運営のサーバか、だれかが別の相手にすり替えようとしている可能性があります。メッセージはまだ送っていません。</span>
+        <div class="actions">
+          <button class="btn primary">やめる</button>
+          <button class="btn quiet" onclick="document.getElementById('s1a').hidden=true;document.getElementById('s1b').hidden=false">確かめたので送る…</button>
+        </div>
+      </div>
+      <div id="s1b" class="stop" hidden>
+        <b>本当に送りますか？</b>
+        <span class="muted">会うか電話で、相手が鍵を作り直したことを確かめてから送ってください。送ると、この新しい鍵を覚え、次からは聞きません。</span>
+        <div class="actions">
+          <button class="btn primary" onclick="document.getElementById('s1b').hidden=true;document.getElementById('s1a').hidden=false">やめる</button>
+          <button class="btn danger">送る（新しい鍵を覚える）</button>
+        </div>
+      </div>
+      <div class="input"><span>木曜 14:00 で確定ですね。資料は前日に送ります。</span><button class="btn primary" disabled>送信</button></div>
+    </div>
+    <div class="foot muted">送信を押したときに、入力欄の上に出す（ダイアログにはしない。書いた文はそのまま残る）。「確かめたので送る…」はもう一段確かめてから送る。新しい会話の画面でも同じものを、送信ボタンの上に出す。</div>
+  </section>
+
+  <!-- ② broken list -->
+  <section id="s2" class="app" hidden>
+    <div class="head"><div class="face">ア</div><b>アレックスさんの秘書</b></div>
+    <div class="thread">
+      <div class="bubble">来週の打ち合わせ、木曜 14:00 か金曜 10:00 でどうでしょう。</div>
+    </div>
+    <div class="composer">
+      <div class="variants">
+        <button class="on" data-v="sig">署名が合わない</button>
+        <button data-v="old">古い名簿</button>
+        <button data-v="gone">名簿が消えた</button>
+      </div>
+      <div class="stop">
+        <b>「アレックスさんの秘書」に送れません <span class="new">新</span></b>
+        <span class="muted"><span data-why="sig">相手の端末の一覧に、相手の署名がありません。運営のサーバが一覧を書き換えた可能性があります。</span><span data-why="old" hidden>相手の端末の一覧が、前に見たものより古くなっています。運営のサーバが古い一覧を返している可能性があります。</span><span data-why="gone" hidden>前はあった相手の端末の一覧が、なくなっています。運営のサーバが一覧を消した可能性があります。</span>
+        メッセージはまだ送っていません。しばらくしても直らなければ、別の方法で相手に知らせてください。</span>
+        <div class="actions"><button class="btn">閉じる</button></div>
+      </div>
+      <div class="input"><span>木曜 14:00 でお願いします。</span><button class="btn primary" disabled>送信</button></div>
+    </div>
+    <div class="foot muted">この場合は「それでも送る」を出さない（正しい相手でも、一覧そのものが信用できないため）。書いた文は残るので、直ったら送れる。</div>
+  </section>
+
+  <!-- ③ no device -->
+  <section id="s3" class="app" hidden>
+    <div class="head"><div class="face">ア</div><b>アレックスさんの秘書</b></div>
+    <div class="thread">
+      <div class="bubble">来週の打ち合わせ、木曜 14:00 か金曜 10:00 でどうでしょう。</div>
+    </div>
+    <div class="composer">
+      <div class="stop warn">
+        <b>「アレックスさんの秘書」には、いま読める端末がありません <span class="new">新</span></b>
+        <span class="muted">相手が端末をすべて外したか、まだ認めていない可能性があります。メッセージはまだ送っていません。</span>
+        <div class="actions"><button class="btn">閉じる</button></div>
+      </div>
+      <div class="input"><span>木曜 14:00 でお願いします。</span><button class="btn primary" disabled>送信</button></div>
+    </div>
+    <div class="foot muted">相手が認めた端末のうち、サーバが今も有効と返すものが 1 台も無いとき。サーバが端末を外したことは信じる（減らすことだけはサーバにもできる）ので、送り先が無くなる。</div>
+  </section>
+
+  <!-- ④ no list -->
+  <section id="s4" class="app" hidden>
+    <div class="head"><b>新しい会話</b></div>
+    <div class="form">
+      <div class="field"><label>送る側</label><div class="box-in">秘書</div></div>
+      <div class="field"><label>宛先</label><div class="box-in">ジェイミーさんの秘書 <span class="muted">aid:ai:01K…</span></div>
+        <div class="hint">この相手は、端末の名簿をまだ作っていません。運営のサーバが返す端末に送ります。<span class="new">新</span></div></div>
+      <div class="field"><label>本文</label><div class="box-in" style="min-height:70px">はじめまして。紹介ページを見て連絡しました。</div></div>
+      <button class="btn primary">送信</button>
+    </div>
+    <div class="foot muted">止めずに今までどおり送る（Q8）。会話画面では入力欄の下に同じ一行を小さく出す。名簿を作った相手には何も出さない。全員が新しい版になったら、名簿の無い相手には送らない形に締める（段階 5）。</div>
+  </section>
+
+  <!-- ⑤ auto -->
+  <section id="s5" class="app" hidden>
+    <div class="head"><div class="face">ア</div><b>アレックスさんの秘書</b></div>
+    <div class="thread">
+      <div class="bubble">来週の打ち合わせ、木曜 14:00 か金曜 10:00 でどうでしょう。</div>
+      <div class="sys">自動返信しませんでした。相手の鍵が変わっています <span class="new">新</span></div>
+    </div>
+    <div class="composer">
+      <div class="input"><span class="muted">メッセージを書く</span><button class="btn primary" disabled>送信</button></div>
+    </div>
+    <div class="foot muted">ブラウザの自動返信は、①〜③のどれかに当たる相手には送らない。そのとき会話に一行だけ残す（このブラウザだけ。サーバには送らない）。クラウドの AI の下書きを「確認が必要」で承認するときは、人が送るのと同じく ①〜③ を出す。</div>
+  </section>
+</main>
+
+<aside>
+  <div class="box">
+    <h3>変わること</h3>
+    <ul>
+      <li>送るたびに、相手の名簿の署名・版・宛先を確かめる。合っていれば何も出さない</li>
+      <li>名簿にあって、サーバも有効と返す端末にだけ包む（暗号の鍵は名簿のもの）。サーバが端末を足しても、鍵を差し替えても読めない</li>
+      <li>相手の鍵（ルート）を初めて見たときに覚える。連絡先にいる相手は、連絡先の封の中にも覚え、別のブラウザでもそろう</li>
+      <li>自分の名簿がおかしいときは送るのは止めず、自分の写しはこのブラウザの鍵にだけ包む（段階 1 の警告が出ている）</li>
+      <li>パソコン側（自動返信・MCP）と接続コードの秘密は段階 3（v0.5.0）</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>決めてほしいこと</h3>
+    <ul>
+      <li>止める知らせを、ダイアログではなく入力欄の上に出すか（推奨: 入力欄の上。書いた文が隠れない）</li>
+      <li>② 名簿がおかしいときは「それでも送る」を出さないか（推奨: 出さない）</li>
+      <li>⑤ 自動返信を見送ったことを会話に一行残すか（推奨: 残す。黙って送らないと、気づけない）</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+  document.querySelectorAll('.variants button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.variants button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('[data-why]').forEach(function (s) { s.hidden = s.dataset.why !== b.dataset.v; });
+    });
+  });
+</script>
+</body>
+</html>

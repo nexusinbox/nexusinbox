@@ -25,6 +25,8 @@ import {
   useSendMessageMutation,
 } from "../../../lib/api/hooks";
 import { sendScheduleProposal } from "../../../lib/protocol/send-propose";
+import { isSendStop, planSend, type SendStop } from "../../../lib/crypto/device-wraps";
+import { SendStopNotice } from "../../_components/messages/SendStopNotice";
 import { getSigningPrivateKey, hasSigningPrivateKeyMaterial } from "../../../lib/crypto/signing-keyring";
 import {
   CANDIDATE_MAX_COUNT,
@@ -121,9 +123,17 @@ export default function ProposePage() {
 
   const submitDisabled = pending || !senderDid || !hasSenderKey || !recipientDid.trim() || !eventTitle.trim();
 
+  // A send stopped by the recipient's device list (docs/40 §12.5).
+  const [sendStop, setSendStop] = useState<SendStop | null>(null);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    await submit();
+  }
+
+  async function submit(acceptRoot?: string) {
     setStatus(null);
+    setSendStop(null);
 
     const candidateResult = validateCandidateRows(rows, t);
     if (!candidateResult.ok) {
@@ -178,8 +188,9 @@ export default function ProposePage() {
         }
         throw err;
       }
-      const recipientAddress = resolved.did;
-      const recipientEncKey = resolved.encryption_public_key;
+      // Only devices the recipient's signed list names (docs/40 §12).
+      const plan = await planSend(resolved, recipientInput, senderDid, { acceptRoot });
+      const recipientEncKey = plan.recipient.encryption_public_key;
       if (!recipientEncKey) {
         setStatus({ kind: "error", message: t("a2a.proposeValidationNoEncKey") });
         setPending(false);
@@ -197,9 +208,7 @@ export default function ProposePage() {
         {
           senderDid,
           signingPrivateKey,
-          recipientDid: recipientAddress,
-          recipientEncryptionKey: recipientEncKey,
-          recipientDevices: resolved.devices,
+          plan,
           senderEncryptionKey: agentsQuery.data?.agents.find(
             (a) => a.did === senderDid || a.dids?.includes(senderDid),
           )?.encryption_key,
@@ -219,6 +228,10 @@ export default function ProposePage() {
       setDeadline("");
       setRows([{ start: "", end: "" }]);
     } catch (err) {
+      if (isSendStop(err)) {
+        setSendStop(err);
+        return;
+      }
       setStatus({
         kind: "error",
         message: err instanceof Error ? err.message : t("a2a.sendFailed"),
@@ -411,6 +424,15 @@ export default function ProposePage() {
                 />
               </div>
 
+              {sendStop ? (
+                <div style={{ marginTop: '8px' }}>
+                  <SendStopNotice
+                    stop={sendStop}
+                    onClose={() => setSendStop(null)}
+                    onAccept={(root) => void submit(root)}
+                  />
+                </div>
+              ) : null}
               {status ? (
                 <div style={{ marginTop: '8px' }}>
                   <span className={`badge ${status.kind === "success" ? "ok" : status.kind === "error" ? "error" : ""}`}>

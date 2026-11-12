@@ -35,6 +35,7 @@ import {
 } from "../../lib/api/hooks";
 import type { Agent, MessageIndexEntry } from "../../lib/api/types";
 import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
+import { planSend } from "../../lib/crypto/device-wraps";
 import { useTranslation } from "../../lib/i18n";
 import { sendScheduleProposal } from "../../lib/protocol/send-propose";
 
@@ -399,14 +400,13 @@ function TestStep({
       if (!signingPrivateKey) throw new Error(t("firstRun.test.noKey"));
       // By AID, so a connected computer's key is the one used.
       const resolved = await defaultApiClient.resolveRecipient(agent.aid);
+      const plan = await planSend(resolved, agent.aid, agent.did);
       const title = t("firstRun.test.eventTitle");
       const { messageId } = await sendScheduleProposal(
         {
           senderDid: agent.did,
           signingPrivateKey,
-          recipientDid: resolved.did,
-          recipientEncryptionKey: resolved.encryption_public_key,
-          recipientDevices: resolved.devices,
+          plan,
           subject: title,
           body: t("firstRun.test.body"),
           payload: {
@@ -417,7 +417,7 @@ function TestStep({
         },
         sendMessage.mutateAsync,
       );
-      setSent({ messageId, recipientDid: resolved.did, at: Date.now() });
+      setSent({ messageId, recipientDid: plan.recipient.did, at: Date.now() });
     } catch (err) {
       setError(t("firstRun.test.failed", { error: err instanceof Error ? err.message : String(err) }));
     } finally {

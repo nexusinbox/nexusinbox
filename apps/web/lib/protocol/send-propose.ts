@@ -13,8 +13,8 @@ import {
 import { encryptEnvelopeText, generateContentKey } from "../crypto/envelope";
 import { wrapContentKeyForRecipient, wrapContentKeyForSender } from "../crypto/keywrap";
 import { signEnvelopePayload } from "../crypto/signature";
-import { deviceWraps } from "../crypto/device-wraps";
-import type { DeviceKey, KeyWrap } from "../api/types";
+import { deviceWraps, type SendPlan } from "../crypto/device-wraps";
+import type { KeyWrap } from "../api/types";
 
 export type SendEncryptedMessage = (payload: {
   senderDid: string;
@@ -35,11 +35,8 @@ export async function sendScheduleProposal(
   input: {
     senderDid: string;
     signingPrivateKey: CryptoKey;
-    /** The recipient as resolved by the server, and its receiving key. */
-    recipientDid: string;
-    recipientEncryptionKey: string;
-    /** Every device of the recipient agent (`devices` from resolving it, docs/38). */
-    recipientDevices?: DeviceKey[];
+    /** Whom to wrap for, checked against the recipient's device list (planSend, docs/40 §12). */
+    plan: SendPlan;
     /** The sender's own encryption key, so it can read the message later (docs/35 §5). */
     senderEncryptionKey?: string;
     subject: string;
@@ -66,18 +63,18 @@ export async function sendScheduleProposal(
   const contentKey = generateContentKey();
   const encSubject = await encryptEnvelopeText(input.subject, { contentKey });
   const encBody = await encryptEnvelopeText(JSON.stringify(a2aPayload), { contentKey });
-  const wrapped = await wrapContentKeyForRecipient(contentKey, input.recipientEncryptionKey);
-  const senderEncryptedKey = await wrapContentKeyForSender(contentKey, input.senderEncryptionKey);
-  // Every device of both agents can read it (docs/38).
-  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
+  const recipientDid = input.plan.recipient.did;
+  const wrapped = await wrapContentKeyForRecipient(contentKey, input.plan.recipient.encryption_public_key);
+  const senderEncryptedKey = await wrapContentKeyForSender(
     contentKey,
-    input.recipientDevices,
-    input.senderDid,
+    input.plan.senderKey ?? input.senderEncryptionKey,
   );
+  // Every device of both agents can read it (docs/38).
+  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, input.plan);
   const signature = await signEnvelopePayload({
     signingPrivateKey: input.signingPrivateKey,
     senderDid: input.senderDid,
-    recipientDid: input.recipientDid,
+    recipientDid,
     subjectEncrypted: encSubject.serialized,
     encryptedContent: encBody.serialized,
     encryptedKey: wrapped.wrappedKey,
@@ -87,7 +84,7 @@ export async function sendScheduleProposal(
   input.onSending?.();
   const sent = await send({
     senderDid: input.senderDid,
-    recipientDid: input.recipientDid,
+    recipientDid,
     subjectEncrypted: encSubject.serialized,
     encryptedContent: encBody.serialized,
     encryptedKey: wrapped.wrappedKey,

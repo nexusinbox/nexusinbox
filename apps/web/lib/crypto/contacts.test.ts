@@ -21,6 +21,16 @@ describe("sealed contacts", () => {
     await expect(openContactFields(key, DID_A, sealed)).resolves.toEqual(fields);
   });
 
+  it("carries the contact's agent and root when known (docs/40 §12.4)", async () => {
+    const key = generateContactsKey();
+    const pinned = { ...fields, aid: "aid:ai:01ALEX", root: DID_B };
+    await expect(openContactFields(key, DID_A, await sealContactFields(key, DID_A, pinned))).resolves.toEqual(pinned);
+    // A root without its agent is not sealed.
+    await expect(
+      openContactFields(key, DID_A, await sealContactFields(key, DID_A, { ...fields, aid: null, root: DID_B })),
+    ).resolves.toEqual(fields);
+  });
+
   it("refuses a sealed name moved onto another DID", async () => {
     const key = generateContactsKey();
     const sealed = await sealContactFields(key, DID_A, fields);

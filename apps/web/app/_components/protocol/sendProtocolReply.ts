@@ -38,7 +38,7 @@ import {
 } from "../../../lib/crypto/keywrap";
 import { signEnvelopePayload } from "../../../lib/crypto/signature";
 import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
-import { deviceWraps } from "../../../lib/crypto/device-wraps";
+import { deviceWraps, planSend } from "../../../lib/crypto/device-wraps";
 import type { KeyWrap } from "../../../lib/api/types";
 import {
   buildReplyPayload,
@@ -114,12 +114,18 @@ export type SendProtocolReplyInput = {
    * also wrapped for it so the sender can read the reply later (docs/35 §5).
    */
   senderEncryptionKey?: string;
+  /** A new root of the recipient's device list the person just accepted (docs/40 §12.5). */
+  acceptRoot?: string;
 };
 
 export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<void> {
   const resolved = await defaultApiClient.resolveRecipient(input.proposerDid);
-  const recipientDid = resolved?.did ?? input.proposerDid;
-  const recipientEncryptionKey = resolved?.encryption_public_key;
+  // Only devices the recipient's signed list names; throws SendStop (docs/40 §12).
+  const plan = await planSend(resolved, input.proposerDid, input.viewerAgentDid, {
+    acceptRoot: input.acceptRoot,
+  });
+  const recipientDid = plan.recipient.did;
+  const recipientEncryptionKey = plan.recipient.encryption_public_key;
   if (!recipientEncryptionKey) {
     throw new Error(
       "Unable to resolve recipient encryption key for this protocol reply.",
@@ -153,14 +159,10 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
   const wrapped = await wrapContentKeyForRecipient(contentKey, recipientEncryptionKey);
   const senderEncryptedKey = await wrapContentKeyForSender(
     contentKey,
-    input.senderEncryptionKey,
+    plan.senderKey ?? input.senderEncryptionKey,
   );
   // Every device of both agents can read the reply (docs/38).
-  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(
-    contentKey,
-    resolved?.devices,
-    input.viewerAgentDid,
-  );
+  const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, plan);
   const signature = await signEnvelopePayload({
     signingPrivateKey,
     senderDid: input.viewerAgentDid,

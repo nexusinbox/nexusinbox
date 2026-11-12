@@ -31,6 +31,7 @@ import {
   wrapContactsKeyForAgent,
 } from "../crypto/keywrap";
 import { getRecipientPrivateKey } from "../crypto/recipient-keyring";
+import { rememberContactRoots } from "../agents/peer-pins";
 
 export type AddressBookApi = {
   listContacts(): Promise<ContactRecordsResponse>;
@@ -155,6 +156,7 @@ export async function loadAddressBook(api: AddressBookApi): Promise<ContactsResp
     );
   }
 
+  if (key) rememberContactRoots(contacts);
   contacts.sort((a, b) => {
     if (a.readable !== b.readable) return a.readable ? -1 : 1;
     return (

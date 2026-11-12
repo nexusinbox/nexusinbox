@@ -188,6 +188,8 @@ export type RecipientResolutionResponse = {
   encryption_public_key: string;
   /** Every device of the agent that can read, newest first (docs/38). */
   devices?: DeviceKey[];
+  /** The latest list of devices the agent's root signed (docs/40 §4.2). */
+  device_list?: DeviceListRef | null;
   /**
    * Aggregate mode over the recipient agent's active credentials.
    * Optional because older API builds don't return it — absence
@@ -471,6 +473,9 @@ export type ContactEntry = {
   person_name: string;
   agent_label: string | null;
   note: string | null;
+  /** Sealed with the fields: the contact's agent and its list's root (docs/40 §12.4). */
+  aid?: string | null;
+  root?: string | null;
   /** false when this device cannot open the sealed fields */
   readable: boolean;
   created_at: string;

@@ -55,6 +55,9 @@ export type AutoReplyExecutorApi = {
  */
 function sendCertainlyFailed(error: unknown): boolean {
   if (error instanceof TypeError) return false; // fetch network failure
+  // Stopped by the other agent's device list (docs/40 §12.5): nothing was
+  // sent, but keep the claim so it is left to the person, not retried.
+  if (error instanceof Error && error.name === "SendStop") return false;
   const status = (error as { status?: unknown } | null)?.status;
   if (typeof status === "number") return status >= 400 && status < 500;
   return true;

@@ -12,6 +12,7 @@ import {
 import { defaultApiClient } from "../api/client";
 import type { Agent, AgentDevice } from "../api/types";
 import { getSigningPrivateKey } from "../crypto/signing-keyring";
+import { loadPin, savePin } from "./peer-pins";
 
 export type ListStatus =
   /** No list signed yet. */
@@ -23,34 +24,28 @@ export type ListStatus =
 /** approved: in the list with the same key; pending: not in it; mismatch: in it with another key. */
 export type Approval = "approved" | "pending" | "mismatch";
 
-const seenKey = (aid: string) => `nexusinbox.devicelist.version.${aid}`;
-
-export function loadSeenVersion(aid: string): number {
-  try {
-    const value = Number(window.localStorage.getItem(seenKey(aid)));
-    return Number.isSafeInteger(value) && value > 0 ? value : 0;
-  } catch {
-    return 0;
-  }
+/** The newest version of the agent's list this browser has seen (0: none). */
+export function loadSeenVersion(agent: Pick<Agent, "aid" | "did">): number {
+  const pin = loadPin(agent.aid, agent.did);
+  return pin && pin.root === agent.did ? pin.version : 0;
 }
 
-function saveSeenVersion(aid: string, version: number): void {
-  try {
-    if (version > loadSeenVersion(aid)) window.localStorage.setItem(seenKey(aid), String(version));
-  } catch {
-    // Storage blocked: rollbacks go unnoticed in this browser only.
-  }
+function saveSeenVersion(agent: Pick<Agent, "aid" | "did">, version: number): void {
+  if (version > loadSeenVersion(agent)) savePin(agent.aid, { root: agent.did, version });
 }
 
 /** Check the agent's latest list against its root and what this browser saw. */
 export async function checkDeviceList(agent: Agent): Promise<ListStatus> {
-  const seen = loadSeenVersion(agent.aid);
+  const pin = loadPin(agent.aid, agent.did);
+  const seen = loadSeenVersion(agent);
   const ref = agent.device_list;
   if (!ref) return seen > 0 ? { kind: "broken", reason: "rollback" } : { kind: "none" };
   const list = await verifyDeviceList(ref.jws, { aid: agent.aid, root: agent.did });
   if (!list || list.version !== ref.version) return { kind: "broken", reason: "signature" };
+  // The server now names another root for this agent than the one seen here.
+  if (pin && pin.root !== agent.did) return { kind: "broken", reason: "signature" };
   if (list.version < seen) return { kind: "broken", reason: "rollback" };
-  saveSeenVersion(agent.aid, list.version);
+  saveSeenVersion(agent, list.version);
   return { kind: "ok", list };
 }
 
@@ -80,7 +75,7 @@ export function nextDeviceList(agent: Agent, dids: Set<string>, now = new Date()
     v: 1,
     aid: agent.aid,
     root: agent.did,
-    version: Math.max(agent.device_list?.version ?? 0, loadSeenVersion(agent.aid)) + 1,
+    version: Math.max(agent.device_list?.version ?? 0, loadSeenVersion(agent)) + 1,
     issued_at: now.toISOString(),
     devices,
   };
@@ -116,7 +111,7 @@ export async function storeDeviceList(agent: Agent, dids: Set<string>): Promise<
   if (!payload) throw new Error("no device to list");
   const jws = await signDeviceList(key, payload);
   await defaultApiClient.putDeviceList(agent.id, jws);
-  saveSeenVersion(agent.aid, payload.version);
+  saveSeenVersion(agent, payload.version);
 }
 
 /** Only the root browser itself: nothing to ask, so approve it quietly. */

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { disconnectCalendar } from "../calendar/gcalAuth";
 import { loadAddressBook, resetContactsKey, sealForSave } from "../contacts/address-book";
+import { loadPin } from "../agents/peer-pins";
 import { disconnectLLM } from "../llm/llmAuth";
 import { defaultApiClient } from "./client";
 import {
@@ -13,6 +14,7 @@ import {
   CreateAgentCredentialRequest,
   CreateAgentRequest,
   CreateBlockRequest,
+  ContactsResponse,
   CreateContactRequest,
   MessageListQuery,
   OutboundAttachmentRef,
@@ -131,12 +133,24 @@ export function useContactsQuery() {
   });
 }
 
+// The contact's agent and the root this browser remembers for it, sealed
+// with the contact so the person's other browsers know it (docs/40 §12.4).
+async function rootFieldsFor(did: string): Promise<{ aid?: string; root?: string }> {
+  try {
+    const served = await defaultApiClient.resolveRecipient(did);
+    const pin = loadPin(served.aid);
+    return pin ? { aid: served.aid, root: pin.root } : {};
+  } catch {
+    return {};
+  }
+}
+
 export function useCreateContactMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: CreateContactRequest) => {
       const { did, ...fields } = payload;
-      const sealed = await sealForSave(defaultApiClient, did, fields);
+      const sealed = await sealForSave(defaultApiClient, did, { ...fields, ...(await rootFieldsFor(did)) });
       return defaultApiClient.createContact({ did, sealed });
     },
     onSuccess: () => {
@@ -149,7 +163,15 @@ export function useUpdateContactMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { id: string; did: string; body: UpdateContactRequest }) => {
-      const sealed = await sealForSave(defaultApiClient, payload.did, payload.body);
+      // Keep the root already sealed in the contact.
+      const existing = queryClient
+        .getQueryData<ContactsResponse>(queryKeys.contacts())
+        ?.contacts.find((c) => c.id === payload.id);
+      const rootFields =
+        existing?.aid && existing.root
+          ? { aid: existing.aid, root: existing.root }
+          : await rootFieldsFor(payload.did);
+      const sealed = await sealForSave(defaultApiClient, payload.did, { ...payload.body, ...rootFields });
       return defaultApiClient.updateContact(payload.id, { sealed });
     },
     onSuccess: () => {

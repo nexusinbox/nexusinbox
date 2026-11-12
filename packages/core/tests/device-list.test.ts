@@ -86,3 +86,33 @@ describe("device lists (docs/40 §4.2)", () => {
     expect(await verifyDeviceList(await signDeviceList(pair.privateKey, extra), expected)).toBeNull();
   });
 });
+
+describe("whom senders wrap for (docs/40 §12.3)", () => {
+  it("matches the shared vectors", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { decideWrapTargets, pinAfter } = await import("../src/device-list");
+    const vectors = JSON.parse(
+      readFileSync(new URL("../../../tests/vectors/device_list_decisions.json", import.meta.url), "utf8"),
+    );
+    expect(vectors.cases.length).toBeGreaterThan(10);
+    for (const c of vectors.cases) {
+      const decision = await decideWrapTargets({
+        served: c.served,
+        requested: c.requested,
+        knownAid: c.knownAid,
+        pin: c.pin,
+        acceptRoot: c.acceptRoot,
+      });
+      const got =
+        decision.kind === "stop"
+          ? { kind: "stop", reason: decision.reason, ...(decision.root ? { root: decision.root } : {}) }
+          : {
+              kind: decision.kind,
+              targets: decision.targets,
+              single: decision.single,
+              ...(decision.kind === "listed" ? { pin: pinAfter(c.pin, decision) } : {}),
+            };
+      expect(got, c.name).toEqual(c.expect);
+    }
+  });
+});

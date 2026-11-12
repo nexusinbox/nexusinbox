@@ -199,3 +199,114 @@ export function deviceListVersion(jws: string): number | null {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Deciding whom to wrap for (docs/40 §12.3). Senders check the recipient's
+// list against the root they remember and wrap only for devices it names
+// that the server still returns: the server can take devices away, but
+// cannot add one or swap a key.
+
+/** What a sender remembers of an agent: its root and the newest list version seen. */
+export type DevicePin = { root: string; version: number };
+
+/** The part of a resolved agent (`GET /recipients/resolve`) the decision reads. */
+export type ServedAgent = {
+  aid: string;
+  /** The device `encrypted_key` used to be wrapped for (the newest one). */
+  did: string;
+  encryption_public_key: string;
+  devices?: Array<{ did: string; encryption_public_key: string }> | null;
+  device_list?: { version: number; jws: string } | null;
+};
+
+export type WrapTarget = { did: string; encryption_public_key: string };
+
+/**
+ * Why a send stops:
+ *  - root_changed: the list is signed by a root other than the remembered one;
+ *  - signature: it does not verify, or is for another agent than the one asked for
+ *    (an AID asked for, or the agent a DID asked for was seen under before);
+ *  - rollback: it is older than one seen before;
+ *  - removed: there was a list before and now there is none;
+ *  - no_device: none of the listed devices is still active.
+ */
+export type StopReason = "root_changed" | "signature" | "rollback" | "removed" | "no_device";
+
+export type WrapDecision =
+  /** Checked: wrap for `targets`; `single` is the one `encrypted_key` goes to. */
+  | { kind: "listed"; list: DeviceListPayload; targets: WrapTarget[]; single: WrapTarget }
+  /** The agent has no list yet (and none was seen): wrap as the server says. */
+  | { kind: "unlisted"; targets: WrapTarget[]; single: WrapTarget }
+  | { kind: "stop"; reason: StopReason; root?: string };
+
+function listRoot(jws: string): string | null {
+  const headerBytes = fromBase64Url(jws.split(".")[0] ?? "");
+  if (!headerBytes) return null;
+  try {
+    const kid = JSON.parse(decoder.decode(headerBytes)).kid;
+    return typeof kid === "string" ? kid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decide which devices of `served` to wrap a message's key for.
+ * `requested` is what the sender asked to resolve (an AID or a DID);
+ * `knownAid` the agent a requested DID was seen under before, if any;
+ * `pin` what it remembers of this agent; `acceptRoot` a new root the
+ * person has just accepted (§12.5).
+ */
+export async function decideWrapTargets(input: {
+  served: ServedAgent;
+  requested: string;
+  knownAid?: string | null;
+  pin: DevicePin | null;
+  acceptRoot?: string;
+}): Promise<WrapDecision> {
+  const { served, requested, pin } = input;
+  // A DID belongs to one agent for good: the server may not move it.
+  if (requested.startsWith("aid:") && requested !== served.aid) return { kind: "stop", reason: "signature" };
+  if (input.knownAid && input.knownAid !== served.aid) return { kind: "stop", reason: "signature" };
+  const active = served.devices && served.devices.length > 0
+    ? served.devices
+    : [{ did: served.did, encryption_public_key: served.encryption_public_key }];
+
+  const ref = served.device_list;
+  if (!ref) {
+    if (pin) return { kind: "stop", reason: "removed" };
+    const targets = active.filter((d) => d.encryption_public_key);
+    return {
+      kind: "unlisted",
+      targets,
+      single: { did: served.did, encryption_public_key: served.encryption_public_key },
+    };
+  }
+
+  const root = listRoot(ref.jws);
+  const list = root ? await verifyDeviceList(ref.jws, { aid: served.aid, root }) : null;
+  if (!list || list.version !== ref.version) return { kind: "stop", reason: "signature" };
+
+  if (pin && pin.root !== list.root) {
+    if (input.acceptRoot !== list.root) return { kind: "stop", reason: "root_changed", root: list.root };
+  } else if (pin && list.version < pin.version) {
+    return { kind: "stop", reason: "rollback" };
+  }
+
+  const activeDids = new Set(active.map((d) => d.did));
+  const targets = list.devices
+    .filter((d) => activeDids.has(d.did))
+    .map((d) => ({ did: d.did, encryption_public_key: d.enc }));
+  if (targets.length === 0) return { kind: "stop", reason: "no_device" };
+  const single =
+    targets.find((d) => d.did === served.did) ?? targets.find((d) => d.did === list.root) ?? targets[0];
+  return { kind: "listed", list, targets, single };
+}
+
+/** What to remember after a decision (the pin only moves forward). */
+export function pinAfter(pin: DevicePin | null, decision: WrapDecision): DevicePin | null {
+  if (decision.kind !== "listed") return pin;
+  const { root, version } = decision.list;
+  if (pin && pin.root === root) return { root, version: Math.max(pin.version, version) };
+  return { root, version };
+}
