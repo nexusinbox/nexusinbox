@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>読める端末の一覧と知らせ（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .head { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 18px; }
+  .body { padding: 18px 22px; }
+  .sec { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 8px; }
+  .row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .label { color: var(--muted); font-size: 13px; }
+  .dev { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px dashed var(--line); }
+  .dev:first-child { border-top: 0; padding-top: 0; }
+  .ico { width: 34px; height: 34px; border-radius: 10px; background: var(--soft); display: grid; place-items: center; flex: none; }
+  .dev b { display: block; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .b-here { color: var(--primary); background: var(--soft); }
+  .b-ok { color: var(--ok); background: var(--ok-soft); }
+  .b-warn { color: var(--warn); background: var(--warn-soft); }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .grow { flex: 1; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .banner { margin: 12px 16px; border: 1px solid #f0c36d; background: var(--warn-soft); border-radius: 14px; padding: 12px 14px; }
+  .banner b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .list { border-top: 1px solid var(--line); }
+  .msg { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .face { width: 36px; height: 36px; border-radius: 50%; background: #3fa66b; color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .cmp { grid-template-columns: 1fr; } }
+  .box { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+  .box h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+  .strike { text-decoration: line-through; color: var(--muted); }
+  aside .box { background: var(--card); margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>読める端末の一覧と知らせ（案）</h1>
+  <p class="lead">docs/38 段階 4。どの端末がこのエージェントのメッセージを読めるかを見えるようにし、増えたら知らせる。運営 (やサーバを乗っ取った人) が端末をこっそり足しても、気づけるようにするため。<span class="new">新</span> が変わるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① エージェント画面</button>
+    <button data-s="s2">② 端末が増えたときの知らせ</button>
+    <button data-s="s3">③ 説明の書き換え</button>
+  </div>
+
+  <!-- ① agent page -->
+  <section id="s1" class="app">
+    <div class="head">エージェント › 秘書 › 状態</div>
+    <div class="body">
+      <div class="row">
+        <div class="label">読める端末 <span class="new">新</span></div>
+        <div>
+          <div class="dev">
+            <div class="ico">🌐</div>
+            <div class="grow"><b>ブラウザ <span class="badge b-here">この端末</span></b>
+              <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（macOS） <span class="badge b-ok">動作中</span></b>
+              <span class="muted">11/10 14:02 につないだ · 2 分前に確認</span></div>
+            <button class="btn">外す</button>
+          </div>
+          <div class="dev">
+            <div class="ico">💻</div>
+            <div class="grow"><b>パソコン（Linux） <span class="badge b-warn">止まっています</span></b>
+              <span class="muted">11/12 09:40 につないだ · 3 時間前に確認</span></div>
+            <button class="btn">外す</button>
+          </div>
+          <p class="muted" style="margin:8px 0 0">新しく届くメッセージは、ここにある端末すべてで読めます。外した端末には、それ以降のメッセージが届きません。</p>
+          <div style="margin-top:8px"><button class="btn">パソコンをつなぐ</button></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label">自動返信</div>
+        <div><b>まず私が確認する</b> <a class="muted" href="#">変更</a><div class="muted">依頼は受信箱に届き、返事はあなたが決めます。</div></div>
+      </div>
+      <div class="row">
+        <div class="label">クラウドの AI</div>
+        <div><b>パソコンで動かすと使えます</b><div class="muted">（いまと同じ）</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② new device notice -->
+  <section id="s2" class="app" hidden>
+    <div class="head">メッセージ</div>
+    <div class="banner">
+      <b>「秘書」を読める端末が増えました <span class="new">新</span></b>
+      <span class="muted">パソコン（Linux） · 11/12 09:40 につながりました。あなたがつないだものでなければ、すぐに外すか、緊急停止してください。</span>
+      <div class="actions"><button class="btn primary">わたしがつないだ</button><button class="btn">端末を見る</button><button class="btn danger">緊急停止</button></div>
+    </div>
+    <div class="list">
+      <div class="msg"><div class="face">ア</div><div><b>アレックスさんの秘書</b><div class="muted">来週の打ち合わせ、木曜 14:00 か…</div></div></div>
+      <div class="msg"><div class="face" style="background:#7048e8">ジ</div><div><b>ジェイミーさんの秘書</b><div class="muted">資料ありがとうございました</div></div></div>
+    </div>
+    <div class="body muted">「わたしがつないだ」を押すと、このブラウザでは同じ知らせを出さない。はじめての設定やエージェント画面で自分でつないだ直後は、出さない。</div>
+  </section>
+
+  <!-- ③ wording -->
+  <section id="s3" class="app" hidden>
+    <div class="head">パソコンをつなぐときの説明</div>
+    <div class="body">
+      <div class="cmp">
+        <div class="box"><h4>いま</h4><span class="strike">つなぐと、このエージェントのメッセージ本文はパソコン側で開くようになります。このブラウザでは、届いたことと状態だけが見えます。</span></div>
+        <div class="box"><h4>案 <span class="new">新</span></h4>つないだあとも、このブラウザで読み書きできます。パソコンは、ブラウザを閉じている間も自動返信や AI との連携を続けます。</div>
+      </div>
+      <p class="muted" style="margin-top:12px">同じ書き換えを、はじめての設定の「自分のパソコンでも動かす」と、ヘルプの該当箇所にも入れる。</p>
+      <div class="cmp" style="margin-top:12px">
+        <div class="box"><h4>つなぐ前に届いていたメッセージ</h4>新しい端末では読めない（メッセージアプリと同じ）。もとの端末ではこれまでどおり読める。</div>
+        <div class="box"><h4>このブラウザで読めない古いメッセージ</h4>いまの「この端末では表示できません」のまま。段階 4 以前にパソコンだけに届いたもの。</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<aside>
+  <div class="box">
+    <h3>作るのに要ること</h3>
+    <ul>
+      <li><b>API</b>: <code>GET /agents</code> にエージェントごとの <code>devices</code>（DID、種類＝ブラウザ / パソコン、名前、つないだ時刻、最後に確認した時刻）。パソコンの名前と時刻は資格情報から（署名の公開鍵で結ぶ）。マイグレーションは要らない見込み</li>
+      <li><b>外す</b>: いまの「資格情報を失効」と同じ（段階 0 で、その端末の鍵も宛先から外れる）</li>
+      <li><b>知らせ</b>: このブラウザが前に見た端末の一覧をこのブラウザに覚えておき、増えていたら出す。運営のサーバには何も足さない</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>決めてほしいこと</h3>
+    <ul>
+      <li>知らせに「緊急停止」まで並べるか（推奨: 並べる。こっそり足されたときに最短で止められる）</li>
+      <li>相手のエージェントの端末が増えたことも知らせるか（推奨: 今回はしない。自分の端末だけ）</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+</script>
+</body>
+</html>

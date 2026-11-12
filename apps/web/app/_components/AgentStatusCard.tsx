@@ -10,7 +10,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   cloudAccessStatus,
   computerStatus,
-  elapsed,
   presetFromSettings,
   recentAutoReplies,
 } from "../../lib/agents/agent-status";
@@ -31,6 +30,8 @@ import type { CloudAccessStatus } from "../../lib/agents/agent-status";
 import type { Agent, AgentCredential } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
+import { AgentDevices } from "./AgentDevices";
+import { acknowledgeDevicesAfterConnect } from "./NewDeviceNotice";
 import {
   AutoReplyPresetChoices,
   CommandLine,
@@ -130,11 +131,6 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
     return (did: string) => resolveParticipantLabel(did, ownAgents.get(did) ?? null, contacts);
   }, [contactsQuery.data, agentsQuery.data]);
 
-  const ago = (at: number) => {
-    const { unit, value } = elapsed(at, now);
-    return t(`agentStatus.ago.${unit}`, { n: value });
-  };
-
   const save = async () => {
     if (!choice) return;
     setSaving(true);
@@ -157,99 +153,76 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
     >
       <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{t("agentStatus.title")}</h3>
 
-      <Row label={t("agentStatus.where")}>
-        {computer.kind === "connected" ? (
-          <div data-testid="agent-status-connected">
-            <Dot tone="ok" />
-            <span style={STRONG}>{t("agentStatus.computer", { device: computer.device })}</span>{" "}
-            {t("agentStatus.connected")}
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("agentStatus.connectedSub", { ago: ago(computer.lastSeenAt) })}
-            </p>
+      <Row label={t("agentStatus.devices")}>
+        <AgentDevices agent={agent} now={now} />
+        {computer.kind === "silent" ? (
+          <div
+            data-testid="agent-status-silent"
+            style={{
+              marginTop: 8,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "var(--warn-soft)",
+              color: "var(--warn)",
+              fontSize: 13,
+            }}
+          >
+            {t("agentStatus.silentSub")} {t("agentStatus.startHint")}
+            <CommandLine command={daemonStartCommand(agentDirName(agent.label, agent.aid))} />
+            <p style={{ margin: "6px 0 0" }}>{t("agentStatus.startDirNote")}</p>
           </div>
-        ) : computer.kind === "silent" ? (
-          <div data-testid="agent-status-silent">
-            <Dot tone="warn" />
-            <span style={STRONG}>{t("agentStatus.computer", { device: computer.device })}</span>{" "}
-            {computer.lastSeenAt === null
-              ? t("agentStatus.silentNever")
-              : t("agentStatus.silentSince", { ago: ago(computer.lastSeenAt) })}
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("agentStatus.silentSub")}
+        ) : null}
+        {connectStage === "idle" ? (
+          <button
+            className="btn"
+            type="button"
+            style={{ marginTop: 8 }}
+            onClick={() => setConnectStage("confirm")}
+            data-testid="agent-status-connect"
+          >
+            {computer.kind === "browser" ? t("agentStatus.connectButton") : t("agentStatus.connectAnother")}
+          </button>
+        ) : connectStage === "confirm" ? (
+          <div style={{ marginTop: 8 }}>
+            <p className="item-sub" style={{ margin: 0 }}>
+              {t("agentStatus.connectConfirm")}
             </p>
-            <div
-              style={{
-                marginTop: 8,
-                padding: "10px 12px",
-                borderRadius: 10,
-                background: "var(--warn-soft)",
-                color: "var(--warn)",
-                fontSize: 13,
-              }}
-            >
-              {t("agentStatus.startHint")}
-              <CommandLine command={daemonStartCommand(agentDirName(agent.label, agent.aid))} />
-              <p style={{ margin: "6px 0 0" }}>{t("agentStatus.startDirNote")}</p>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => setConnectStage("pairing")}
+                data-testid="agent-status-connect-yes"
+              >
+                {t("agentStatus.connectYes")}
+              </button>
+              <button className="btn" type="button" onClick={() => setConnectStage("idle")}>
+                {t("agentStatus.cancel")}
+              </button>
             </div>
           </div>
         ) : (
-          <div data-testid="agent-status-browser">
-            <Dot tone="off" />
-            <span style={STRONG}>{t("agentStatus.browser")}</span>
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("agentStatus.browserSub")}
+          <div style={{ marginTop: 8 }}>
+            <p className="item-sub" style={{ margin: 0 }}>
+              {t("firstRun.connect.desc")}
             </p>
-            {connectStage === "idle" ? (
-              <button
-                className="btn"
-                type="button"
-                style={{ marginTop: 8 }}
-                onClick={() => setConnectStage("confirm")}
-                data-testid="agent-status-connect"
-              >
-                {t("agentStatus.connectButton")}
-              </button>
-            ) : connectStage === "confirm" ? (
-              <div style={{ marginTop: 8 }}>
-                <p className="item-sub" style={{ margin: 0 }}>
-                  {t("agentStatus.connectConfirm")}
-                </p>
-                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                  <button
-                    className="btn primary"
-                    type="button"
-                    onClick={() => setConnectStage("pairing")}
-                    data-testid="agent-status-connect-yes"
-                  >
-                    {t("agentStatus.connectYes")}
-                  </button>
-                  <button className="btn" type="button" onClick={() => setConnectStage("idle")}>
-                    {t("agentStatus.cancel")}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ marginTop: 8 }}>
-                <p className="item-sub" style={{ margin: 0 }}>
-                  {t("firstRun.connect.desc")}
-                </p>
-                <ConnectComputer
-                  agentId={agent.id}
-                  onConnected={() => {
-                    setConnectStage("idle");
-                    void queryClient.invalidateQueries({ queryKey: queryKeys.agentCredentials() });
-                  }}
-                />
-                <button
-                  className="btn"
-                  type="button"
-                  style={{ marginTop: 8 }}
-                  onClick={() => setConnectStage("idle")}
-                >
-                  {t("agentStatus.cancel")}
-                </button>
-              </div>
-            )}
+            <ConnectComputer
+              agentId={agent.id}
+              onConnected={() => {
+                setConnectStage("idle");
+                void queryClient.invalidateQueries({ queryKey: queryKeys.agentCredentials() });
+                // The person connected it here: no "new device" notice for it.
+                void acknowledgeDevicesAfterConnect(queryClient, agent.aid);
+              }}
+            />
+            <button
+              className="btn"
+              type="button"
+              style={{ marginTop: 8 }}
+              onClick={() => setConnectStage("idle")}
+            >
+              {t("agentStatus.cancel")}
+            </button>
           </div>
         )}
       </Row>

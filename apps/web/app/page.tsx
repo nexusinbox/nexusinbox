@@ -11,6 +11,7 @@ import { AppShell } from "./_components/AppShell";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
 import { InviteCard, useInviteName } from "./_components/InviteCard";
+import { NewDeviceNotice } from "./_components/NewDeviceNotice";
 import {
   Avatar,
   ConversationView,
@@ -555,6 +556,8 @@ function MessagesPageInner() {
       {/* The auto-reply note, and the browser-side auto-reply itself: it
           runs while this screen is open, so it stays mounted. */}
       <InboxAgentBar agents={agentList} />
+      {/* A device joined one of these agents since this browser looked (docs/38). */}
+      <NewDeviceNotice agents={agentList} />
 
       {showWelcomeNoAgents ? (
         // First-time user, no agents yet → the "what do I do first" card.

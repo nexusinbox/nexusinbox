@@ -197,6 +197,30 @@ async fn resolved_did(app: &axum::Router, f: &Fixture) -> String {
     body["did"].as_str().expect("did in resolve").to_string()
 }
 
+/// (did, kind, label) of each device the agent list shows for the agent.
+async fn device_summary(app: &axum::Router, f: &Fixture) -> Vec<(String, String, Option<String>)> {
+    let (status, body) = call(app, "GET", "/agents", &f.auth).await;
+    assert_eq!(status, StatusCode::OK, "list agents failed: {body}");
+    let agent = body["agents"]
+        .as_array()
+        .and_then(|a| a.iter().find(|a| a["aid"] == f.aid.as_str()))
+        .expect("agent in list")
+        .clone();
+    agent["devices"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|d| {
+            (
+                d["did"].as_str().unwrap_or_default().to_string(),
+                d["kind"].as_str().unwrap_or_default().to_string(),
+                d["label"].as_str().map(str::to_string),
+            )
+        })
+        .collect()
+}
+
 async fn key_status(pool: &PgPool, did: &str) -> String {
     sqlx::query_scalar("SELECT status FROM agent_identity_keys WHERE did = $1")
         .bind(did)
@@ -220,6 +244,18 @@ async fn revoking_a_computer_takes_its_key_out_of_the_recipient_set() {
     let (credential_id, pc_did) = seed_computer(&pool, &f, 1).await;
 
     assert_eq!(resolved_did(&app, &f).await, pc_did);
+    // The agent list shows both devices, the computer by its name (docs/38 stage 4).
+    assert_eq!(
+        device_summary(&app, &f).await,
+        vec![
+            (f.browser_did.clone(), "browser".to_string(), None),
+            (
+                pc_did.clone(),
+                "computer".to_string(),
+                Some("macOS".to_string())
+            ),
+        ]
+    );
 
     let (status, body) = call(
         &app,
@@ -233,6 +269,10 @@ async fn revoking_a_computer_takes_its_key_out_of_the_recipient_set() {
     assert_eq!(key_status(&pool, &pc_did).await, "retired");
     assert_eq!(key_status(&pool, &f.browser_did).await, "active");
     assert_eq!(resolved_did(&app, &f).await, f.browser_did);
+    assert_eq!(
+        device_summary(&app, &f).await,
+        vec![(f.browser_did.clone(), "browser".to_string(), None)]
+    );
 }
 
 #[tokio::test]

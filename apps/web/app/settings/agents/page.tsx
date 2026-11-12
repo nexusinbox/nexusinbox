@@ -1382,6 +1382,11 @@ export default function AgentsSettingsPage() {
   const PURGE_GRACE_DAYS = 7;
 
   const [activeDid, setActiveDid] = useState<string>("");
+  // /settings/agents?agent=<DID> opens that agent (from the new-device notice).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("agent");
+    if (wanted) setActiveDid(wanted);
+  }, []);
   const [editingLabel, setEditingLabel] = useState<string>("");
   const [editingBio, setEditingBio] = useState<string>("");
   const [credLabel, setCredLabel] = useState<string>("");

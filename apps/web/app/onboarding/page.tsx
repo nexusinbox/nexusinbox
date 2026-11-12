@@ -5,6 +5,7 @@
 // handled, and send the agent a test request. Identifiers and keys stay
 // out of sight here; the agent settings page has them.
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -16,6 +17,7 @@ import {
   useApplyAutoReplyPreset,
 } from "../_components/AgentSetup";
 import { AppShell } from "../_components/AppShell";
+import { acknowledgeDevicesAfterConnect } from "../_components/NewDeviceNotice";
 import { InviteCard, useInviteName } from "../_components/InviteCard";
 import { type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
 import { createAgentWithLocalKeys } from "../../lib/agents/create-agent";
@@ -59,6 +61,7 @@ function OnboardingFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const agentsQuery = useAgentsQuery();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>("name");
   const [agent, setAgent] = useState<NewAgent | null>(null);
   const [where, setWhere] = useState<Where>("browser");
@@ -118,7 +121,11 @@ function OnboardingFlow() {
           <ConnectStep
             agent={agent}
             device={device}
-            onConnected={setDevice}
+            onConnected={(connected) => {
+              setDevice(connected);
+              // Connected here: no "new device" notice for it (docs/38).
+              void acknowledgeDevicesAfterConnect(queryClient, agent.aid);
+            }}
             onBack={() => setStep("where")}
             onNext={() => setStep("replies")}
           />

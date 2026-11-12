@@ -670,7 +670,7 @@
     "modeStandardName": "This browser (or one AI tool) only",
     "modeStandardDesc": "The keys live only in this browser or in one AI tool. No program runs on your computer.",
     "modeDaemonIsolatedName": "Your computer",
-    "modeDaemonIsolatedDesc": "The keys live in the program on your computer. Auto-replies and AI tools keep working with the browser closed; this browser shows only that messages arrived and their status.",
+    "modeDaemonIsolatedDesc": "The keys live in the program on your computer. Auto-replies and AI tools keep working with the browser closed, and this browser can still read and write.",
     "modeDefaultName": "Not set yet",
     "modeDefaultDesc": "Not connected to a computer or AI tool yet.",
     "whereaboutsTitle": "Where the keys are (as seen from this device)",
@@ -1130,7 +1130,7 @@
       "step4Title": "Share your address",
       "step4Body": "Give the \"Address\" (`aid:ai:…`) from the agent settings to the people you want to hear from.",
       "whereQ": "\"This browser only\" or \"Also on my computer\"?",
-      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while Messages is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer, which then opens the messages."
+      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while Messages is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer; this browser can still read and write."
     },
     "daily": {
       "title": "Everyday use",
@@ -1652,7 +1652,7 @@
       "browserDesc": "Read and write messages on this screen. Auto-replies run while Messages is open.",
       "pcTitle": "Also on my computer",
       "pcDesc": "Auto-replies and AI tools keep working with the browser closed. A small program runs on your computer.",
-      "pcNote": "Once connected, message bodies open on the computer. This browser shows only that messages arrived and their status."
+      "pcNote": "You can still read and write in this browser after connecting."
     },
     "connect": {
       "title": "Connect your computer",
@@ -1750,20 +1750,28 @@
   },
 
   "agentStatus": {
+    "connectAnother": "Connect a computer",
+    "deviceRemoveFailed": "Could not remove it. Please try again.",
+    "deviceRemoveConfirm": "Remove \"{name}\"? It will get no messages from then on. Using it again needs connecting it again.",
+    "deviceRemove": "Remove",
+    "deviceSeen": "last seen {ago}",
+    "deviceJoined": "Connected {date}",
+    "deviceCreated": "The key the agent was created with · since {date}",
+    "deviceStopped": "Stopped",
+    "deviceRunning": "Running",
+    "deviceOther": "Other device",
+    "deviceComputerUnnamed": "Computer",
+    "deviceComputer": "Computer ({name})",
+    "deviceThis": "This device",
+    "deviceBrowser": "Browser",
+    "devicesNote": "New messages can be read on every device listed here. A device you remove gets no messages from then on.",
+    "devices": "Devices that can read",
     "title": "Status",
-    "where": "Runs on",
-    "computer": "Computer ({device})",
-    "connected": "is connected",
-    "connectedSub": "Checked in {ago}. Handles requests even with the browser closed.",
-    "silentNever": "has not checked in yet",
-    "silentSince": "last checked in {ago}",
     "silentSub": "The program on the computer seems to have stopped. Auto-replies stop with it.",
     "startHint": "Run this in a terminal on the computer to start it again.",
     "startDirNote": "Use the folder shown when you connected, if it differs.",
-    "browser": "This browser",
-    "browserSub": "Messages are read and written here. Auto-replies run while Messages is open.",
     "connectButton": "Also run on my computer",
-    "connectConfirm": "Once connected, this agent's message bodies open on the computer. This browser shows only that messages arrived and their status.",
+    "connectConfirm": "You can still read and write in this browser after connecting. The computer keeps auto-replies and AI tools going while the browser is closed.",
     "connectYes": "Connect",
     "cancel": "Cancel",
     "autoReply": "Auto-reply",
@@ -1791,5 +1799,14 @@
   "appVersion": {
     "notice": "A new version is out. Reload to get the latest screens.",
     "reload": "Reload"
+  },
+  "deviceNotice": {
+    "title": "A new device can read \"{agent}\"",
+    "body": "{device} connected {date}. If you did not connect it, remove it or use the emergency stop now.",
+    "mine": "I connected it",
+    "view": "See devices",
+    "stop": "Emergency stop",
+    "stopped": "Emergency stop done. Every computer and AI connected to \"{agent}\" has been stopped.",
+    "stopFailed": "The emergency stop failed. Try again from the agent page."
   }
 }

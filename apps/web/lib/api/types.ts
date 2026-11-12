@@ -81,6 +81,21 @@ export type Agent = {
   created_at: string;
   // Every DID the agent answers on (created-with and computer keys).
   dids?: string[];
+  /** The devices that can read this agent's new messages (docs/38 stage 4). */
+  devices?: AgentDevice[];
+};
+
+/** One device in an agent's recipient set (docs/38 stage 4). */
+export type AgentDevice = {
+  did: string;
+  /** "browser": the key the agent was created with; "computer": a connected computer. */
+  kind: "browser" | "computer" | "other";
+  /** The computer's name, e.g. "macOS". */
+  label?: string | null;
+  activated_at: string;
+  last_used_at?: string | null;
+  /** Revoking it takes the computer out of the recipient set. */
+  credential_id?: string | null;
 };
 
 export type AgentsResponse = {

@@ -530,6 +530,27 @@ struct Agent {
     bio: String,
     /// Shown on the public page /to/<aid> (docs/36). Off by default.
     share_enabled: bool,
+    /// The devices that can read this agent's new messages, oldest first
+    /// (docs/38 stage 4). Agent lists only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    devices: Vec<AgentDevice>,
+}
+
+/// One device in an agent's recipient set (docs/38 stage 4).
+#[derive(Clone, Serialize)]
+struct AgentDevice {
+    did: String,
+    /// "browser" for the key the agent was created with, "computer" for a
+    /// key a credential activated, "other" otherwise.
+    kind: String,
+    /// The computer's name (its credential label, e.g. "macOS").
+    label: Option<String>,
+    activated_at: String,
+    /// When the computer last used its token.
+    last_used_at: Option<String>,
+    /// The credential that activated a computer's key; revoking it takes
+    /// the computer out of the recipient set.
+    credential_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2355,6 +2376,7 @@ async fn agent_owned_by_user_in_db(
         dids: Vec::new(),
         bio: String::new(),
         share_enabled: false,
+        devices: Vec::new(),
     }))
 }
 
@@ -7011,12 +7033,64 @@ async fn list_agents(
         .await
         .map_err(|error| internal_error("failed to list agents", error))?;
 
+        // Each agent's devices: active keys, named from the credential that
+        // activated them (matched by signing key).
+        let device_rows = sqlx::query(
+            r#"
+            SELECT k.aid, k.did, k.activated_at::text AS activated_at,
+                   (a.did = k.did) AS created_with,
+                   c.id IS NOT NULL AS has_credential,
+                   c.label, c.last_used_at::text AS last_used_at,
+                   c.id::text AS credential_id
+            FROM agent_identity_keys k
+            JOIN agent_identities i ON i.aid = k.aid
+            JOIN agents a ON a.id = i.agent_id
+            LEFT JOIN LATERAL (
+              SELECT c.id, c.label, c.last_used_at
+              FROM agent_credentials c
+              WHERE c.aid = k.aid AND c.signing_public_key = k.signing_public_key
+                AND c.status = 'active'
+              ORDER BY c.activated_at DESC NULLS LAST
+              LIMIT 1
+            ) c ON TRUE
+            WHERE i.user_id = $1 AND k.status = 'active'
+            ORDER BY k.activated_at ASC
+            "#,
+        )
+        .bind(user_uuid)
+        .fetch_all(&pool)
+        .await
+        .map_err(|error| internal_error("failed to list devices", error))?;
+        let mut devices_by_aid: HashMap<String, Vec<AgentDevice>> = HashMap::new();
+        for row in device_rows {
+            let kind = if row.get::<bool, _>("created_with") {
+                "browser"
+            } else if row.get::<bool, _>("has_credential") {
+                "computer"
+            } else {
+                "other"
+            };
+            devices_by_aid
+                .entry(row.get("aid"))
+                .or_default()
+                .push(AgentDevice {
+                    did: row.get("did"),
+                    kind: kind.to_string(),
+                    label: row.get("label"),
+                    activated_at: row.get("activated_at"),
+                    last_used_at: row.get("last_used_at"),
+                    credential_id: row.get("credential_id"),
+                });
+        }
+
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             let id_text: String = row.get("id");
             let id = Uuid::parse_str(&id_text)
                 .map_err(|error| internal_error("invalid agent id from database", error))?;
+            let aid: String = row.get("aid");
             out.push(Agent {
+                devices: devices_by_aid.remove(&aid).unwrap_or_default(),
                 id,
                 aid: row.get("aid"),
                 did: row.get("did"),
@@ -7185,6 +7259,7 @@ async fn create_agent(
             dids: Vec::new(),
             bio: String::new(),
             share_enabled: false,
+            devices: Vec::new(),
         };
 
         let mut lock = state
@@ -17249,6 +17324,7 @@ mod internal_tests {
             dids: Vec::new(),
             bio: String::new(),
             share_enabled: false,
+            devices: Vec::new(),
         });
     }
 

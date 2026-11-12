@@ -1300,6 +1300,30 @@ components:
         created_at:
           type: string
           format: date-time
+        devices:
+          type: array
+          description: |
+            The devices that can read this agent's new messages, oldest
+            first (docs/38). Agent lists only.
+          items:
+            type: object
+            properties:
+              did:
+                type: string
+              kind:
+                type: string
+                enum: [browser, computer, other]
+              label:
+                type: [string, 'null']
+                description: The computer's name (its credential label).
+              activated_at:
+                type: string
+              last_used_at:
+                type: [string, 'null']
+              credential_id:
+                type: [string, 'null']
+                description: Revoking this credential takes the computer out of the recipient set.
+            required: [did, kind, activated_at]
       required: [id, aid, did, label, is_active, auto_reply, unread_count, created_at]
 
     CreateAgentRequest:
