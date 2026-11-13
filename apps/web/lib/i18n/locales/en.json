@@ -1468,7 +1468,10 @@
       "issuing": "Preparing a code…",
       "issueFailed": "Could not prepare a code.",
       "retry": "Try again",
-      "credentialLabel": "Computer"
+      "credentialLabel": "Computer",
+      "codeNoteLong": "The code works once, for 10 minutes. Do not share it.",
+      "secretNote": "Its second half is known only to this browser and your computer; it is never sent to our server.",
+      "upgradeNote": "If you installed it before, first run brew upgrade nexusinbox to get v0.5.0 or later. An older version says \"A pairing code is 10 letters and digits\" and does not connect."
     },
     "replies": {
       "title": "How should requests be handled?",
@@ -1656,6 +1659,7 @@
   "pairing": {
     "mismatchTitle": "The computer you connected has a different key than the server shows",
     "mismatchBody": "The {device} that joined \"{agent}\" on {date} does not have the key of the computer you typed the code on. The server, or someone else, may be trying to swap it in. It has not been approved to read messages.",
-    "mismatchBadge": "Not the key of the computer you connected"
+    "mismatchBadge": "Not the key of the computer you connected",
+    "verified": "Checked that this computer's key is the one of the computer you typed the code on, and approved it to read messages."
   }
 }

@@ -32,7 +32,7 @@ export async function acknowledgeDevicesAfterConnect(
   queryClient: QueryClient,
   aid: string,
   credentialId?: string,
-): Promise<void> {
+): Promise<"verified" | "mismatch" | null> {
   try {
     await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
     const data = await queryClient.fetchQuery({
@@ -44,9 +44,10 @@ export async function acknowledgeDevicesAfterConnect(
     const connected = agent?.devices?.find((d) => credentialId && d.credential_id === credentialId);
     // Connected with a code made here: approve only if its keys match.
     if (agent && connected && pairedHere(connected)) {
-      if ((await settlePairing(agent)).changed) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
-      }
+      const result = await settlePairing(agent);
+      if (result.changed) await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+      if (result.mismatched.some((d) => d.did === connected.did)) return "mismatch";
+      if (result.matched.some((d) => d.did === connected.did)) return "verified";
     } else if (agent && connected && (await holdsRootKey(agent))) {
       const status = await checkDeviceList(agent);
       if (status.kind !== "broken") {
@@ -57,6 +58,7 @@ export async function acknowledgeDevicesAfterConnect(
   } catch {
     // The notice may show once; the person can approve from there.
   }
+  return null;
 }
 
 type Pending = { agent: Agent; devices: AgentDevice[]; rootHere: boolean };

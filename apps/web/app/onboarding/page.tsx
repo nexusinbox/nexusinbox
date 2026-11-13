@@ -67,6 +67,8 @@ function OnboardingFlow() {
   const [agent, setAgent] = useState<NewAgent | null>(null);
   const [where, setWhere] = useState<Where>("browser");
   const [device, setDevice] = useState<string | null>(null);
+  // Whether the connected computer's keys matched the code (docs/40 §13.5).
+  const [pairingResult, setPairingResult] = useState<"verified" | "mismatch" | null>(null);
   const [preset, setPreset] = useState<AutoReplyPreset>("manual");
 
   // After a reload, carry on with the agent created before it rather than
@@ -126,8 +128,9 @@ function OnboardingFlow() {
               setDevice(connected);
               // Connected here: no "new device" notice for it (docs/38), and
               // approve it (docs/40 stage 1).
-              void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId);
+              void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId).then(setPairingResult);
             }}
+            pairingResult={pairingResult}
             onBack={() => setStep("where")}
             onNext={() => setStep("replies")}
           />
@@ -262,12 +265,14 @@ function ConnectStep({
   agent,
   device,
   onConnected,
+  pairingResult,
   onBack,
   onNext,
 }: {
   agent: NewAgent;
   device: string | null;
   onConnected: (device: string, credentialId: string) => void;
+  pairingResult: "verified" | "mismatch" | null;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -280,8 +285,18 @@ function ConnectStep({
           ✓ {t("firstRun.connect.connected", { device })}
         </p>
       ) : (
-        <ConnectComputer agentId={agent.id} onConnected={onConnected} />
+        <ConnectComputer agent={agent} onConnected={onConnected} />
       )}
+      {device && pairingResult === "verified" ? (
+        <p className="item-sub" style={{ marginTop: 4 }} data-testid="first-run-pairing-verified">
+          {t("pairing.verified")}
+        </p>
+      ) : null}
+      {device && pairingResult === "mismatch" ? (
+        <p className="item-sub" role="alert" style={{ marginTop: 4, color: "var(--danger)" }}>
+          {t("pairing.mismatchTitle")}
+        </p>
+      ) : null}
       <Actions>
         {!device ? (
           <button className="btn" type="button" onClick={onBack}>

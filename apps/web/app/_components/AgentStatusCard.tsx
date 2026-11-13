@@ -104,6 +104,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
 
   const now = useNow(15_000);
 
+  const [pairingResult, setPairingResult] = useState<"verified" | "mismatch" | null>(null);
   const [connectStage, setConnectStage] = useState<"idle" | "confirm" | "pairing">("idle");
   const [editing, setEditing] = useState(false);
   const [choice, setChoice] = useState<AutoReplyPreset | null>(null);
@@ -173,6 +174,15 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
             <p style={{ margin: "6px 0 0" }}>{t("agentStatus.autostartHint")}</p>
           </div>
         ) : null}
+        {connectStage === "idle" && pairingResult ? (
+          <p
+            className="item-sub"
+            role={pairingResult === "mismatch" ? "alert" : "status"}
+            style={{ margin: "8px 0 0", color: pairingResult === "mismatch" ? "var(--danger)" : "var(--ok)" }}
+          >
+            {pairingResult === "verified" ? t("pairing.verified") : t("pairing.mismatchTitle")}
+          </p>
+        ) : null}
         {connectStage === "idle" ? (
           <button
             className="btn"
@@ -208,13 +218,13 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
               {t("firstRun.connect.desc")}
             </p>
             <ConnectComputer
-              agentId={agent.id}
+              agent={agent}
               onConnected={(_device, credentialId) => {
                 setConnectStage("idle");
                 void queryClient.invalidateQueries({ queryKey: queryKeys.agentCredentials() });
                 // The person connected it here: no "new device" notice for
-                // it, and approve it (docs/40 stage 1).
-                void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId);
+                // it, and approve it when its keys match the code (docs/40 §13.5).
+                void acknowledgeDevicesAfterConnect(queryClient, agent.aid, credentialId).then(setPairingResult);
               }}
             />
             <button

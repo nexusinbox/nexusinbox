@@ -7,6 +7,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { presetSettings, type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
+import { holdsRootKey } from "../../lib/agents/device-list";
+import { pairingCodeWithSecret } from "../../lib/agents/pairing";
 import {
   daemonConnectCommand,
   INSTALL_COMMAND,
@@ -14,6 +16,7 @@ import {
 } from "../../lib/agents/enroll-command";
 import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useUpdateAgentMutation } from "../../lib/api/hooks";
+import type { Agent } from "../../lib/api/types";
 import { useTranslation } from "../../lib/i18n";
 
 // Emphasis without the .item-title class, which upper-cases Latin text.
@@ -136,7 +139,13 @@ export function CommandLine({ command, testId }: { command: string; testId?: str
   );
 }
 
-type Pairing = { credentialId: string; code: string; expiresAt: number };
+type Pairing = {
+  credentialId: string;
+  /** What the person types: the long code when this browser keeps its secret. */
+  code: string;
+  long: boolean;
+  expiresAt: number;
+};
 
 /**
  * Show a pairing code and the command that uses it, and watch until the
@@ -144,10 +153,10 @@ type Pairing = { credentialId: string; code: string; expiresAt: number };
  * caller shows that.
  */
 export function ConnectComputer({
-  agentId,
+  agent,
   onConnected,
 }: {
-  agentId: string;
+  agent: Pick<Agent, "id" | "aid" | "did">;
   onConnected: (device: string, credentialId: string) => void;
 }) {
   const { t } = useTranslation();
@@ -163,15 +172,22 @@ export function ConnectComputer({
     setIssueFailed(false);
     try {
       const created = await defaultApiClient.createAgentCredential({
-        agent_id: agentId,
+        agent_id: agent.id,
         label: t("firstRun.connect.credentialLabel"),
         pairing: true,
       });
       if (!created.pairing_code) throw new Error("no pairing code");
       const expiresAt = Date.parse(created.enrollment_expires_at ?? "");
+      // In the browser that holds the agent's root key, add a secret only
+      // it and the computer know, so it can check the computer's keys
+      // before approving it (docs/40 §13.5).
+      const long = (await holdsRootKey(agent))
+        ? await pairingCodeWithSecret(created.credential_id, agent.aid, created.pairing_code)
+        : null;
       setPairing({
         credentialId: created.credential_id,
-        code: created.pairing_code,
+        code: long ?? created.pairing_code,
+        long: long !== null,
         expiresAt: Number.isNaN(expiresAt) ? Date.now() + 10 * 60_000 : expiresAt,
       });
       setNow(Date.now());
@@ -180,7 +196,7 @@ export function ConnectComputer({
     } finally {
       issuing.current = false;
     }
-  }, [agentId, t]);
+  }, [agent, t]);
 
   useEffect(() => {
     if (!connected && !pairing && !issueFailed) void issue();
@@ -264,8 +280,15 @@ export function ConnectComputer({
         {t("firstRun.connect.passphrase")}
       </p>
       <p className="item-sub" style={{ marginTop: 6 }}>
-        {t("firstRun.connect.codeNote", { code: pairing.code })}
+        {pairing.long
+          ? `${t("firstRun.connect.codeNoteLong")} ${t("firstRun.connect.secretNote")}`
+          : t("firstRun.connect.codeNote", { code: pairing.code })}
       </p>
+      {pairing.long ? (
+        <p className="item-sub" style={{ marginTop: 6 }} data-testid="connect-upgrade-note">
+          {t("firstRun.connect.upgradeNote")}
+        </p>
+      ) : null}
       <p className="item-sub" style={{ marginTop: 12 }} aria-live="polite">
         {t("firstRun.connect.waiting")}
       </p>

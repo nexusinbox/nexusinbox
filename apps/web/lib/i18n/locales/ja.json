@@ -1468,7 +1468,10 @@
       "issuing": "コードを用意しています…",
       "issueFailed": "コードを用意できませんでした。",
       "retry": "もう一度試す",
-      "credentialLabel": "パソコン"
+      "credentialLabel": "パソコン",
+      "codeNoteLong": "コードは 10 分間、1 回だけ使えます。人には教えないでください。",
+      "secretNote": "後半はこのブラウザとパソコンだけが知る部分で、運営のサーバには送りません。",
+      "upgradeNote": "すでに入れている場合は、先に brew upgrade nexusinbox で最新（v0.5.0 以上）にしてください。古いままだと「A pairing code is 10 letters and digits」と出て、つながりません。"
     },
     "replies": {
       "title": "届いた依頼にどう対応しますか？",
@@ -1656,6 +1659,7 @@
   "pairing": {
     "mismatchTitle": "つないだパソコンの鍵と、サーバが見せている鍵が違います",
     "mismatchBody": "「{agent}」に {date} につながった{device}は、あなたがコードを打ったパソコンの鍵ではありません。運営のサーバか、だれかがすり替えようとしている可能性があります。このパソコンは読める端末として認めていません。",
-    "mismatchBadge": "つないだパソコンの鍵と違います"
+    "mismatchBadge": "つないだパソコンの鍵と違います",
+    "verified": "このパソコンの鍵が、コードを打ったパソコンのものだと確かめ、読める端末として認めました。"
   }
 }

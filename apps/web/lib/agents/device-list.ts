@@ -95,7 +95,7 @@ export function approvedWith(agent: Agent, status: ListStatus, add: string[]): S
 }
 
 /** Can this browser sign the agent's list (it holds the root key)? */
-export async function holdsRootKey(agent: Agent): Promise<boolean> {
+export async function holdsRootKey(agent: Pick<Agent, "did">): Promise<boolean> {
   try {
     return (await getSigningPrivateKey(agent.did)) !== null;
   } catch {
