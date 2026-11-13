@@ -183,6 +183,15 @@ export async function secureLoadKey(id: string): Promise<CryptoKey | null> {
   return null;
 }
 
+export async function secureDeleteKey(id: string): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const req = db.transaction(STORE_PRIVATE_KEYS, "readwrite").objectStore(STORE_PRIVATE_KEYS).delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function migrateFromLocalStorage(
   prefix: string,
   algorithm: WebCryptoImportAlgorithm,

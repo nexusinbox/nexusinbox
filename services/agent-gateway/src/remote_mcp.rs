@@ -999,7 +999,10 @@ async fn create_draft(
         _ => return Err("give reply_to_message_id or to".into()),
     };
 
-    let recipient = crate::resolve_recipient_identifier(gateway, &token, &recipient_ref).await?;
+    // Only for a device the recipient's signed list names (docs/40 §13.2).
+    let recipient = crate::check_recipient(gateway, &token, &recipient_ref)
+        .await
+        .map_err(|e| e.message())?;
     let recipient_key = recipient
         .encryption_public_key
         .clone()

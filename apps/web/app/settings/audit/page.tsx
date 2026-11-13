@@ -22,7 +22,8 @@ type Kind =
   | "stop"
   | "login"
   | "warn"
-  | "file";
+  | "file"
+  | "skip";
 
 const ICON: Record<Kind, string> = {
   reply: "💬",
@@ -34,6 +35,7 @@ const ICON: Record<Kind, string> = {
   login: "🔑",
   warn: "⚠️",
   file: "📎",
+  skip: "⏸",
 };
 
 // Every event the API records (services/api record_audit_event).
@@ -42,6 +44,7 @@ const EVENTS: Record<string, { kind: Kind; critical?: boolean }> = {
   auto_reply_sent: { kind: "reply" },
   auto_reply_evaluated: { kind: "settings" },
   auto_reply_skipped_incoming_is_auto_reply: { kind: "reply" },
+  auto_reply_skipped: { kind: "skip" },
   auto_reply_policy_created: { kind: "settings" },
   auto_reply_policy_updated: { kind: "settings" },
   auto_reply_policy_deleted: { kind: "settings" },
@@ -82,6 +85,13 @@ const PRESETS: { prefix: string; labelKey: string }[] = [
   { prefix: "agent_draft_", labelKey: "audit.presetDrafts" },
   { prefix: "attachment_", labelKey: "audit.presetFiles" },
 ];
+
+/** Why an auto-reply was left to the person (docs/40 §13.3). */
+function skipReasonKey(reason: string): string {
+  if (reason === "root_changed") return "audit.skipChanged";
+  if (reason === "no_device") return "audit.skipNoDevice";
+  return "audit.skipBroken";
+}
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -145,6 +155,7 @@ function AuditLogPageInner() {
           : str(detail.recipient_did),
       ),
       client: str(detail.client_name) || t("audit.someCloudAi"),
+      by: detail.by === "computer" ? t("audit.byComputer") : t("audit.byBrowser"),
     };
     if (!EVENTS[entry.event]) return t("audit.unknownEvent", vars);
     if (entry.event === "auto_reply_sent" && !detail.reply_message_id) {
@@ -282,6 +293,11 @@ function AuditLogPageInner() {
                       {timeText(entry.created_at)}
                     </time>
                   </div>
+                  {entry.event === "auto_reply_skipped" ? (
+                    <p className="item-sub" style={{ margin: "2px 0 0" }}>
+                      {t(skipReasonKey(str(entry.detail?.reason)))}
+                    </p>
+                  ) : null}
                   <details className="al-details">
                     <summary>{t("audit.details")}</summary>
                     <dl>

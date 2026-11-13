@@ -32,6 +32,7 @@ import {
   type Auditor,
 } from "./audit.js";
 import { decryptEnvelopeTextForRecipient } from "./decrypt.js";
+import { checkRecipient } from "./device-trust.js";
 import { loadOrActivateCredential, type LoadedCredential } from "./keystore.js";
 import { assertFromBoundAgent } from "./tools.js";
 import type {
@@ -121,6 +122,11 @@ function buildRuntime(
   config: SaasRuntimeConfig,
   audit: Auditor,
 ): NexusInboxMcpRuntime {
+  // What this runtime remembers of other agents' device lists, next to
+  // the keystore (docs/40 §13.2).
+  const peersFile = credential.keystorePath.replace(/\.json$/, "") + ".peers.json";
+  const resolveChecked = async (identifier: string) =>
+    checkRecipient(await client.resolveRecipient(identifier), identifier, peersFile);
   return {
     async listMyAgents(): Promise<{ agents: AgentSummary[] }> {
       // In Standard mode a single keystore = a single aid, so "my agents" is
@@ -198,7 +204,7 @@ function buildRuntime(
       assertFromBoundAgent(input.from_agent, { aid: config.aid, did: credential.did });
       const mode = input.mode ?? "draft";
       const body_hash = sha256Hex(input.body_markdown);
-      const recipient = await client.resolveRecipient(input.to);
+      const recipient = await resolveChecked(input.to);
 
       if (mode === "draft") {
         audit({
@@ -223,7 +229,7 @@ function buildRuntime(
 
       // mode === "send": require explicit human confirmation.
       requireConfirmation(input.confirmed_by_user, "send_text_message");
-      const result = await sendViaClient(client, credential, {
+      const result = await sendViaClient(client, credential, peersFile, {
         recipient,
         subject: input.subject,
         body: input.body_markdown,
@@ -257,7 +263,7 @@ function buildRuntime(
       if (!plain.content.sender_did) {
         throw new Error("incoming message has no sender_did — cannot draft a reply");
       }
-      const recipient = await client.resolveRecipient(plain.content.sender_did);
+      const recipient = await resolveChecked(plain.content.sender_did);
       const subject =
         input.subject?.trim() || prefixReSubject(plain.subject);
       const threadId = plain.content.thread_id ?? null;
@@ -287,7 +293,7 @@ function buildRuntime(
       }
 
       requireConfirmation(input.confirmed_by_user, "reply_to_message");
-      const result = await sendViaClient(client, credential, {
+      const result = await sendViaClient(client, credential, peersFile, {
         recipient,
         subject,
         body: input.body_markdown,
@@ -393,6 +399,7 @@ type SendableRecipient = { did: string; encryption_public_key?: string; devices?
 async function sendViaClient(
   client: NexusInboxApiClientType,
   credential: LoadedCredential,
+  peersFile: string,
   args: {
     recipient: SendableRecipient;
     subject: string;
@@ -411,6 +418,7 @@ async function sendViaClient(
   // message still goes out with the single sender copy.
   const senderDevices = await client
     .resolveRecipient(credential.did)
+    .then((me) => checkRecipient(me, credential.did, peersFile))
     .then((me) => me.devices)
     .catch(() => undefined);
   const response = await client.sendTextMessage({

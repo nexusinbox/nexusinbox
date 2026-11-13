@@ -90,6 +90,8 @@ export type RecipientResolution = {
   key_holder?: AgentKeyHolder;
   /** Every device of the agent that can read, newest first (docs/38). */
   devices?: DeviceKey[];
+  /** The latest list the agent's root signed (docs/40 §4.2). */
+  device_list?: { version: number; jws: string } | null;
 };
 
 export type MessageIndexEntry = {

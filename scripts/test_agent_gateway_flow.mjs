@@ -73,8 +73,9 @@ async function main() {
   const encryptedContent = b64url("Gateway self-test body");
   const nonce = b64url(crypto.randomBytes(16));
 
+  // The gateway sends only to the device resolve_recipient checked (docs/40 §13.2).
   const sendResult = await callGateway("send_message", {
-    recipient_did: whoami.aid,
+    recipient_did: recipient.did,
     envelope: {
       encrypted_content: encryptedContent,
       encrypted_key: wrappedKey(),

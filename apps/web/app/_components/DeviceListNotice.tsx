@@ -6,7 +6,9 @@
 //     is this browser, approve it quietly);
 //   - a list that does not verify, is older than one seen here, or names a
 //     device with a key other than the one the server now returns: warn,
-//     with the emergency stop at hand.
+//     with the emergency stop at hand;
+//   - a computer connected with a code made here (docs/40 §13.5): approve
+//     it when its keys match the code, warn when they do not.
 
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,8 +20,10 @@ import {
   onlyRootDevice,
   storeDeviceList,
 } from "../../lib/agents/device-list";
-import { queryKeys, useEmergencyShutdownMutation } from "../../lib/api/hooks";
+import { settlePairing } from "../../lib/agents/pairing";
+import { queryKeys, useEmergencyShutdownMutation, useRevokeAgentCredentialMutation } from "../../lib/api/hooks";
 import type { Agent, AgentDevice } from "../../lib/api/types";
+import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { deviceName } from "./AgentDevices";
 
@@ -35,12 +39,15 @@ function askedBefore(aid: string): boolean {
 
 type Notice =
   | { kind: "ask"; agent: Agent }
-  | { kind: "wrong"; agent: Agent; changed: AgentDevice[] };
+  | { kind: "wrong"; agent: Agent; changed: AgentDevice[] }
+  /** Computers whose keys are not the ones the connect code was typed on. */
+  | { kind: "pairing"; agent: Agent; devices: AgentDevice[] };
 
 export function DeviceListNotice({ agents }: { agents: Agent[] }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
   const shutdown = useEmergencyShutdownMutation();
+  const revoke = useRevokeAgentCredentialMutation();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [stopped, setStopped] = useState<string | null>(null);
   const quietTried = useRef(new Set<string>());
@@ -54,6 +61,13 @@ export function DeviceListNotice({ agents }: { agents: Agent[] }) {
       const next: Notice[] = [];
       for (const agent of agents) {
         if ((agent.devices ?? []).length === 0) continue;
+        const paired = await settlePairing(agent).catch(() => null);
+        if (paired?.changed) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+        }
+        if (paired && paired.mismatched.length > 0) {
+          next.push({ kind: "pairing", agent, devices: paired.mismatched });
+        }
         const status = await checkDeviceList(agent);
         if (status.kind === "broken") {
           next.push({ kind: "wrong", agent, changed: [] });
@@ -103,13 +117,77 @@ export function DeviceListNotice({ agents }: { agents: Agent[] }) {
     }
   };
 
+  const removeDevice = async (device: AgentDevice) => {
+    if (!device.credential_id) return;
+    if (!window.confirm(t("agentStatus.deviceRemoveConfirm", { name: deviceName(t, device) }))) return;
+    try {
+      await revoke.mutateAsync(device.credential_id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+    } catch {
+      setStopped(t("agentStatus.deviceRemoveFailed"));
+    }
+  };
+
   if (notices.length === 0 && !stopped) return null;
   const agentLink = (agent: Agent) => `/settings/agents?agent=${encodeURIComponent(agent.did)}`;
 
   return (
     <div data-testid="device-list-notice">
       {notices.map((n) =>
-        n.kind === "wrong" ? (
+        n.kind === "pairing" ? (
+          <div
+            key={`pairing-${n.agent.aid}`}
+            role="alert"
+            data-testid="pairing-mismatch"
+            style={{
+              margin: "10px 16px",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid var(--danger)",
+              background: "var(--danger-soft)",
+              color: "var(--text)",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 700 }}>{t("pairing.mismatchTitle")}</p>
+            {n.devices.map((d) => (
+              <p key={d.did} className="item-sub" style={{ margin: "2px 0 0" }}>
+                {t("pairing.mismatchBody", {
+                  agent: n.agent.label,
+                  date: formatListTimestamp(d.activated_at, { locale }),
+                  device: deviceName(t, d),
+                })}
+              </p>
+            ))}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+              <Link href={agentLink(n.agent)} className="dm-btn">
+                {t("deviceNotice.view")}
+              </Link>
+              {n.devices.map((d) => (
+                <button
+                  key={d.did}
+                  type="button"
+                  className="dm-btn"
+                  onClick={() => void removeDevice(d)}
+                  disabled={revoke.isPending}
+                  data-testid="pairing-mismatch-remove"
+                >
+                  {n.devices.length > 1
+                    ? `${t("agentStatus.deviceRemove")} (${deviceName(t, d)})`
+                    : t("agentStatus.deviceRemove")}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="dm-btn"
+                style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                onClick={() => void stop(n.agent)}
+                disabled={shutdown.isPending}
+              >
+                {t("deviceNotice.stop")}
+              </button>
+            </div>
+          </div>
+        ) : n.kind === "wrong" ? (
           <div
             key={`wrong-${n.agent.aid}`}
             role="alert"

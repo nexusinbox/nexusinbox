@@ -969,6 +969,7 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "hkdf",
+ "hmac",
  "libc",
  "rand 0.8.8",
  "reqwest",

@@ -47,6 +47,9 @@ chrono = "0.4"
 # SHA-256 for hashing
 sha2 = "0.10"
 
+# Pairing MACs with the connect code's secret (docs/40 §13.5)
+hmac = "0.12"
+
 # UUID
 uuid = { version = "1", features = ["v4"] }
 

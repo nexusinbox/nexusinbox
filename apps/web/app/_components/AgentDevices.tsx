@@ -23,6 +23,7 @@ import {
   type ListStatus,
 } from "../../lib/agents/device-list";
 import { deviceState, saveSeenDevices, type DeviceState } from "../../lib/agents/devices";
+import { pairingMismatch } from "../../lib/agents/pairing";
 import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useRevokeAgentCredentialMutation } from "../../lib/api/hooks";
 import type { Agent, AgentDevice } from "../../lib/api/types";
@@ -165,6 +166,9 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
   };
 
   const listed = status?.kind === "ok";
+  // A computer whose keys are not the ones its connect code was typed on
+  // is never offered for approval (docs/40 §13.5): remove it instead.
+  const approvable = devices.filter((d) => !pairingMismatch(d));
   const allApproved = listed && devices.every((d) => approvalOf(d, status) === "approved");
 
   return (
@@ -190,10 +194,10 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
                 className="btn primary"
                 style={{ marginTop: 8 }}
                 disabled={busy}
-                onClick={() => void approve(devices.map((d) => d.did))}
+                onClick={() => void approve(approvable.map((d) => d.did))}
                 data-testid="device-list-approve-all"
               >
-                {t("deviceList.approveAll", { n: devices.length })}
+                {t("deviceList.approveAll", { n: approvable.length })}
               </button>
             </>
           ) : (
@@ -219,7 +223,11 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={STRONG}>{deviceName(t, d)}</span>
               {badge(state)}
-              {approval ? approvalBadge(approval) : null}
+              {pairingMismatch(d) ? (
+                <Pill color="var(--danger)" background="var(--danger-soft)" text={t("pairing.mismatchBadge")} />
+              ) : approval ? (
+                approvalBadge(approval)
+              ) : null}
               <p className="item-sub" style={{ margin: "2px 0 0" }}>
                 {[
                   d.kind === "browser"
@@ -232,7 +240,7 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
                   .join(" · ")}
               </p>
             </div>
-            {approval === "pending" && rootHere ? (
+            {approval === "pending" && rootHere && !pairingMismatch(d) ? (
               <button
                 type="button"
                 className="btn primary"

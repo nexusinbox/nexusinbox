@@ -558,6 +558,10 @@ struct AgentDevice {
     /// The credential that activated a computer's key; revoking it takes
     /// the computer out of the recipient set.
     credential_id: Option<String>,
+    /// The computer's MAC over its keys with the connect code's secret
+    /// (docs/40 §13.5). The browser that made the code checks it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pairing_mac: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -7217,12 +7221,12 @@ async fn list_agents(
                    (a.did = k.did) AS created_with,
                    c.id IS NOT NULL AS has_credential,
                    c.label, c.last_used_at::text AS last_used_at,
-                   c.id::text AS credential_id
+                   c.id::text AS credential_id, c.pairing_device_mac
             FROM agent_identity_keys k
             JOIN agent_identities i ON i.aid = k.aid
             JOIN agents a ON a.id = i.agent_id
             LEFT JOIN LATERAL (
-              SELECT c.id, c.label, c.last_used_at
+              SELECT c.id, c.label, c.last_used_at, c.pairing_device_mac
               FROM agent_credentials c
               WHERE c.aid = k.aid AND c.signing_public_key = k.signing_public_key
                 AND c.status = 'active'
@@ -7257,6 +7261,7 @@ async fn list_agents(
                     activated_at: row.get("activated_at"),
                     last_used_at: row.get("last_used_at"),
                     credential_id: row.get("credential_id"),
+                    pairing_mac: row.get("pairing_device_mac"),
                 });
         }
 
@@ -9462,6 +9467,18 @@ struct ActivateCredentialRequest {
     /// connected (docs/31).
     #[serde(default)]
     device_label: Option<String>,
+    /// The computer's MAC over its keys with the secret half of a long
+    /// connect code (docs/40 §13.5). The server cannot check it.
+    #[serde(default)]
+    pairing_mac: Option<String>,
+}
+
+/// A pairing MAC: HMAC-SHA256 as base64url without padding.
+fn is_pairing_mac(mac: &str) -> bool {
+    mac.len() == 43
+        && URL_SAFE_NO_PAD
+            .decode(mac)
+            .is_ok_and(|bytes| bytes.len() == 32)
 }
 
 /// Clamp an incoming `key_holder` string to the allowed set. The DB
@@ -9481,6 +9498,15 @@ async fn activate_agent_credential(
     Path(credential_id): Path<Uuid>,
     JsonBody(payload): JsonBody<ActivateCredentialRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    if payload
+        .pairing_mac
+        .as_deref()
+        .is_some_and(|mac| !is_pairing_mac(mac))
+    {
+        return Err(validation_error(
+            "pairing_mac must be a base64url HMAC-SHA256",
+        ));
+    }
     let pool = state
         .database_pool()
         .await
@@ -9769,7 +9795,9 @@ async fn activate_agent_credential(
             activated_at = NOW(),
             failed_activation_attempts = 0,
             key_holder = $3,
-            label = COALESCE($5, label)
+            label = COALESCE($5, label),
+            pairing_device_mac = $6,
+            pairing_root_mac = NULL
         WHERE id = $2 AND status = 'pending' AND enrollment_hash = $4
         "#,
     )
@@ -9778,6 +9806,7 @@ async fn activate_agent_credential(
     .bind(key_holder)
     .bind(&stored_hash)
     .bind(device_label_from(payload.device_label.as_deref()))
+    .bind(payload.pairing_mac.as_deref())
     .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to activate credential", e))?;
@@ -9852,6 +9881,103 @@ async fn activate_agent_credential(
         "did": did,
         "status": "active"
     })))
+}
+
+#[derive(Deserialize)]
+struct PairingRootRequest {
+    mac: String,
+}
+
+/// PUT /agent-credentials/{id}/pairing-root — the browser that made the
+/// connect code stores its MAC over the agent's root (docs/40 §13.5), so
+/// the computer learns the root to trust from someone other than the
+/// server. Owner only, for an active credential that paired with a MAC.
+async fn put_pairing_root(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(credential_id): Path<Uuid>,
+    JsonBody(payload): JsonBody<PairingRootRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    if !is_pairing_mac(&payload.mac) {
+        return Err(validation_error("mac must be a base64url HMAC-SHA256"));
+    }
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let updated = sqlx::query(
+        "UPDATE agent_credentials SET pairing_root_mac = $1 \
+         WHERE id = $2 AND user_id = $3 AND status = 'active' \
+           AND pairing_device_mac IS NOT NULL",
+    )
+    .bind(&payload.mac)
+    .bind(credential_id)
+    .bind(user_uuid)
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("failed to store the pairing root", e))?
+    .rows_affected();
+    if updated == 0 {
+        return Err(not_found_error(
+            "credential not found, not active, or not paired with a connect code secret",
+        ));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+struct PairingRootResponse {
+    aid: String,
+    /// The agent's root as the server names it. The computer trusts it
+    /// only when `mac` checks out with its secret.
+    root: String,
+    /// The browser's MAC over `aid` and `root`; absent until it stores one.
+    mac: Option<String>,
+}
+
+/// GET /agent-pairing/root — the calling computer's own credential's root
+/// MAC (docs/40 §13.5). Agent tokens only.
+async fn get_pairing_root(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Json<PairingRootResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    let AuthContext::Agent {
+        aid, credential_id, ..
+    } = &ctx
+    else {
+        return Err(forbidden_error("an agent token is required"));
+    };
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let row = sqlx::query(
+        r#"
+        SELECT c.pairing_root_mac, a.did
+        FROM agent_credentials c
+        JOIN agent_identities ai ON ai.aid = c.aid
+        JOIN agents a ON a.id = ai.agent_id
+        WHERE c.id = $1 AND c.aid = $2
+        "#,
+    )
+    .bind(credential_id)
+    .bind(aid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("pairing root lookup failed", e))?
+    .ok_or_else(|| not_found_error("credential not found"))?;
+    Ok(Json(PairingRootResponse {
+        aid: aid.clone(),
+        root: row.get("did"),
+        mac: row.get("pairing_root_mac"),
+    }))
 }
 
 /// PATCH /agent-credentials/:id — update label or policy on a credential.
@@ -9994,7 +10120,9 @@ async fn rotate_agent_credential(
         UPDATE agent_credentials
         SET enrollment_hash = $1,
             enrollment_expires = $2::timestamptz,
-            signing_public_key = NULL
+            signing_public_key = NULL,
+            pairing_device_mac = NULL,
+            pairing_root_mac = NULL
         WHERE id = $3
         "#,
     )
@@ -15267,7 +15395,7 @@ async fn auto_reply_claim_target(
     uri: &Uri,
     headers: &HeaderMap,
     message_id: Uuid,
-) -> Result<(PgPool, Uuid), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<(PgPool, Uuid, AuthContext), (StatusCode, Json<ErrorResponse>)> {
     let ctx = authenticated_context(state, headers, method.as_str(), uri.path()).await?;
     ctx.require_scope("messages.send")?;
     let pool = match state
@@ -15294,7 +15422,7 @@ async fn auto_reply_claim_target(
     let sender_did: String = row.get("sender_did");
     let recipient_did: String = row.get("recipient_did");
     enforce_agent_may_modify_message(&pool, &ctx, &sender_did, &recipient_did).await?;
-    Ok((pool, user_uuid))
+    Ok((pool, user_uuid, ctx))
 }
 
 /// POST /messages/{id}/auto-reply-claim
@@ -15312,7 +15440,7 @@ async fn claim_auto_reply(
     headers: HeaderMap,
     Path(message_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let (pool, user_uuid) =
+    let (pool, user_uuid, _) =
         auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
     let claimed = sqlx::query(
         "UPDATE message_index SET auto_reply_claimed_at = NOW() \
@@ -15342,7 +15470,7 @@ async fn release_auto_reply_claim(
     headers: HeaderMap,
     Path(message_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let (pool, user_uuid) =
+    let (pool, user_uuid, _) =
         auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
     let released = sqlx::query(
         "UPDATE message_index SET auto_reply_claimed_at = NULL \
@@ -15359,6 +15487,77 @@ async fn release_auto_reply_claim(
         return Err(conflict_error("no unsent auto-reply claim to release"));
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Why an executor left an auto-reply to the person (docs/40 §12.3, §13.3).
+const AUTO_REPLY_SKIP_REASONS: &[&str] = &[
+    "root_changed",
+    "signature",
+    "rollback",
+    "removed",
+    "no_device",
+];
+
+#[derive(Deserialize)]
+struct AutoReplySkipRequest {
+    reason: String,
+}
+
+/// POST /messages/{id}/auto-reply-skip
+///
+/// An executor (a browser or the Agent Gateway) did not send an auto-reply
+/// because the sender's device list did not check out. Records only the
+/// reason code, so the person sees it in AI activity and in the
+/// conversation whichever device skipped (docs/40 §13.3). The claim stays:
+/// the reply is left to the person.
+async fn skip_auto_reply(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    Path(message_id): Path<Uuid>,
+    JsonBody(payload): JsonBody<AutoReplySkipRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(reason) = AUTO_REPLY_SKIP_REASONS
+        .iter()
+        .find(|r| **r == payload.reason)
+    else {
+        return Err(validation_error("unknown auto-reply skip reason"));
+    };
+    let (pool, user_uuid, ctx) =
+        auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
+    let row = sqlx::query(
+        r#"
+        SELECT m.sender_did, k.aid
+        FROM message_index m
+        LEFT JOIN agent_identity_keys k ON k.did = m.recipient_did
+        WHERE m.id = $1 AND m.owner_user_id = $2
+        "#,
+    )
+    .bind(message_id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("message lookup failed", e))?
+    .ok_or_else(|| not_found_error("message not found"))?;
+    let (credential_id, by) = match &ctx {
+        AuthContext::Agent { credential_id, .. } => (Some(*credential_id), "computer"),
+        AuthContext::Human { .. } => (None, "browser"),
+    };
+    record_audit_event(
+        pool,
+        user_uuid,
+        credential_id,
+        row.get("aid"),
+        "auto_reply_skipped",
+        serde_json::json!({
+            "message_id": message_id,
+            "sender_did": row.get::<String, _>("sender_did"),
+            "reason": reason,
+            "by": by,
+        }),
+    );
+    Ok(Json(serde_json::json!({ "recorded": true })))
 }
 
 #[derive(Serialize)]
@@ -16122,6 +16321,11 @@ fn app_with_state(state: AppState) -> Router {
             post(activate_agent_credential),
         )
         .route("/agent-pairing/resolve", post(resolve_pairing_code))
+        .route(
+            "/agent-credentials/{id}/pairing-root",
+            axum::routing::put(put_pairing_root),
+        )
+        .route("/agent-pairing/root", get(get_pairing_root))
         .route("/public/agents/{aid}", get(public_agent_profile))
         .route(
             "/agent-credentials/{id}/rotate",
@@ -16219,6 +16423,7 @@ fn app_with_state(state: AppState) -> Router {
             "/messages/{id}/auto-reply-claim",
             post(claim_auto_reply).delete(release_auto_reply_claim),
         )
+        .route("/messages/{id}/auto-reply-skip", post(skip_auto_reply))
         .route(
             "/messages/{id}/flags",
             axum::routing::patch(update_message_flags),

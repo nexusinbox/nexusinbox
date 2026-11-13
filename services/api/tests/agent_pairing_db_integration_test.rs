@@ -404,3 +404,169 @@ async fn enrollment_secrets_work_as_before_and_never_resolve() {
     assert_eq!(status_now, "active");
     assert_eq!(label, "このパソコン");
 }
+
+/// Plain-bearer agent token for an active credential.
+async fn seed_token(pool: &PgPool, credential_id: &str) -> String {
+    let access = format!("agt_test{}", Uuid::new_v4().simple());
+    let hash = |s: &str| hex::encode(Sha256::digest(s.as_bytes()));
+    sqlx::query(
+        "INSERT INTO agent_tokens \
+           (credential_id, access_hash, refresh_hash, dpop_jkt, scopes, \
+            access_expires_at, refresh_expires_at) \
+         VALUES ($1::uuid, $2, $3, 'none', ARRAY['messages.read'], \
+           NOW() + interval '1 hour', NOW() + interval '1 day')",
+    )
+    .bind(credential_id)
+    .bind(hash(&access))
+    .bind(hash(&format!("agr_{access}")))
+    .execute(pool)
+    .await
+    .expect("seed token");
+    format!("Bearer {access}")
+}
+
+/// The computer MACs its keys with the connect code's secret; the server
+/// keeps the MAC with the credential and shows it with the device. The
+/// root browser stores its MAC over the root for the computer to read
+/// (docs/40 §13.5).
+#[tokio::test]
+#[serial]
+async fn pairing_macs_travel_between_the_browser_and_the_computer() {
+    let (app, pool) = db_test_prelude!();
+    let owner = seed_person(&pool, "0xpairing-mac").await;
+    let other = seed_person(&pool, "0xpairing-mac-other").await;
+    let (agent_id, aid) = seed_agent(&pool, &owner, "秘書").await;
+    let created = create_credential(&app, &owner, agent_id, true).await;
+    let code = created["pairing_code"].as_str().unwrap().to_string();
+    let credential_id = created["credential_id"].as_str().unwrap().to_string();
+    let device_mac = URL_SAFE_NO_PAD.encode([1u8; 32]);
+    let root_mac = URL_SAFE_NO_PAD.encode([2u8; 32]);
+
+    // A malformed MAC is refused before the code is spent.
+    let mut body = activation_body(&credential_id, &code, None);
+    body["pairing_mac"] = json!("not-a-mac");
+    let (status, _) = activate(&app, &credential_id, body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(credential_row(&pool, &credential_id).await.0, "pending");
+
+    let mut body = activation_body(&credential_id, &code, None);
+    body["pairing_mac"] = json!(device_mac);
+    let (status, activated) = activate(&app, &credential_id, body).await;
+    assert_eq!(status, StatusCode::OK, "{activated}");
+
+    let (status, agents) = call(
+        &app,
+        "GET",
+        "/agents",
+        &[("authorization", &owner.auth)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let device = agents["agents"][0]["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["did"] == activated["did"])
+        .cloned()
+        .expect("the computer is listed");
+    assert_eq!(device["pairing_mac"], device_mac.as_str());
+
+    // Before the browser stores the root MAC, the computer reads none.
+    let token = seed_token(&pool, &credential_id).await;
+    let (status, root) = call(
+        &app,
+        "GET",
+        "/agent-pairing/root",
+        &[("authorization", &token)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{root}");
+    assert_eq!(root["aid"], aid.as_str());
+    assert!(root["mac"].is_null());
+    let root_did: String = sqlx::query_scalar("SELECT did FROM agents WHERE id = $1")
+        .bind(agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(root["root"], root_did.as_str());
+
+    // Only the owner stores it, and only a MAC.
+    let uri = format!("/agent-credentials/{credential_id}/pairing-root");
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &uri,
+        &[("authorization", &other.auth)],
+        Some(json!({ "mac": root_mac })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &uri,
+        &[("authorization", &owner.auth)],
+        Some(json!({ "mac": "x" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &uri,
+        &[("authorization", &owner.auth)],
+        Some(json!({ "mac": root_mac })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, root) = call(
+        &app,
+        "GET",
+        "/agent-pairing/root",
+        &[("authorization", &token)],
+        None,
+    )
+    .await;
+    assert_eq!(root["mac"], root_mac.as_str());
+
+    // A human session has no credential to read it for.
+    let (status, _) = call(
+        &app,
+        "GET",
+        "/agent-pairing/root",
+        &[("authorization", &owner.auth)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// A credential activated without a connect code secret takes no root MAC.
+#[tokio::test]
+#[serial]
+async fn a_root_mac_needs_a_paired_credential() {
+    let (app, pool) = db_test_prelude!();
+    let owner = seed_person(&pool, "0xpairing-nomac").await;
+    let (agent_id, _) = seed_agent(&pool, &owner, "agent").await;
+    let created = create_credential(&app, &owner, agent_id, true).await;
+    let code = created["pairing_code"].as_str().unwrap();
+    let credential_id = created["credential_id"].as_str().unwrap();
+    let (status, _) = activate(
+        &app,
+        credential_id,
+        activation_body(credential_id, code, None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &format!("/agent-credentials/{credential_id}/pairing-root"),
+        &[("authorization", &owner.auth)],
+        Some(json!({ "mac": URL_SAFE_NO_PAD.encode([2u8; 32]) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -18,8 +18,6 @@ import { decryptEnvelopeText } from "../../lib/crypto/envelope";
 import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
 import { runAutoReplyExecutor } from "../../lib/protocol/autoReplyExecutor";
 import { sendProtocolReply as realSendProtocolReply } from "./protocol/sendProtocolReply";
-import { isSendStop } from "../../lib/crypto/device-wraps";
-import { recordAutoReplySkip } from "../../lib/protocol/auto-reply-skips";
 import { getCalendarToken } from "../../lib/calendar/gcalAuth";
 import { findFirstFreeCandidate } from "../../lib/calendar/gcalFreebusy";
 
@@ -94,6 +92,7 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
             claimAutoReply: (id) => defaultApiClient.claimAutoReply(id),
             releaseAutoReplyClaim: (id) =>
               defaultApiClient.releaseAutoReplyClaim(id),
+            skipAutoReply: (id, reason) => defaultApiClient.skipAutoReply(id, reason),
           },
           sendProtocolReply: (input) =>
             realSendProtocolReply({
@@ -123,13 +122,6 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
                   encryptedKeys: payload.encryptedKeys,
                   senderEncryptedKeys: payload.senderEncryptedKeys,
                 }),
-            }).catch((error: unknown) => {
-              // Their device list does not hold: no auto-reply, and the
-              // conversation says so (docs/40 §12.5).
-              if (isSendStop(error)) {
-                recordAutoReplySkip(input.viewerAgentDid, input.proposerDid, error.reason);
-              }
-              throw error;
             }),
           decrypt: (ciphertext, encryptedKey, recipientDid) =>
             decryptEnvelopeText(ciphertext, encryptedKey, recipientDid),

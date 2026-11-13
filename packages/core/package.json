@@ -21,6 +21,10 @@
     "./device-list": {
       "types": "./dist/device-list.d.ts",
       "default": "./dist/device-list.js"
+    },
+    "./pairing": {
+      "types": "./dist/pairing.d.ts",
+      "default": "./dist/pairing.js"
     }
   },
   "scripts": {

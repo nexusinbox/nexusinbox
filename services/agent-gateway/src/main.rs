@@ -32,7 +32,9 @@ use tokio::{
 
 mod a2a_rust;
 mod auto_reply_executor;
+mod device_trust;
 mod envelope_crypto;
+mod pairing;
 mod policy_evaluator;
 mod relay_client;
 mod remote_mcp;
@@ -114,6 +116,19 @@ struct Cli {
     /// For local tests: an extra root for the relay's certificate.
     #[arg(long, requires = "mcp_relay")]
     mcp_relay_ca: Option<std::path::PathBuf>,
+
+    /// The agent's directory: the gateway keeps what it learned of other
+    /// agents' device lists there (peers.json), and reads the connect
+    /// code's secret `connect` left (docs/40 §13.2, §13.5). Without it,
+    /// that is kept for this run only.
+    #[arg(long)]
+    state_dir: Option<std::path::PathBuf>,
+
+    /// Accept a new key for this agent (an AID, or a DID of it) after its
+    /// device list came back signed by another key, then exit. Asks first
+    /// (docs/40 §13.3). Needs --state-dir.
+    #[arg(long, requires = "state_dir")]
+    trust: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +306,10 @@ struct GatewayState {
     allowed_uid: Option<u32>,
     dpop_signing_key: SigningKey,
     dpop_public_jwk: serde_json::Value,
+    /// What this computer remembers of other agents' device lists.
+    peers: device_trust::PeerStore,
+    /// The agent's directory (`--state-dir`).
+    state_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -312,6 +331,9 @@ struct RecipientResolution {
     /// so clients can wrap the content key for each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     devices: Vec<DeviceKeyJson>,
+    /// The latest list the agent's root signed (docs/40 §4.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    device_list: Option<device_trust::ListRef>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -740,6 +762,136 @@ async fn resolve_recipient_identifier(
         .map_err(|e| format!("invalid resolve_recipient response: {}", e))
 }
 
+/// Why a recipient was not used.
+#[derive(Debug)]
+enum CheckError {
+    /// Its device list did not check out (docs/40 §13.3).
+    Stop {
+        reason: device_trust::StopReason,
+        aid: String,
+        root: Option<String>,
+    },
+    Failed(String),
+}
+
+impl CheckError {
+    /// What the AI, and through it the person, is told.
+    fn message(&self) -> String {
+        use device_trust::StopReason::*;
+        match self {
+            CheckError::Failed(e) => e.clone(),
+            CheckError::Stop { reason, aid, root } => match reason {
+                RootChanged => format!(
+                    "Not sent: the device list of {aid} is now signed by another key ({}). Their key may have been replaced. Ask the person to confirm with them; if it is right, they run `nexusinbox trust {aid}` on this computer. [stopped: root_changed]",
+                    root.as_deref().unwrap_or("unknown")
+                ),
+                Signature => format!(
+                    "Not sent: the device list of {aid} does not check out (its signature, or the agent it names). Ask the person to look at it in the NexusInbox app. [stopped: signature]"
+                ),
+                Rollback => format!(
+                    "Not sent: the device list of {aid} is older than one seen before. Ask the person to look at it in the NexusInbox app. [stopped: rollback]"
+                ),
+                Removed => format!(
+                    "Not sent: {aid} had a signed device list and now has none. Ask the person to look at it in the NexusInbox app. [stopped: removed]"
+                ),
+                NoDevice => format!(
+                    "Not sent: none of the devices {aid} approved can read messages now. [stopped: no_device]"
+                ),
+            },
+        }
+    }
+}
+
+/// Resolve `requested` (an AID or a DID) and check its signed device list
+/// against what this computer remembers (docs/40 §12.3, §13.2). On success
+/// the resolution names only what may be wrapped for: `devices` are the
+/// listed devices the server still returns, with the listed keys, and
+/// `did` / `encryption_public_key` the one `encrypted_key` goes to.
+async fn check_recipient(
+    state: &GatewayState,
+    token: &str,
+    requested: &str,
+) -> Result<RecipientResolution, CheckError> {
+    let mut resolution = resolve_recipient_identifier(state, token, requested)
+        .await
+        .map_err(CheckError::Failed)?;
+    let mut peers = state.peers.load().map_err(CheckError::Failed)?;
+    let aid = resolution.aid.clone();
+    let pin = peers.pins.get(&aid).cloned();
+    let stop = |reason, root| CheckError::Stop {
+        reason,
+        aid: aid.clone(),
+        root,
+    };
+    // This computer's own agent, connected with a long code: its root comes
+    // from the browser (pairing), never from the server alone.
+    if pin.is_none() && pairing::load(state.state_dir.as_deref()).is_some_and(|p| p.aid == aid) {
+        return Err(stop(device_trust::StopReason::Signature, None));
+    }
+    let known_aid = requested
+        .starts_with("did:")
+        .then(|| peers.dids.get(requested).cloned())
+        .flatten();
+    let devices: Vec<device_trust::Target> = resolution
+        .devices
+        .iter()
+        .map(|d| device_trust::Target {
+            did: d.did.clone(),
+            encryption_public_key: d.encryption_public_key.clone(),
+        })
+        .collect();
+    let decision = device_trust::decide(
+        &device_trust::Served {
+            aid: &aid,
+            did: &resolution.did,
+            encryption_public_key: resolution.encryption_public_key.as_deref().unwrap_or(""),
+            devices: &devices,
+            device_list: resolution.device_list.as_ref(),
+        },
+        requested,
+        known_aid.as_deref(),
+        pin.as_ref(),
+        None,
+    );
+    let (targets, single) = match &decision {
+        device_trust::Decision::Stop { reason, root } => {
+            if let Some(root) = root {
+                peers.changed.insert(aid.clone(), root.clone());
+                if let Err(e) = state.peers.save(&peers) {
+                    eprintln!("[WARN] {e}");
+                }
+            }
+            return Err(stop(*reason, root.clone()));
+        }
+        device_trust::Decision::Listed {
+            targets, single, ..
+        }
+        | device_trust::Decision::Unlisted { targets, single } => (targets.clone(), single.clone()),
+    };
+    if requested.starts_with("did:") {
+        peers.dids.insert(requested.to_string(), aid.clone());
+    }
+    if let Some(next) = device_trust::pin_after(pin.as_ref(), &decision) {
+        peers.pins.insert(aid.clone(), next);
+        peers.changed.remove(&aid);
+    }
+    if let Err(e) = state.peers.save(&peers) {
+        // Sending still uses the checked devices; the next check reads the
+        // old file and may trust the list afresh.
+        eprintln!("[WARN] {e}");
+    }
+    resolution.did = single.did;
+    resolution.encryption_public_key = Some(single.encryption_public_key);
+    resolution.devices = targets
+        .into_iter()
+        .map(|t| DeviceKeyJson {
+            did: t.did,
+            encryption_public_key: t.encryption_public_key,
+        })
+        .collect();
+    Ok(resolution)
+}
+
 async fn handle_whoami(state: &GatewayState, req: &RpcRequest) -> RpcResponse {
     match get_signer_identity(state).await {
         Ok(identity) => RpcResponse::success(
@@ -769,13 +921,15 @@ async fn handle_resolve_recipient(state: &GatewayState, req: &RpcRequest) -> Rpc
         }
     };
 
-    match resolve_recipient_identifier(state, &token, identifier).await {
+    // Callers wrap for what this returns, so it returns only devices the
+    // agent's signed list names (docs/40 §13.2).
+    match check_recipient(state, &token, identifier).await {
         Ok(body) => {
             let mut json = serde_json::to_value(&body).unwrap_or_else(|_| serde_json::json!({}));
             sanitise_json(&mut json);
             RpcResponse::success(req.id.clone(), json)
         }
-        Err(e) => RpcResponse::error(req.id.clone(), -32000, e),
+        Err(e) => RpcResponse::error(req.id.clone(), -32000, e.message()),
     }
 }
 
@@ -936,11 +1090,58 @@ async fn handle_send_message(state: &GatewayState, req: &RpcRequest) -> RpcRespo
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
-    let resolved_recipient = match resolve_recipient_identifier(state, &token, recipient_did).await
-    {
+    // Check the recipient again before signing (docs/40 §13.2): the
+    // envelope must go to the device the check names, with extra copies
+    // only for listed devices of either agent.
+    let resolved_recipient = match check_recipient(state, &token, recipient_did).await {
         Ok(recipient) => recipient,
-        Err(e) => return RpcResponse::error(req.id.clone(), -32000, e),
+        Err(e) => return RpcResponse::error(req.id.clone(), -32000, e.message()),
     };
+    if recipient_did != resolved_recipient.did {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            format!(
+                "recipient_did must be the device resolve_recipient returned ({})",
+                resolved_recipient.did
+            ),
+        );
+    }
+    let own_devices: Vec<String> = match check_recipient(state, &token, &signer_identity.did).await
+    {
+        Ok(me) => me.devices.into_iter().map(|d| d.did).collect(),
+        Err(_) => Vec::new(),
+    };
+    let unlisted = |field: &str, allowed: &[&str]| {
+        envelope
+            .get(field)
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|w| w.get("did").and_then(|d| d.as_str()))
+            .find(|did| !allowed.contains(did))
+            .map(str::to_string)
+    };
+    let recipient_dids: Vec<&str> = resolved_recipient
+        .devices
+        .iter()
+        .map(|d| d.did.as_str())
+        .chain(std::iter::once(resolved_recipient.did.as_str()))
+        .collect();
+    let own_dids: Vec<&str> = own_devices
+        .iter()
+        .map(String::as_str)
+        .chain(std::iter::once(signer_identity.did.as_str()))
+        .collect();
+    if let Some(did) = unlisted("encrypted_keys", &recipient_dids)
+        .or_else(|| unlisted("sender_encrypted_keys", &own_dids))
+    {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            format!("{did} is not a device the signed device list names; not sent"),
+        );
+    }
 
     let envelope = if envelope.get("signature").and_then(|v| v.as_str()).is_some() {
         envelope
@@ -1035,7 +1236,7 @@ async fn handle_send_message(state: &GatewayState, req: &RpcRequest) -> RpcRespo
 
     let body = serde_json::json!({
         "sender_did": signer_identity.did,
-        "recipient_did": recipient_did,
+        "recipient_did": resolved_recipient.did,
         "envelope": envelope,
     });
 
@@ -1221,6 +1422,9 @@ async fn api_patch(
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    if let (Some(target), Some(dir)) = (cli.trust.as_deref(), cli.state_dir.as_deref()) {
+        std::process::exit(run_trust(dir, target));
+    }
     let dpop_signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
     let dpop_public_jwk = serde_json::json!({
         "kty": "OKP",
@@ -1253,6 +1457,8 @@ async fn main() {
         allowed_uid: cli.allowed_uid,
         dpop_signing_key,
         dpop_public_jwk,
+        peers: device_trust::PeerStore::new(cli.state_dir.as_deref()),
+        state_dir: cli.state_dir.clone(),
     });
 
     if cli.mcp_listen.is_some() || cli.mcp_relay.is_some() {
@@ -1332,6 +1538,12 @@ async fn main() {
         });
     } else {
         eprintln!("[INFO] Isolated mode auto-reply executor: disabled (set AGENT_INBOX_MODE_A_EXECUTOR=on to enable)");
+    }
+
+    // Connected with a long code: learn this agent's root from the browser
+    // (docs/40 §13.4).
+    if pairing::load(state.state_dir.as_deref()).is_some() {
+        tokio::spawn(confirm_own_root(Arc::clone(&state)));
     }
 
     // Graceful shutdown
@@ -1549,46 +1761,52 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
     async fn resolve_recipient(
         &self,
         did: &str,
-    ) -> Result<auto_reply_executor::RecipientPubkey, String> {
+    ) -> Result<auto_reply_executor::RecipientPubkey, auto_reply_executor::ResolveError> {
+        use auto_reply_executor::ResolveError;
+        let token = ensure_token(&self.state).await?;
+        let checked = check_recipient(&self.state, &token, did)
+            .await
+            .map_err(|e| match e {
+                CheckError::Stop { reason, .. } => ResolveError::Stopped(reason.code()),
+                CheckError::Failed(e) => ResolveError::Failed(e),
+            })?;
+        // Signed and sent as the recipient, so it must be there.
+        if checked.did.is_empty() {
+            return Err("recipient resolution has no did".into());
+        }
+        let encryption_public_key = checked
+            .encryption_public_key
+            .clone()
+            .filter(|k| !k.is_empty())
+            .ok_or("recipient has no encryption_public_key")?;
+        Ok(auto_reply_executor::RecipientPubkey {
+            did: checked.did,
+            encryption_public_key,
+            devices: checked
+                .devices
+                .into_iter()
+                .map(|d| auto_reply_executor::DeviceKey {
+                    did: d.did,
+                    encryption_public_key: d.encryption_public_key,
+                })
+                .collect(),
+        })
+    }
+
+    async fn skip_auto_reply(&self, message_id: &str, reason: &str) -> Result<(), String> {
         let token = ensure_token(&self.state).await?;
         let url = format!(
-            "{}/recipients/resolve?identifier={}",
-            self.state.api_url,
-            urlencoding_encode(did)
+            "{}/messages/{}/auto-reply-skip",
+            self.state.api_url, message_id
         );
-        let body = api_get(&self.state, &url, &token).await?;
-        Ok(auto_reply_executor::RecipientPubkey {
-            // Signed and sent as the recipient, so it must be there.
-            did: body
-                .get("did")
-                .and_then(|v| v.as_str())
-                .filter(|d| !d.is_empty())
-                .ok_or_else(|| "recipient resolution has no did".to_string())?
-                .into(),
-            encryption_public_key: body
-                .get("encryption_public_key")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "recipient has no encryption_public_key".to_string())?
-                .into(),
-            devices: body
-                .get("devices")
-                .and_then(|v| v.as_array())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|d| {
-                            Some(auto_reply_executor::DeviceKey {
-                                did: d.get("did")?.as_str()?.to_string(),
-                                encryption_public_key: d
-                                    .get("encryption_public_key")?
-                                    .as_str()?
-                                    .to_string(),
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-        })
+        api_post(
+            &self.state,
+            &url,
+            &token,
+            &serde_json::json!({ "reason": reason }),
+        )
+        .await
+        .map(|_| ())
     }
 
     async fn fetch_our_did(&self) -> Result<String, String> {
@@ -1750,21 +1968,129 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
     }
 }
 
-/// Minimal URL-encoder for DID values so we don't need to pull in
-/// another crate just for one call site. DIDs are "did:key:zXYZ..."
-/// — none of the characters need escaping in practice, but the
-/// colon does, so encode defensively.
-fn urlencoding_encode(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(byte as char);
+/// `GET /agent-pairing/root`: the agent's root as the server names it and
+/// the browser's MAC over it, once stored.
+async fn fetch_pairing_root(
+    state: &GatewayState,
+) -> Result<(String, String, Option<String>), String> {
+    let token = ensure_token(state).await?;
+    let body = api_get(
+        state,
+        &format!("{}/agent-pairing/root", state.api_url),
+        &token,
+    )
+    .await?;
+    let field = |name: &str| body.get(name).and_then(|v| v.as_str()).map(str::to_string);
+    Ok((
+        field("aid").ok_or("no aid")?,
+        field("root").ok_or("no root")?,
+        field("mac"),
+    ))
+}
+
+/// Learn this agent's own root from the browser that made the connect code
+/// (docs/40 §13.4, §13.5): check the browser's MAC with the code's secret,
+/// remember the root, and delete the secret. Asks again until the browser
+/// has stored its MAC (it does once it sees this computer connect).
+async fn confirm_own_root(state: Arc<GatewayState>) {
+    let started = Instant::now();
+    loop {
+        let Some(pairing) = pairing::load(state.state_dir.as_deref()) else {
+            return;
+        };
+        match fetch_pairing_root(&state).await {
+            Ok((aid, root, Some(mac))) => {
+                if aid != pairing.aid || !pairing::root_mac_matches(&pairing, &root, &mac) {
+                    eprintln!(
+                        "[ERROR] The agent's key the server shows ({root}) is not the one the browser sent with the connect code. This computer does not take it: remove it in the NexusInbox app and connect again with a new code."
+                    );
+                    return;
+                }
+                let saved = state.peers.load().and_then(|mut peers| {
+                    peers.pins.insert(
+                        aid.clone(),
+                        device_trust::Pin {
+                            root: root.clone(),
+                            version: 0,
+                        },
+                    );
+                    state.peers.save(&peers)
+                });
+                if let Err(e) = saved {
+                    eprintln!("[WARN] {e}");
+                } else if let Some(dir) = state.state_dir.as_deref() {
+                    let _ = std::fs::remove_file(pairing::pairing_path(dir));
+                    eprintln!("[INFO] Checked the agent's key the browser sent ({root}).");
+                    return;
+                }
             }
-            _ => out.push_str(&format!("%{:02X}", byte)),
+            Ok((_, _, None)) => {}
+            Err(e) => eprintln!("[WARN] Asking for the agent's key failed: {e}"),
         }
+        let wait = if started.elapsed() < std::time::Duration::from_secs(600) {
+            5
+        } else {
+            300
+        };
+        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
     }
-    out
+}
+
+/// `--trust <aid>`: accept the new root an agent's list came back signed
+/// by, after asking (docs/40 §13.3). Returns the exit code.
+fn run_trust(dir: &std::path::Path, target: &str) -> i32 {
+    let store = device_trust::PeerStore::new(Some(dir));
+    let mut peers = match store.load() {
+        Ok(peers) => peers,
+        Err(e) => {
+            eprintln!("[ERROR] {e}");
+            return 1;
+        }
+    };
+    let aid = if target.starts_with("aid:") {
+        target.to_string()
+    } else if let Some(aid) = peers.dids.get(target) {
+        aid.clone()
+    } else {
+        eprintln!("[ERROR] {target} is not an agent this computer has sent to.");
+        return 2;
+    };
+    let Some(new_root) = peers.changed.get(&aid).cloned() else {
+        eprintln!(
+            "Nothing to accept for {aid}: its key has not changed. A device list that does not check out (bad signature, older, or gone) cannot be accepted here."
+        );
+        return 1;
+    };
+    let old_root = peers
+        .pins
+        .get(&aid)
+        .map(|p| p.root.clone())
+        .unwrap_or_else(|| "(none)".into());
+    println!("The key of {aid} has changed.");
+    println!("  Before: {old_root}");
+    println!("  Now:    {new_root}");
+    print!("Did you confirm with them, in person or by phone, that they made a new key? Remember the new key? [y/N]: ");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        println!("Nothing changed.");
+        return 1;
+    }
+    peers.pins.insert(
+        aid.clone(),
+        device_trust::Pin {
+            root: new_root,
+            version: 0,
+        },
+    );
+    peers.changed.remove(&aid);
+    if let Err(e) = store.save(&peers) {
+        eprintln!("[ERROR] {e}");
+        return 1;
+    }
+    println!("Remembered the new key. Sending to {aid} works again.");
+    0
 }
 
 /// Upper bound for one JSON-RPC line on the UDS. A plain `read_line` buffers
@@ -1876,6 +2202,8 @@ fn test_gateway_state() -> GatewayState {
         allowed_uid: None,
         dpop_signing_key,
         dpop_public_jwk: serde_json::json!({}),
+        peers: device_trust::PeerStore::new(None),
+        state_dir: None,
     }
 }
 
@@ -2192,6 +2520,8 @@ mod tests {
                 "x": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
             }),
             dpop_signing_key: signing_key,
+            peers: device_trust::PeerStore::new(None),
+            state_dir: None,
         }
     }
 
@@ -2891,5 +3221,188 @@ mod tests {
             reply["protocol"]["payload"]["selected_candidate"]["start"],
             "2026-12-01T09:00:00+09:00"
         );
+    }
+
+    // ---- docs/40 §13.2: the gateway checks the recipient's signed list ----
+
+    /// A served agent from tests/vectors/device_list_decisions.json.
+    fn vector_served(case: usize) -> serde_json::Value {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/device_list_decisions.json"
+        );
+        let vectors: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        vectors["cases"][case]["served"].clone()
+    }
+
+    async fn rpc(state: &GatewayState, method: &str, params: serde_json::Value) -> RpcResponse {
+        handle_rpc(
+            state,
+            &RpcRequest {
+                id: json!(1),
+                method: method.into(),
+                params,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn resolve_returns_only_listed_devices_and_stops_on_a_new_root() {
+        // Case 1: the server adds a device the list does not name.
+        let served = std::sync::Arc::new(std::sync::Mutex::new(vector_served(1)));
+        let aid = served.lock().unwrap()["aid"].as_str().unwrap().to_string();
+        let for_mock = served.clone();
+        let (api_url, _) =
+            spawn_api_mock(move |_, _, _| (200, for_mock.lock().unwrap().to_string())).await;
+        let dir = socket_dir();
+        let mut state = make_test_state();
+        state.api_url = api_url;
+        state.peers = device_trust::PeerStore::new(Some(&dir));
+        state.token.lock().unwrap().access_token = Some("agt_test".into());
+        state.token.lock().unwrap().expires_at = Some(Utc::now() + chrono::Duration::seconds(600));
+
+        let resp = rpc(&state, "resolve_recipient", json!({ "identifier": aid })).await;
+        let result = resp.result.expect("checked");
+        let listed = vector_served(0)["devices"].clone();
+        let dids: Vec<&str> = result["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["did"].as_str().unwrap())
+            .collect();
+        assert_eq!(dids.len(), 2, "{result}");
+        for d in listed.as_array().unwrap() {
+            assert!(dids.contains(&d["did"].as_str().unwrap()));
+        }
+        // The single wrap goes to a listed device, not the one the server added.
+        assert_ne!(result["did"], served.lock().unwrap()["did"]);
+        let peers = state.peers.load().unwrap();
+        assert_eq!(peers.pins[&aid].version, 1);
+
+        // Case 10: the list is now signed by another root.
+        *served.lock().unwrap() = vector_served(10);
+        let resp = rpc(&state, "resolve_recipient", json!({ "identifier": aid })).await;
+        let error = resp.error.expect("stopped").message;
+        assert!(error.contains("[stopped: root_changed]"), "{error}");
+        assert!(
+            error.contains(&format!("nexusinbox trust {aid}")),
+            "{error}"
+        );
+        let peers = state.peers.load().unwrap();
+        let new_root = vector_served(10)["devices"][0]["did"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(peers.changed.get(&aid), Some(&new_root));
+
+        // `nexusinbox trust` accepts it: the pin moves and sending works.
+        let mut accepted = peers.clone();
+        accepted.pins.insert(
+            aid.clone(),
+            device_trust::Pin {
+                root: new_root.clone(),
+                version: 0,
+            },
+        );
+        accepted.changed.remove(&aid);
+        state.peers.save(&accepted).unwrap();
+        let resp = rpc(&state, "resolve_recipient", json!({ "identifier": aid })).await;
+        assert!(resp.result.is_some(), "{:?}", resp.error.map(|e| e.message));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn send_refuses_an_envelope_for_devices_the_list_does_not_name() {
+        let served = vector_served(0);
+        let aid = served["aid"].as_str().unwrap().to_string();
+        let single = served["did"].as_str().unwrap().to_string();
+        let mock_served = served.clone();
+        let (api_url, seen) = spawn_api_mock(move |method, path, _| match (method, path) {
+            ("GET", p) if p.starts_with("/recipients/resolve?identifier=did%3Akey%3Az6MkDaemon") => (
+                200,
+                format!(
+                    r#"{{"aid":"aid:ai:viewer","did":"{DAEMON_DID}","encryption_public_key":"{DAEMON_ENCRYPTION_KEY}"}}"#
+                ),
+            ),
+            ("GET", _) => (200, mock_served.to_string()),
+            _ => (200, r#"{"message_id":"m1","status":"sent"}"#.into()),
+        })
+        .await;
+        let dir = socket_dir();
+        let (signer_socket, _) = spawn_daemon_mock(&dir, String::new()).await;
+        let state = executor_state(api_url, signer_socket);
+        let envelope = |keys: serde_json::Value| {
+            json!({
+                "encrypted_content": "c", "encrypted_key": "k", "nonce": "n",
+                "metadata": { "subject_encrypted": "s" },
+                "encrypted_keys": keys,
+            })
+        };
+
+        // Addressed by AID instead of the checked device: refused.
+        let resp = rpc(
+            &state,
+            "send_message",
+            json!({ "recipient_did": aid, "envelope": envelope(json!([])) }),
+        )
+        .await;
+        assert!(resp
+            .error
+            .unwrap()
+            .message
+            .contains("recipient_did must be"));
+
+        // A copy for a device the list does not name: refused.
+        let resp = rpc(
+            &state,
+            "send_message",
+            json!({ "recipient_did": single, "envelope": envelope(json!([{ "did": "did:key:zExtra", "key": "x" }])) }),
+        )
+        .await;
+        assert!(resp.error.unwrap().message.contains("did:key:zExtra"));
+
+        // As checked: sent, to the checked device.
+        let resp = rpc(
+            &state,
+            "send_message",
+            json!({ "recipient_did": single, "envelope": envelope(json!([{ "did": single, "key": "x" }])) }),
+        )
+        .await;
+        assert!(resp.result.is_some(), "{:?}", resp.error.map(|e| e.message));
+        let posted = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.method == "POST")
+            .and_then(|r| r.body.clone())
+            .unwrap();
+        assert_eq!(posted["recipient_did"], single.as_str());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn the_own_root_waits_for_the_browser_when_paired() {
+        let dir = socket_dir();
+        let served = vector_served(0);
+        let aid = served["aid"].as_str().unwrap().to_string();
+        let mut state = make_test_state();
+        state.state_dir = Some(dir.clone());
+        state.peers = device_trust::PeerStore::new(Some(&dir));
+        let mock = served.clone();
+        let (api_url, _) = spawn_api_mock(move |_, _, _| (200, mock.to_string())).await;
+        state.api_url = api_url;
+        state.token.lock().unwrap().access_token = Some("agt_test".into());
+        state.token.lock().unwrap().expires_at = Some(Utc::now() + chrono::Duration::seconds(600));
+        std::fs::write(
+            pairing::pairing_path(&dir),
+            json!({ "credential_id": "c1", "aid": aid, "secret": "H3TD9QWB0KMAR4XE" }).to_string(),
+        )
+        .unwrap();
+        // Not from the server alone.
+        let resp = rpc(&state, "resolve_recipient", json!({ "identifier": aid })).await;
+        assert!(resp.error.unwrap().message.contains("[stopped: signature]"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

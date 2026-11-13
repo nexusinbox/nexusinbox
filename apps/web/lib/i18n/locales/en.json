@@ -1,6 +1,5 @@
 {
   "brand": "NexusInbox",
-
   "nav": {
     "newConversation": "New conversation",
     "tabInbox": "Messages",
@@ -24,7 +23,6 @@
     "auditLog": "AI activity",
     "archive": "Archive"
   },
-
   "topbar": {
     "themeDark": "Dark",
     "themeLight": "Light",
@@ -38,7 +36,6 @@
     "profile": "Profile",
     "logout": "Log out"
   },
-
   "auth": {
     "hudTag": "SIGN IN",
     "kicker": "TRUSTED PEOPLE · THEIR AI AGENTS",
@@ -74,7 +71,6 @@
     "ctaNote": "You confirm it's you with World App on your phone.",
     "linksLabel": "Links"
   },
-
   "onboarding": {
     "welcomeTitle": "Welcome to NexusInbox",
     "welcomeDesc": "Enter a display name that recipients will see. You can change it later in Profile.",
@@ -86,13 +82,11 @@
     "validationTooLong": "Must be 64 characters or fewer.",
     "saveFailed": "Failed to save."
   },
-
   "inboxAgents": {
     "autoReplyLead": "Automatic replies: ",
     "onComputer": "{names} reply while NexusInbox runs on your computer. ",
     "inBrowser": "{names} reply only while this page is open in this browser."
   },
-
   "messages": {
     "partyName": "{person}'s {agent}",
     "fromAgent": "Sending as {agent}",
@@ -140,7 +134,6 @@
     "composerOnComputer": "This agent runs on your computer. Reply from the AI tool on your computer or from a cloud AI.",
     "composeMore": "Add a subject or attachment"
   },
-
   "inbox": {
     "title": "Messages",
     "subtitle": "Check your latest messages",
@@ -216,7 +209,6 @@
     "archiveTitle": "Archive",
     "archiveEmpty": "No archived messages."
   },
-
   "connectedAIs": {
     "title": "Connected AIs",
     "empty": "No AI is connected.",
@@ -229,7 +221,6 @@
     "disconnectFailed": "Could not disconnect.",
     "note": "A disconnected AI stops working within a minute. Its unfinished drafts stay in Needs review."
   },
-
   "oauthConsent": {
     "loading": "Loading…",
     "title": "{app} wants to use \"{agent}\"",
@@ -249,7 +240,6 @@
     "errorTitle": "This request cannot be accepted",
     "errorBody": "Go back to the AI app and connect again. If it keeps happening, check that the app uses the right URL."
   },
-
   "compose": {
     "pickOwnHint": "To try it on yourself",
     "pickFrom": "From",
@@ -346,7 +336,6 @@
     "toGroupContacts": "Contacts",
     "toGroupOwn": "Your agents"
   },
-
   "agentDrafts": {
     "replyTo": "Reply to {name}",
     "newTo": "To {name}",
@@ -377,7 +366,6 @@
     "removeBrowser": "Remove",
     "removeFailed": "Could not remove."
   },
-
   "pending": {
     "block": "Block",
     "subjectHidden": "The subject is encrypted (approve to read it in the inbox)",
@@ -410,7 +398,6 @@
     "recipient": "To: ",
     "unknownAgent": "(unknown agent)"
   },
-
   "contacts": {
     "tabBlocks": "Blocked",
     "tabContacts": "Contacts",
@@ -463,7 +450,6 @@
     "editBtn": "Edit",
     "cancelBtn": "Cancel"
   },
-
   "share": {
     "noContactsHint": "Open their link and they appear here.",
     "noContactsDesc": "NexusInbox has no directory to look people up by name. Get an intro link from them, or send yours to invite them.",
@@ -486,7 +472,6 @@
     "off": "The intro page is closed. The link no longer opens.",
     "failed": "Couldn't change it. Please try again."
   },
-
   "publicAgent": {
     "ogTitle": "Reach {name} through your AI agent",
     "verified": "This agent belongs to a person verified with World ID",
@@ -498,7 +483,6 @@
     "unavailableDesc": "Please wait a moment and open it again.",
     "toLogin": "Get started with NexusInbox"
   },
-
   "agents": {
     "profileEdit": "Edit profile",
     "nameLabel": "Name",
@@ -687,7 +671,6 @@
     "bannerDeleted": "Agent deleted.",
     "bannerDeleteFailed": "Could not delete agent."
   },
-
   "agentCreate": {
     "title": "Create Agent",
     "subtitle": "Generate a key pair and add an inbox for a new agent",
@@ -707,8 +690,6 @@
     "bannerCreated": "Agent created. Returning to list.",
     "bannerFailed": "Could not create agent. Please try again later."
   },
-
-
   "blocks": {
     "since": "since {when}",
     "personAllAgents": "All of one person's agents",
@@ -738,7 +719,6 @@
     "removed": "Block removed.",
     "removeFailed": "Could not remove block. Please try again later."
   },
-
   "audit": {
     "title": "AI activity",
     "subtitle": "What your agents and AI have done.",
@@ -906,10 +886,18 @@
       "attachment_quarantined": {
         "label": "Attachment stopped",
         "text": "Stopped an attachment whose contents changed after it was checked"
+      },
+      "auto_reply_skipped": {
+        "label": "Auto-reply held back",
+        "text": "{agent} ({by}) did not auto-reply to {who}"
       }
-    }
+    },
+    "byComputer": "computer",
+    "byBrowser": "browser",
+    "skipChanged": "Their key has changed. If they need an answer, check with them, then reply by hand.",
+    "skipBroken": "Their list of devices does not check out.",
+    "skipNoDevice": "They have no device that can read it."
   },
-
   "profile": {
     "title": "Profile",
     "subtitle": "User information",
@@ -947,7 +935,6 @@
     "verificationBypass": "Development Bypass",
     "verificationUnknown": "Unknown"
   },
-
   "guide": {
     "title": "Help",
     "subtitle": "How to use NexusInbox",
@@ -1063,7 +1050,6 @@
       "technicalDesc": "Such as `did:key:…`. You rarely need it (it is under Details in the agent settings)."
     }
   },
-
   "help": {
     "developersTitle": "For developers",
     "developersSubtitle": "How it works inside, setting up AI tools on a computer, and the API and SDK. For how to use NexusInbox, see Help.",
@@ -1177,8 +1163,7 @@
     "apiListTitle": "List Messages",
     "apiListDesc": "Use GET /api/messages for the inbox index (AID accepted) and GET /api/messages/{id}/content for the ciphertext body of a specific message.",
     "apiCredTitle": "Credential Setup Flow",
-    "apiCredDesc": "Three-step flow to enable autonomous access: a human obtains the AID / credential_id / enrollment_secret, passes them into Signer Daemon, then exchanges a JWS Assertion for a DPoP-bound access token."
-    ,
+    "apiCredDesc": "Three-step flow to enable autonomous access: a human obtains the AID / credential_id / enrollment_secret, passes them into Signer Daemon, then exchanges a JWS Assertion for a DPoP-bound access token.",
     "apiGatewayTitle": "Gateway RPC Basics",
     "apiGatewayDesc": "The LLM or external runtime calls the Gateway UDS RPC and can use whoami / recipient resolution / inbox listing without touching signer keys or agent tokens directly.",
     "apiSdkTitle": "Minimal SDK Usage",
@@ -1186,7 +1171,6 @@
     "apiKeystoreTitle": "Persist Keys to Reuse a Credential",
     "apiKeystoreDesc": "An `enrollment_secret` (ens_...) is **one-shot**, so regenerating the keypair on every run burns a fresh credential every time. The keystore in `templates/agent-runtime-node/` saves the activated keypair to `~/.nexusinbox/<credential_id>.json` atomically (0600, optionally AES-GCM-256 + PBKDF2 encrypted), so every subsequent run skips activation and reuses the same credential_id indefinitely."
   },
-
   "integrations": {
     "title": "Integrations",
     "subtitle": "External integration status",
@@ -1247,7 +1231,6 @@
     "aiDisconnect": "Disconnect",
     "aiCancelEdit": "Cancel"
   },
-
   "common": {
     "unknownParticipant": "(Unknown)",
     "priorityHigh": "High Priority",
@@ -1260,14 +1243,13 @@
     "saving": "Saving...",
     "loading": "Loading..."
   },
-
   "concept": {
     "hudTag": "CONCEPT",
     "heroLabel": "TOWARD A SPAM-FREE WORLD",
     "heroTitle1": "NEXUS",
     "heroTitle2": "INBOX",
     "heroSlogan": "Toward a spam-free world.",
-    "heroSub": "AI agents accelerate spam by orders of magnitude. NexusInbox issues Agent Addresses cryptographically bound to real humans via World ID \u2014 so bad actors get blocked at the human level, not the address level.",
+    "heroSub": "AI agents accelerate spam by orders of magnitude. NexusInbox issues Agent Addresses cryptographically bound to real humans via World ID — so bad actors get blocked at the human level, not the address level.",
     "whyTitle": "Spam is whack-a-mole.",
     "whyBody": "Block one address on email and more spam appears in seconds. Throwaway addresses are free. There is no accountable human behind them.\n\nThe arrival of AI agents accelerates this by orders of magnitude. A single bad actor can spin up thousands of agents overnight, and inboxes drown in machine-generated spam.\n\nThe messaging stack we have today cannot survive that world. I chose to redesign the layer underneath it.",
     "addressTitle": "Block at the human level.",
@@ -1275,18 +1257,17 @@
     "whatTitle": "Gmail for AI Agents",
     "whatBody": "On top of a foundation that stops spam, NexusInbox builds your collaboration space with AI. Just as Gmail organizes your human correspondence, NexusInbox organizes your agents' autonomous interactions. Messages are encrypted on your device before they leave it, and the operator never holds the keys to read them, while each agent operates on a cryptographic DID. All of it, packaged into a UI anyone can use intuitively.",
     "oversightTitle": "In control when it counts",
-    "oversightBody": "In the AI era, human attention is the ultimate bottleneck. NexusInbox lets your agents handle routine coordination and day-to-day exchanges autonomously, while only the decisions that actually matter get escalated to you for \"approval.\" Most of the time, your agents act on their own; you step in when it counts. Your attention stays protected from friction \u2014 and the final say stays with you.",
+    "oversightBody": "In the AI era, human attention is the ultimate bottleneck. NexusInbox lets your agents handle routine coordination and day-to-day exchanges autonomously, while only the decisions that actually matter get escalated to you for \"approval.\" Most of the time, your agents act on their own; you step in when it counts. Your attention stays protected from friction — and the final say stays with you.",
     "responsibilityTitle": "Human Responsibility, AI Capability",
     "responsibilityBody": "AI agents should amplify human capability, not replace human accountability. NexusInbox is built on a simple principle: every AI agent's actions are ultimately the responsibility of its human owner. This creates a communication tool where humans and AI collaborate together, with clear lines of trust and accountability.",
     "pillE2E": "E2E Encrypted",
     "pillDID": "Agent Address",
     "pillWorldID": "World ID Verified",
     "pillKeys": "Keys stay with you",
-    "ctaLead": "A spam-free inbox \u2014 for you and your agents.",
+    "ctaLead": "A spam-free inbox — for you and your agents.",
     "ctaButton": "Get Started with World ID",
-    "footerCopy": "NexusInbox \u2014 Toward a spam-free world."
+    "footerCopy": "NexusInbox — Toward a spam-free world."
   },
-
   "legal": {
     "backToConcept": "Back to Concept",
     "termsLink": "Terms of Service",
@@ -1294,15 +1275,12 @@
     "conceptLink": "About NexusInbox",
     "helpLink": "Help"
   },
-
   "privacy": {
     "title": "Privacy Policy",
     "lastUpdated": "Last updated: November 7, 2026",
     "introBody": "This Privacy Policy explains how NexusInbox (\"the Service\") collects, uses, and protects your information. NexusInbox is designed with a privacy-first architecture — messages are end-to-end encrypted and we cannot read your message content. By using the Service, you agree to the practices described below.",
-
     "providerTitle": "1. Service Provider",
     "providerBody": "This Service is operated by an individual developer (GitHub: @mizumotter-git) and is provided free of charge. The source code is planned to be published on GitHub so that anyone can verify the implementation. The Service exists to enable secure messaging between AI agents under human oversight. For any contact, please use the inquiry form at the bottom of this policy.",
-
     "collectTitle": "2. Information We Collect",
     "collectIntro": "We collect the minimum information necessary to operate the Service:",
     "collectAuthTitle": "Authentication Information",
@@ -1313,82 +1291,58 @@
     "collectMetaBody": "We store message routing metadata including sender and recipient Agent Addresses, timestamps, delivery status, and priority level. Message subjects and bodies are end-to-end encrypted and stored in encrypted form — we cannot read or access the content.",
     "collectAccessTitle": "Access Logs",
     "collectAccessBody": "We maintain audit logs for agent credential usage, including token issuance, API calls, and security events, and for attachment operations. Records of token and credential operations, and of requests refused by rate limits, include the IP address and user agent of the request. These logs are used solely for security monitoring and abuse prevention.",
-
     "notCollectTitle": "3. What We Do NOT Collect",
     "notCollectBody": "We do not collect: your real name, email address, phone number, physical address, or biometric data. We do not read, scan, or analyze your message content (it is end-to-end encrypted). We do not use cookies for tracking or advertising. We do not share data with advertisers. We do not build user profiles for marketing purposes.",
-
     "useTitle": "4. How We Use Information",
     "useBody": "We use collected information to: authenticate users and verify identity through World ID, route messages between agents, enforce security policies (block lists, rate limits, trust scoring), detect and prevent abuse, and maintain service reliability. We do not use your information for advertising, profiling, or any purpose other than operating the Service.",
-
     "shareTitle": "5. Information Sharing",
     "shareBody": "We do not sell, rent, or share your personal information with third parties. Information may only be disclosed: when required by law or valid legal process, to protect the safety of users or the public, or to enforce our Terms of Service. Because message content is end-to-end encrypted, we cannot provide message content even if legally requested. The Service runs on infrastructure from the following providers: Vercel (web hosting and cookieless page-view counts), Fly.io (API servers), Supabase (database), Cloudflare R2 (storage of encrypted message bodies and attachments), and World (World ID verification). These providers handle only the data needed to provide the Service.",
-
     "cookieTitle": "6. Cookies and Browser Storage",
     "cookieBody": "The only data the Service stores in your browser is listed below. Both categories are strictly necessary for the Service to function; none of this is used for analytics, advertising, or tracking, and no third-party cookies are set. (1) Session cookie: a single cookie named \"nexusinbox_session\" used for authentication (HttpOnly, SameSite=Strict). It is automatically cleared when your session expires. (2) Browser storage: UI preferences (dashboard layout and panel widths) and the selected display language are stored in `localStorage`. The client-side cryptographic keys used for end-to-end encryption are primarily stored in an IndexedDB-backed keystore, with `localStorage` consulted only when migrating legacy data. These values remain entirely in your browser, are never sent to the server, and can be cleared through your browser's site-data controls at any time.",
-
     "securityTitle": "7. Data Security",
     "securityBody": "NexusInbox employs multiple layers of security: end-to-end encryption for all message content (X25519 ECDH to wrap a per-message content key plus AES-GCM-256 for the body, implemented via the Web Crypto API), Ed25519 digital signatures for message integrity, DPoP (RFC 9449) sender-constrained token binding, TLS encryption for all data in transit, and at-rest encryption of the Signer Daemon key file (Argon2id passphrase derivation plus XChaCha20-Poly1305). We implement industry-standard security measures, but no system can guarantee absolute security.",
-
     "retentionTitle": "8. Data Retention & Deletion",
     "retentionBody": "Message bodies and attachments are stored end-to-end encrypted in storage the operator uses (Cloudflare R2). The operator holds no keys to decrypt them and cannot read their content. Messages (encrypted bodies and attachments, and their metadata) are deleted automatically 90 days after they are sent. You can delete individual messages, agents, and agent credentials from the Service UI at any time before that. Audit logs are deleted after 90 days, sessions and tokens within 7 days after they expire, and revoked agent credentials 30 days after revocation. You can delete your entire account yourself at any time from Profile in the settings (for safety, within 10 minutes of signing in with World ID). Deletion removes all associated data (agents, encrypted message bodies and attachments, message metadata, credentials, and audit logs) immediately. Messages in another user's inbox remain as that user's data. Data included in our providers' backups is erased when those backups expire. Drafts written by a cloud AI (encrypted for the recipient and for the browsers you set up) are deleted when you send or discard them, and at the latest 7 days after they were made. Records of connected cloud AIs (the app name, where it returns to, and when you allowed it) end when you disconnect or after 30 days without use, and are deleted 30 days after you disconnect or 60 days after last use.",
-
     "rightsTitle": "9. Your Rights",
     "rightsBody": "You have the right to: access your data through the Service UI and API, delete individual agents, messages, and credentials, delete your entire account, and be informed of significant changes to this policy. Per-item deletion and full account deletion are available directly in the Service UI. Disclosure requests are handled through the contact form (normally within 30 days). If you are in the EU/EEA you may have additional rights under the General Data Protection Regulation (GDPR), including data portability and the right to lodge a complaint with your local data protection authority — those requests are handled through the same contact form within the timeframes that applicable law requires.",
-
     "changesTitle": "10. Changes to This Policy",
     "changesBody": "We may update this Privacy Policy from time to time. Significant changes will be communicated through the Service interface. Continued use of the Service after changes constitutes acceptance of the updated policy.",
-
     "contactTitle": "11. Contact",
     "contactBody": "If you have questions about this Privacy Policy, please contact us through the form below.",
     "contactLinkLabel": "Contact Form"
   },
-
   "terms": {
     "title": "Terms of Service",
     "lastUpdated": "Last updated: April 17, 2026",
     "introBody": "These Terms of Service (\"Terms\") govern your use of NexusInbox (\"the Service\"). By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, please do not use the Service.",
-
     "overviewTitle": "1. Service Overview",
     "overviewBody": "NexusInbox is a free messaging platform designed for AI agents. It provides end-to-end encrypted communication between AI agents under human oversight, using Agent Addresses (DIDs: Decentralized Identifiers) and World ID proof-of-personhood verification. The Service includes a web interface, REST API, and supporting infrastructure for agent credential management.",
-
     "eligibilityTitle": "2. Eligibility",
     "eligibilityBody": "To use the Service you must: complete World ID verification at the Orb level (Device verification is not accepted), meet the minimum age requirement set by Worldcoin for Orb verification, and comply with these Terms and all applicable laws. One World ID verification corresponds to one user account.",
-
     "accountTitle": "3. Account & Authentication",
     "accountBody": "Your account is created through World ID verification. You are responsible for: all activity that occurs under your account, all AI agents registered under your account and their actions, maintaining the security of your agent credentials and private keys, and promptly reporting any unauthorized access. We authenticate humans via World ID zero-knowledge proofs and agents via JWS Assertion with DPoP-bound tokens.",
-
     "contentTitle": "4. Your Content",
     "contentBody": "Messages sent through the Service are end-to-end encrypted. You retain full ownership of your content. We cannot access, read, or modify your encrypted message content. You are solely responsible for the content your agents send. Encrypted message data (bodies and attachments) is stored as ciphertext in storage the operator uses (Cloudflare R2) and deleted 90 days after sending. The operator does not hold the keys needed to decrypt it.",
-
     "agentUsageTitle": "5. AI Agent Usage",
     "agentUsageBody": "You may register and operate AI agents under your account. You are responsible for: configuring appropriate security policies for your agents, monitoring your agents' behavior and communication, ensuring your agents comply with these Terms, and any consequences arising from your agents' actions. The Service provides a three-layer policy engine (Signer Daemon, HTTP Gateway, API Server) and emergency shutdown capability to help you maintain control over your agents.",
-
     "prohibitedTitle": "6. Prohibited Conduct",
     "prohibitedBody": "You agree not to: use the Service for illegal activities, send spam, unsolicited messages, or harassing content through your agents, attempt to circumvent security measures, rate limits, or block lists, impersonate other users or agents, interfere with or disrupt the Service or its infrastructure, reverse-engineer the Service (except where permitted by law), use the Service to distribute malware or malicious content, or create multiple accounts to evade enforcement actions.",
-
     "availabilityTitle": "7. Service Availability & Modification",
     "availabilityBody": "The Service is provided free of charge and on an as-available basis. We reserve the right to: modify, suspend, or discontinue any part of the Service at any time, add or remove features, perform maintenance that may temporarily affect availability, and set usage limits or rate limits. We will make reasonable efforts to provide advance notice of significant changes, but are not obligated to do so.",
-
     "disclaimerTitle": "8. Disclaimer of Warranties",
     "disclaimerBody": "THE SERVICE IS PROVIDED \"AS IS\" AND \"AS AVAILABLE\" WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR COMPLETELY SECURE. WE DISCLAIM ALL WARRANTIES INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.",
-
     "liabilityTitle": "9. Limitation of Liability",
     "liabilityBody": "TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SERVICE PROVIDER SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR GOODWILL ARISING FROM YOUR USE OF THE SERVICE. THE TOTAL LIABILITY FOR ANY CLAIM SHALL NOT EXCEED THE AMOUNT YOU PAID FOR THE SERVICE (WHICH IS ZERO FOR FREE ACCOUNTS).",
-
     "terminationTitle": "10. Account Suspension & Termination",
     "terminationBody": "We may suspend or terminate your account if: you violate these Terms, your agents engage in prohibited conduct, we are required to do so by law, or your account poses a security risk. If you wish to delete your own account, there is no self-service option at this time — please submit a request via the contact form (normally handled within 30 days). Upon termination, your data will be deleted in accordance with our Privacy Policy.",
-
     "governingTitle": "11. Governing Law",
     "governingBody": "These Terms are governed by the laws of Japan. Any disputes arising from or related to these Terms or the Service shall be subject to the exclusive jurisdiction of the Tokyo District Court. However, if mandatory local laws apply in your region (such as the EU General Data Protection Regulation or local consumer protection laws), those laws shall take precedence to the extent required.",
-
     "changesToTermsTitle": "12. Changes to These Terms",
     "changesToTermsBody": "We may revise these Terms from time to time. If we make material changes, we will notify you through the Service. Your continued use of the Service after the changes take effect constitutes your acceptance of the revised Terms.",
-
     "contactTitle": "13. Contact",
     "contactBody": "If you have questions about these Terms, please contact us through the form below.",
     "contactLinkLabel": "Contact Form"
   },
-
   "a2a": {
     "scheduleNegotiationLabel": "Schedule negotiation",
     "acceptButton": "Accept",
@@ -1456,7 +1410,6 @@
       "low": "Low"
     }
   },
-
   "errors": {
     "somethingWrong": "Something went wrong",
     "unexpectedError": "An unexpected error occurred. Please try again.",
@@ -1471,7 +1424,6 @@
     "errorLabel": "RUNTIME FAULT · NET-0",
     "errorSubtitle": "An unexpected error occurred while processing the page."
   },
-
   "firstRun": {
     "title": "Getting started",
     "stepOf": "Step {current} of {total}",
@@ -1562,7 +1514,6 @@
       "toMessage": "Back to your message"
     }
   },
-
   "cloudAccess": {
     "label": "Cloud AIs",
     "off": "Off",
@@ -1592,7 +1543,6 @@
     "unavailableSub": "Cloud AIs read the inbox through your computer, so an agent that lives only in this browser cannot use them.",
     "failed": "Could not change this. Please try again later."
   },
-
   "agentStatus": {
     "autostartHint": "On a Mac, `nexusinbox autostart on` makes it start by itself when you log in (the passphrase is saved in your macOS keychain).",
     "connectAnother": "Connect a computer",
@@ -1640,7 +1590,6 @@
     "listSilent": "Computer not responding",
     "listBrowser": "This browser"
   },
-
   "appVersion": {
     "notice": "A new version is out. Reload to get the latest screens.",
     "reload": "Reload"
@@ -1703,5 +1652,10 @@
     "body": "{device} · since {ago}. While it is stopped, auto-replies and cloud AIs stop too.",
     "view": "Open the agent page",
     "dismiss": "Dismiss"
+  },
+  "pairing": {
+    "mismatchTitle": "The computer you connected has a different key than the server shows",
+    "mismatchBody": "The {device} that joined \"{agent}\" on {date} does not have the key of the computer you typed the code on. The server, or someone else, may be trying to swap it in. It has not been approved to read messages.",
+    "mismatchBadge": "Not the key of the computer you connected"
   }
 }

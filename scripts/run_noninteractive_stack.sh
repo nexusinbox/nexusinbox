@@ -59,11 +59,11 @@ only_agent_dir() {
 }
 case "${1:-}" in
   start | stop | status | run) AGENT_DIR="${2:-}"; DIR_GIVEN="${2:+1}" ;;
-  autostart) AGENT_DIR="${3:-}"; DIR_GIVEN="${3:+1}" ;;
+  autostart | trust) AGENT_DIR="${3:-}"; DIR_GIVEN="${3:+1}" ;;
   *) AGENT_DIR=""; DIR_GIVEN="" ;;
 esac
 case "${1:-}" in
-  start | stop | status | run | autostart)
+  start | stop | status | run | autostart | trust)
     # Settings spelled out in the environment (docs/19) need no directory.
     if [ -z "$DIR_GIVEN" ] && [ -z "${AGENT_INBOX_AID:-}" ]; then
       AGENT_DIR="$(only_agent_dir)" || exit 1
@@ -135,6 +135,10 @@ Usage:
 Or enroll the daemon by hand first (docs/19 §3.1):
   nexusinbox-signer --enroll ...
 
+  $SELF_NAME trust <aid> [<dir>]
+      Another agent's key has changed and sending to it stopped. Once you
+      have confirmed with them that they made a new key, remember it.
+
   $SELF_NAME autostart on|off [<dir>]      (macOS)
       Start the agent by itself when you log in: the passphrase is saved in
       the login keychain, readable only by nexusinbox-signer (docs/39).
@@ -142,6 +146,7 @@ Or enroll the daemon by hand first (docs/19 §3.1):
 
 Commands:
   connect Pair with the web UI, then start
+  trust   Accept another agent's new key
   start   Ask for the key passphrase (one stdin line when not a terminal),
           then start signer-daemon and agent-gateway in background
   stop    Stop both processes
@@ -263,6 +268,7 @@ start() {
       --llm-socket "$GATEWAY_SOCKET" \
       --signer-socket "$SIGNER_SOCKET" \
       --api-url "$API_URL" \
+      ${AGENT_DIR:+--state-dir "$AGENT_DIR"} \
       ${MCP_RELAY:+--mcp-relay "$MCP_RELAY" --mcp-acme-cache "$AGENT_DIR/acme"}
   ) >"$GATEWAY_LOG" 2>&1 &
   echo $! >"$GATEWAY_PID_FILE"
@@ -418,6 +424,20 @@ connect() {
     echo "  $SELF_NAME start $agent_dir" >&2
     exit 1
   fi
+  # docs/40 §13.4: the browser that made the code sends the agent's key;
+  # the gateway checks it with the code's secret and then deletes that.
+  if [ -f "$agent_dir/pairing-secret.json" ]; then
+    waited=0
+    while [ -f "$agent_dir/pairing-secret.json" ] && [ "$waited" -lt 30 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if [ -f "$agent_dir/pairing-secret.json" ]; then
+      echo "Waiting for the browser to send the agent's key; keep the NexusInbox page open. The agent checks it when it arrives." >&2
+    else
+      echo "Checked the agent's key the browser sent." >&2
+    fi
+  fi
   # docs/39: offer to start at login. No unless the person says yes.
   if [ -t 0 ] && [ "$(uname)" = Darwin ]; then
     echo "" >&2
@@ -435,6 +455,22 @@ connect() {
   echo ""
   echo "Connected. Next time, start this agent with:"
   echo "  $SELF_NAME start $agent_dir"
+}
+
+# `trust <aid> [<dir>]` (docs/40 §13.3): after an agent's device list came
+# back signed by another key, remember the new key once the person has
+# confirmed it with them. Asks first; never for a list that does not check out.
+trust() {
+  target="${1:-}"
+  if [ -z "$target" ]; then
+    usage
+    exit 1
+  fi
+  if [ -z "$AGENT_DIR" ]; then
+    echo "trust needs the agent's directory." >&2
+    exit 1
+  fi
+  exec_gateway --state-dir "$AGENT_DIR" --trust "$target"
 }
 
 stop() {
@@ -488,6 +524,7 @@ case "$cmd" in
       *) usage; exit 1 ;;
     esac
     ;;
+  trust) trust "${2:-}" ;;
   stop) stop ;;
   status) status ;;
   *) usage; exit 1 ;;

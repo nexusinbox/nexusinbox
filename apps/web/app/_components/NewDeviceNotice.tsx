@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { approvedWith, checkDeviceList, holdsRootKey, storeDeviceList } from "../../lib/agents/device-list";
+import { pairedHere, settlePairing } from "../../lib/agents/pairing";
 import { loadSeenDevices, saveSeenDevices, unseenDevices } from "../../lib/agents/devices";
 import { defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useEmergencyShutdownMutation } from "../../lib/api/hooks";
@@ -41,7 +42,12 @@ export async function acknowledgeDevicesAfterConnect(
     const agent = data.agents.find((a) => a.aid === aid);
     if (agent?.devices) saveSeenDevices(aid, agent.devices);
     const connected = agent?.devices?.find((d) => credentialId && d.credential_id === credentialId);
-    if (agent && connected && (await holdsRootKey(agent))) {
+    // Connected with a code made here: approve only if its keys match.
+    if (agent && connected && pairedHere(connected)) {
+      if ((await settlePairing(agent)).changed) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+      }
+    } else if (agent && connected && (await holdsRootKey(agent))) {
       const status = await checkDeviceList(agent);
       if (status.kind !== "broken") {
         await storeDeviceList(agent, approvedWith(agent, status, [connected.did]));
@@ -76,7 +82,9 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
           saveSeenDevices(agent.aid, devices);
           continue;
         }
-        const added = unseenDevices(devices, seen);
+        // A computer connected with a code made here is checked against
+        // the code instead (DeviceListNotice).
+        const added = unseenDevices(devices, seen).filter((d) => !pairedHere(d));
         if (added.length > 0) next.push({ agent, devices: added, rootHere: await holdsRootKey(agent) });
       }
       if (!cancelled) setPending(next);

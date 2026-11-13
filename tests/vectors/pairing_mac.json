@@ -1,0 +1,62 @@
+{
+  "description": "Pairing MACs (docs/40 §13.5). key = the secret's 16 normalized characters as ASCII; device = HMAC-SHA256(key, \"nexusinbox-pair-device-v1\\n\" + credential_id + \"\\n\" + did + \"\\n\" + enc); root = HMAC-SHA256(key, \"nexusinbox-pair-root-v1\\n\" + credential_id + \"\\n\" + aid + \"\\n\" + root); base64url without padding. codes: how a typed connect code splits (code null = rejected).",
+  "macs": [
+    {
+      "secret": "H3TD9QWB0KMAR4XE",
+      "credential_id": "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f",
+      "did": "did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp",
+      "enc": "6TjNz_3l4yB2ZYAlvy-NUi1fQ4tdOGhH-HMzQ7spKGw",
+      "aid": "aid:ai:01VECTORAGENT0000000000000",
+      "root": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+      "device_mac": "Q6xyTjx2jzssdfdxCs-_EowVhs_pPIlmMqwz_76aPco",
+      "root_mac": "f9wHysbrEpQSFSreR8lrZYHkXQne5cMKRFlSKsKkw3E"
+    },
+    {
+      "secret": "0000000000000000",
+      "credential_id": "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f",
+      "did": "did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp",
+      "enc": "6TjNz_3l4yB2ZYAlvy-NUi1fQ4tdOGhH-HMzQ7spKGw",
+      "aid": "aid:ai:01VECTORAGENT0000000000000",
+      "root": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+      "device_mac": "cdArNzMEmiDhIJCGY4AOFk9w0Gi-GRMY3iskJhhhhZ8",
+      "root_mac": "jPSQgwgg9QCiJA6WGUNHJQeoFmhRWiT4r_2lEPPPiVo"
+    },
+    {
+      "secret": "H3TD9QWB0KMAR4XE",
+      "credential_id": "00000000-0000-4000-8000-000000000001",
+      "did": "did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp",
+      "enc": "AAAA",
+      "aid": "aid:ai:01VECTORAGENT0000000000000",
+      "root": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+      "device_mac": "_I8sHZZ_kDYeQ9rCXseBYPKHfLYbAWPJ3g1ggA890JM",
+      "root_mac": "5vD_F3vDLj3rqnyUglL_LJ4q2P1AKmMOnz85WY9-74M"
+    }
+  ],
+  "codes": [
+    {
+      "input": "7KQ4P-ZX9M2-H3TD-9QWB-0KMA-R4XE",
+      "code": "7KQ4P-ZX9M2",
+      "secret": "H3TD9QWB0KMAR4XE"
+    },
+    {
+      "input": "7kq4p zx9m2 h3td 9qwb okma r4xe",
+      "code": "7KQ4P-ZX9M2",
+      "secret": "H3TD9QWB0KMAR4XE"
+    },
+    {
+      "input": "7KQ4P-ZX9M2",
+      "code": "7KQ4P-ZX9M2",
+      "secret": null
+    },
+    {
+      "input": "7KQ4P-ZX9M2-H3TD",
+      "code": null,
+      "secret": null
+    },
+    {
+      "input": "7KQ4P-ZX9M2-H3TD-9QWB-0KMA-R4XU",
+      "code": null,
+      "secret": null
+    }
+  ]
+}

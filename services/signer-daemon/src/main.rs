@@ -1203,6 +1203,7 @@ async fn run_enroll(cli: &Cli) -> i32 {
         &key_file,
         encryption_key_file,
         None,
+        None,
     )
     .await
     {
@@ -1276,6 +1277,7 @@ async fn activate_with_new_keys(
     key_file: &Path,
     encryption_key_file: &Path,
     device_label: Option<&str>,
+    pairing_secret: Option<&str>,
 ) -> Result<(String, String), Refused> {
     let passphrase = prompt_new_passphrase(cli.unsafe_plaintext_key);
     let signing_key = generate_and_save_key(key_file, passphrase.as_deref(), cli.force);
@@ -1292,6 +1294,16 @@ async fn activate_with_new_keys(
     });
     if let Some(label) = device_label {
         body["device_label"] = serde_json::json!(label);
+    }
+    // With a long connect code: MAC these keys with its secret, so the
+    // browser that made the code can tell they are this computer's.
+    if let Some(secret) = pairing_secret {
+        body["pairing_mac"] = serde_json::json!(pairing_device_mac(
+            secret,
+            credential_id,
+            &derive_did_from_verifying_key(&signing_key.verifying_key()),
+            body["encryption_public_key"].as_str().unwrap_or_default(),
+        ));
     }
     let url = format!(
         "{}/agent-credentials/{}/activate",
@@ -1336,8 +1348,35 @@ fn error_message(text: &str) -> String {
 /// spaces, O for 0 and I or L for 1 — the way the API does.
 const PAIRING_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-fn normalize_pairing_code(raw: &str) -> Option<String> {
-    let mut out = String::with_capacity(10);
+/// A connect code as typed: the server's 10-symbol pairing code and, in a
+/// long code, the 16 symbols after it that only the browser and this
+/// computer know (docs/40 §13.5). Only the first part goes to the server.
+fn split_connect_code(raw: &str) -> Option<(String, Option<String>)> {
+    let all = normalize_code_symbols(raw)?;
+    match all.len() {
+        10 => Some((all, None)),
+        26 => Some((all[..10].to_string(), Some(all[10..].to_string()))),
+        _ => None,
+    }
+}
+
+/// HMAC-SHA256 with the connect code's secret over this computer's keys,
+/// base64url: `"nexusinbox-pair-device-v1\n" + credential_id + "\n" + did
+/// + "\n" + enc` (tests/vectors/pairing_mac.json).
+fn pairing_device_mac(secret: &str, credential_id: &str, did: &str, enc: &str) -> String {
+    use hmac::{Hmac, Mac};
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret.as_bytes())
+        .expect("HMAC takes any key length");
+    mac.update(format!("nexusinbox-pair-device-v1\n{credential_id}\n{did}\n{enc}").as_bytes());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
+/// Where `connect` leaves the secret until the gateway has checked the
+/// agent's root with it (docs/40 §13.4).
+const DIR_PAIRING_SECRET: &str = "pairing-secret.json";
+
+fn normalize_code_symbols(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(26);
     for c in raw.chars() {
         if c == '-' || c.is_whitespace() {
             continue;
@@ -1355,7 +1394,7 @@ fn normalize_pairing_code(raw: &str) -> Option<String> {
         }
         out.push(c);
     }
-    (out.len() == 10).then_some(out)
+    Some(out)
 }
 
 /// The directory under ~/.nexusinbox for an agent, named after it the way
@@ -1414,8 +1453,8 @@ fn device_label() -> &'static str {
 
 /// `--connect <code>`: see the flag. Returns the process exit code.
 async fn run_connect(cli: &Cli, raw_code: &str) -> i32 {
-    let Some(code) = normalize_pairing_code(raw_code) else {
-        eprintln!("[ERROR] A pairing code is 10 letters and digits, like 7KQ4P-ZX9M2.");
+    let Some((code, pairing_secret)) = split_connect_code(raw_code) else {
+        eprintln!("[ERROR] A connect code is 26 letters and digits, like 7KQ4P-ZX9M2-H3TD-9QWB-0KMA-R4XE. Copy it again from the NexusInbox app.");
         return 2;
     };
     let api_url = cli.api_url.trim_end_matches('/');
@@ -1521,10 +1560,23 @@ async fn run_connect(cli: &Cli, raw_code: &str) -> i32 {
         &key_file,
         &encryption_key_file,
         Some(device_label()),
+        pairing_secret.as_deref(),
     )
     .await
     {
         Ok((activated_aid, _)) => {
+            if let Some(secret) = &pairing_secret {
+                let path = dir.join(DIR_PAIRING_SECRET);
+                let contents = serde_json::json!({
+                    "credential_id": credential_id,
+                    "aid": activated_aid,
+                    "secret": secret,
+                })
+                .to_string();
+                if let Err(e) = write_key_file_0600(&path, contents.as_bytes(), true) {
+                    eprintln!("[WARN] Could not write {}: {e}", path.display());
+                }
+            }
             let contents = agent_env_contents(
                 api_url,
                 &activated_aid,
@@ -2207,18 +2259,45 @@ mod tests {
     }
 
     #[test]
+    fn long_connect_codes_split_and_mac_like_the_vectors() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/pairing_mac.json"
+        );
+        let vectors: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for c in vectors["codes"].as_array().unwrap() {
+            let got = split_connect_code(c["input"].as_str().unwrap());
+            let want = c["code"].as_str().map(|code| {
+                (
+                    code.replace('-', ""),
+                    c["secret"].as_str().map(str::to_string),
+                )
+            });
+            assert_eq!(got, want, "{c}");
+        }
+        for c in vectors["macs"].as_array().unwrap() {
+            let s = |k: &str| c[k].as_str().unwrap();
+            assert_eq!(
+                pairing_device_mac(s("secret"), s("credential_id"), s("did"), s("enc")),
+                s("device_mac")
+            );
+        }
+    }
+
+    #[test]
     fn pairing_codes_are_read_as_typed() {
         assert_eq!(
-            normalize_pairing_code("7kq4p-zx9m2").as_deref(),
-            Some("7KQ4PZX9M2")
+            split_connect_code("7kq4p-zx9m2"),
+            Some(("7KQ4PZX9M2".into(), None))
         );
         assert_eq!(
-            normalize_pairing_code(" 7KQ4P ZX9M2 ").as_deref(),
-            Some("7KQ4PZX9M2")
+            split_connect_code(" 7KQ4P ZX9M2 "),
+            Some(("7KQ4PZX9M2".into(), None))
         );
         assert_eq!(
-            normalize_pairing_code("OIL00-11111").as_deref(),
-            Some("0110011111")
+            split_connect_code("OIL00-11111"),
+            Some(("0110011111".into(), None))
         );
         for bad in [
             "",
@@ -2227,7 +2306,7 @@ mod tests {
             "7KQ4P-ZX9MU",
             "ens_abcdefghij",
         ] {
-            assert_eq!(normalize_pairing_code(bad), None, "{bad:?}");
+            assert_eq!(split_connect_code(bad), None, "{bad:?}");
         }
     }
 

@@ -107,6 +107,8 @@ export type AgentDevice = {
   last_used_at?: string | null;
   /** Revoking it takes the computer out of the recipient set. */
   credential_id?: string | null;
+  /** The computer's MAC over its keys with the connect code's secret (docs/40 §13.5). */
+  pairing_mac?: string;
 };
 
 export type AgentsResponse = {

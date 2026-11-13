@@ -67,7 +67,9 @@ pub trait ExecutorBackend: Send + Sync {
     async fn fetch_config(&self) -> Result<AutoReplyConfig, String>;
     async fn fetch_pending_messages(&self) -> Result<Vec<PendingMessage>, String>;
     async fn fetch_message_content(&self, message_id: &str) -> Result<MessageContent, String>;
-    async fn resolve_recipient(&self, did: &str) -> Result<RecipientPubkey, String>;
+    /// The agent `did` belongs to, with the devices to wrap for once its
+    /// signed device list checked out (docs/40 §13.2).
+    async fn resolve_recipient(&self, did: &str) -> Result<RecipientPubkey, ResolveError>;
     /// The signer daemon's DID (`get_public_key`), which replies are sent from.
     async fn fetch_our_did(&self) -> Result<String, String>;
     /// The daemon's own X25519 public key (`get_public_key`), if it has one.
@@ -96,6 +98,39 @@ pub trait ExecutorBackend: Send + Sync {
         message_id: &str,
         reply_message_id: Option<&str>,
     ) -> Result<(), String>;
+    /// `POST /messages/{id}/auto-reply-skip`: the reply was left to the
+    /// person because the sender's device list did not check out.
+    async fn skip_auto_reply(&self, message_id: &str, reason: &str) -> Result<(), String>;
+}
+
+/// Why a recipient could not be used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    /// Its signed device list did not check out (docs/40 §13.3): the
+    /// reason code. Nothing is sent and the row is left to the person.
+    Stopped(&'static str),
+    Failed(String),
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolveError::Stopped(reason) => write!(f, "device list did not check out ({reason})"),
+            ResolveError::Failed(e) => f.write_str(e),
+        }
+    }
+}
+
+impl From<String> for ResolveError {
+    fn from(e: String) -> Self {
+        ResolveError::Failed(e)
+    }
+}
+
+impl From<&str> for ResolveError {
+    fn from(e: &str) -> Self {
+        ResolveError::Failed(e.to_string())
+    }
 }
 
 /// The agent's own auto-reply settings (docs/29 §2.1).
@@ -417,7 +452,18 @@ async fn dispatch_one<B: ExecutorBackend>(
     // 4. Seal and sign. Nothing has been sent, so a failure gives the claim back.
     let body = match seal_reply(backend, state, entry, reply_block).await {
         Ok(body) => body,
-        Err(e) => {
+        // The sender's device list did not check out: keep the claim and
+        // leave the reply to the person, saying why (docs/40 §13.3).
+        Err(ResolveError::Stopped(reason)) => {
+            eprintln!(
+                "[auto-reply] {id}: not answering: the sender's device list did not check out ({reason}); left to the person"
+            );
+            if let Err(e) = backend.skip_auto_reply(id, reason).await {
+                eprintln!("[auto-reply] {id}: recording the skip failed: {e}");
+            }
+            return DispatchOutcome::Abandoned;
+        }
+        Err(ResolveError::Failed(e)) => {
             release_claim(backend, id).await;
             return failed(id, "prepare reply", &e);
         }
@@ -534,12 +580,15 @@ async fn seal_reply<B: ExecutorBackend>(
     state: &mut ExecutorState,
     entry: &PendingMessage,
     reply_block: Value,
-) -> Result<Value, String> {
+) -> Result<Value, ResolveError> {
     // The sender of the original is the recipient of the reply.
     let recipient = backend
         .resolve_recipient(&entry.sender_did)
         .await
-        .map_err(|e| format!("resolve_recipient: {e}"))?;
+        .map_err(|e| match e {
+            ResolveError::Failed(e) => ResolveError::Failed(format!("resolve_recipient: {e}")),
+            stopped => stopped,
+        })?;
     let sender_did = our_did(backend, state).await?;
     let content_key = generate_content_key();
     let subject = encrypt_envelope_text(AUTO_REPLY_SUBJECT, &content_key)?;
@@ -729,7 +778,7 @@ mod tests {
         // Answers to `fetch_our_did` in order; the last one repeats.
         our_did_answers: Mutex<VecDeque<Result<String, String>>>,
         our_encryption_key: Option<String>,
-        resolve_error: Option<String>,
+        resolve_error: Option<ResolveError>,
         claim: Result<bool, String>,
         post_error: Option<PostReplyError>,
         // Every call in order, e.g. "content:msg-1", "claim:msg-1", "post".
@@ -794,12 +843,17 @@ mod tests {
                 .ok_or_else(|| "missing content".into())
         }
 
-        async fn resolve_recipient(&self, _did: &str) -> Result<RecipientPubkey, String> {
+        async fn resolve_recipient(&self, _did: &str) -> Result<RecipientPubkey, ResolveError> {
             self.log("resolve");
             match &self.resolve_error {
                 Some(e) => Err(e.clone()),
                 None => Ok(self.pubkey.clone()),
             }
+        }
+
+        async fn skip_auto_reply(&self, id: &str, reason: &str) -> Result<(), String> {
+            self.log(format!("skip:{id}:{reason}"));
+            Ok(())
         }
 
         async fn fetch_our_did(&self) -> Result<String, String> {
@@ -1283,6 +1337,22 @@ mod tests {
         assert!(backend.position("claim:msg-1") < backend.position("release:msg-1"));
         assert_eq!(backend.count("post"), 0);
         assert!(backend.marked().is_empty());
+    }
+
+    /// The sender's device list did not check out (docs/40 §13.3): nothing
+    /// is sent, the claim is kept for the person, and the skip is recorded.
+    #[tokio::test]
+    async fn a_stopped_recipient_is_left_to_the_person() {
+        let mut backend = make_backend();
+        backend.resolve_error = Some(ResolveError::Stopped("root_changed"));
+        let mut state = ExecutorState::default();
+        let report = run_one_tick(&backend, &mut state, now()).await;
+        assert_eq!((report.sent, report.errors), (0, 1));
+        assert_eq!(backend.count("skip:msg-1:root_changed"), 1);
+        assert_eq!(backend.count("release:"), 0);
+        assert_eq!(backend.count("post"), 0);
+        assert!(backend.marked().is_empty());
+        assert!(state.failures.is_empty());
     }
 
     #[tokio::test]

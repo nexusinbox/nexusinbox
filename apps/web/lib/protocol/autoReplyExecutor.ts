@@ -44,6 +44,11 @@ export type AutoReplyExecutorApi = {
   /** `false` when another executor holds the row (docs/29 §2.5). */
   claimAutoReply: (id: string) => Promise<boolean>;
   releaseAutoReplyClaim: (id: string) => Promise<void>;
+  /**
+   * Record that the reply was left to the person because the sender's
+   * device list did not check out (docs/40 §13.3).
+   */
+  skipAutoReply?: (id: string, reason: string) => Promise<void>;
 };
 
 /**
@@ -393,6 +398,10 @@ export async function runAutoReplyExecutor(
       } catch (error) {
         if (sendCertainlyFailed(error)) {
           await input.api.releaseAutoReplyClaim(entry.id).catch(() => undefined);
+        }
+        if (error instanceof Error && error.name === "SendStop" && input.api.skipAutoReply) {
+          const reason = String((error as { reason?: unknown }).reason ?? "");
+          await input.api.skipAutoReply(entry.id, reason).catch(() => undefined);
         }
         throw error;
       }

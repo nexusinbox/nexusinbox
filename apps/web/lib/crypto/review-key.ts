@@ -13,7 +13,7 @@ import { decryptEnvelopeTextWithContentKey } from "./envelope";
 import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
 import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForSender } from "./keywrap";
 import { generateX25519KeyPairMaterial } from "./recipient-keyring";
-import { deviceWraps, planSend } from "./device-wraps";
+import { deviceWraps, planSend, SendStop } from "./device-wraps";
 
 const PRIVATE_KEY_ID = "nexusinbox.review-key.v1";
 const PUBLIC_KEY_STORAGE = "nexusinbox.review-key.pub.v1";
@@ -134,6 +134,11 @@ export async function draftDeviceWraps(
 ): Promise<{ encryptedKeys: KeyWrap[]; senderEncryptedKeys: KeyWrap[] }> {
   const served = await defaultApiClient.resolveRecipient(draft.recipient_did);
   const plan = await planSend(served, draft.recipient_did, draft.sender_did, { acceptRoot });
+  // The draft's own wrap went to `recipient_did`: it must be one of the
+  // devices the recipient's list names (docs/40 §13.6).
+  if (!plan.unlisted && !plan.recipientDevices.some((d) => d.did === draft.recipient_did)) {
+    throw new SendStop("signature", served.aid);
+  }
   if (!opened) return { encryptedKeys: [], senderEncryptedKeys: [] };
   return deviceWraps(opened.contentKey, plan);
 }

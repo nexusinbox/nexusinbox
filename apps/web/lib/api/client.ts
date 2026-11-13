@@ -412,6 +412,25 @@ export class NexusInboxApiClient {
     }
   }
 
+  /**
+   * Record that an auto-reply was left to the person because the sender's
+   * device list did not check out (docs/40 §13.3). Reason code only.
+   */
+  async skipAutoReply(id: string, reason: string): Promise<void> {
+    await this.requestNoContent("/messages/" + encodeURIComponent(id) + "/auto-reply-skip", {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  /** The browser's MAC over the agent's root, for a paired computer (docs/40 §13.5). */
+  async putPairingRoot(credentialId: string, mac: string): Promise<void> {
+    await this.requestNoContent("/agent-credentials/" + encodeURIComponent(credentialId) + "/pairing-root", {
+      method: "PUT",
+      body: JSON.stringify({ mac }),
+    });
+  }
+
   async seedMessage(params: {
     senderDid: string;
     recipientDid: string;

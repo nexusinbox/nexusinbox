@@ -744,3 +744,90 @@ async fn older_rows_get_their_reply_id_from_the_audit_log() {
     assert_eq!(reply_of(handled).await, None);
     assert_eq!(reply_of(spoofed).await, None);
 }
+
+async fn post_skip(app: &axum::Router, row: Uuid, auth: &str, reason: &str) -> StatusCode {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/messages/{row}/auto-reply-skip"))
+                .header("authorization", auth)
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "reason": reason }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+}
+
+/// An executor that left an auto-reply to the person records why, with
+/// the reason code only, so every device shows it (docs/40 §13.3).
+#[tokio::test]
+#[serial]
+async fn a_skipped_auto_reply_is_recorded_with_its_reason() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xskip").await;
+    let agent = seed_agent(&pool, &owner, "a", true).await;
+    let sibling = seed_agent(&pool, &owner, "b", true).await;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+    let row = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+    let sibling_row = seed_pending_row(&pool, &owner, "did:key:zfriend", &sibling).await;
+
+    assert_eq!(
+        post_skip(&app, row, &token, "root_changed").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        post_skip(&app, row, &owner.session, "no_device").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        post_skip(&app, row, &token, "because").await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        post_skip(&app, sibling_row, &token, "signature").await,
+        StatusCode::NOT_FOUND
+    );
+
+    let mut rows: Vec<(Option<String>, Option<Uuid>, Value)> = Vec::new();
+    for _ in 0..40 {
+        rows = sqlx::query_as(
+            "SELECT aid, credential_id, detail FROM agent_audit_log \
+             WHERE event = 'auto_reply_skipped' ORDER BY detail->>'by' DESC",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        if rows.len() == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    let (aid, credential, detail) = &rows[0];
+    assert_eq!(aid.as_deref(), Some(agent.aid.as_str()));
+    assert!(credential.is_some());
+    assert_eq!(detail["by"], "computer");
+    assert_eq!(detail["reason"], "root_changed");
+    assert_eq!(detail["sender_did"], "did:key:zfriend");
+    assert_eq!(detail["message_id"], row.to_string());
+    let (aid, credential, detail) = &rows[1];
+    assert_eq!(aid.as_deref(), Some(agent.aid.as_str()));
+    assert!(credential.is_none());
+    assert_eq!(detail["by"], "browser");
+    assert_eq!(detail["reason"], "no_device");
+
+    // The claim is untouched: the reply stays with the person.
+    let claimed: Option<String> =
+        sqlx::query_scalar("SELECT auto_reply_sent_at::text FROM message_index WHERE id = $1")
+            .bind(row)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(claimed, None);
+}

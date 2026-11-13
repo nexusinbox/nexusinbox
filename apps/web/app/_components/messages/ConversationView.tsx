@@ -21,6 +21,7 @@ import type { A2ARespondPayload } from "../../../lib/protocol/a2aReply";
 import {
   queryKeys as apiQueryKeys,
   useAgentDraftsQuery,
+  useAuditLogQuery,
   useDeleteAgentDraftMutation,
   useReviewKeysQuery,
   useSendAgentDraftMutation,
@@ -64,7 +65,6 @@ import {
 } from "../../../lib/inbox/conversations";
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
 import { deviceWraps, isSendStop, isUnlisted, planSend, type SendStop } from "../../../lib/crypto/device-wraps";
-import { latestAutoReplySkip, onAutoReplySkip } from "../../../lib/protocol/auto-reply-skips";
 import { SendStopNotice, UnlistedHint } from "./SendStopNotice";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
@@ -154,14 +154,16 @@ export function ConversationView({
     stop: SendStop;
     retry: (root: string) => Promise<void>;
   } | null>(null);
-  // An auto-reply this browser did not send to them (docs/40 §12.5).
-  const [skipTick, setSkipTick] = useState(0);
-  useEffect(() => onAutoReplySkip(() => setSkipTick((n) => n + 1)), []);
-  const autoReplySkip = useMemo(
-    // skipTick: read again when a skip is recorded.
-    () => (skipTick >= 0 ? latestAutoReplySkip(conversation.ownDids, conversation.counterpartDid) : null),
-    [conversation.ownDids, conversation.counterpartDid, skipTick],
-  );
+  // An auto-reply a browser or the computer did not send to them, as the
+  // server recorded it (docs/40 §13.3).
+  const skips = useAuditLogQuery({ event: "auto_reply_skipped", limit: 50 }, { refetchInterval: 30_000 });
+  const autoReplySkip = useMemo(() => {
+    const found = skips.data?.events.find((e) => e.detail?.sender_did === conversation.counterpartDid);
+    if (!found) return null;
+    // Once the person has written to them since, the line has done its job.
+    const answered = conversation.messages.some((m) => m.mine && Date.parse(m.entry.created_at) > Date.parse(found.created_at));
+    return answered ? null : { reason: String(found.detail.reason ?? "") };
+  }, [skips.data, conversation.counterpartDid, conversation.messages]);
 
   const [rendered, setRendered] = useState<Record<string, Rendered>>({});
   const [menuOpen, setMenuOpen] = useState(false);

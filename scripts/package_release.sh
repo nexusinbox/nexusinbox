@@ -39,6 +39,9 @@ Connect this computer to an agent with the pairing code the web app shows:
   nexusinbox connect <code>
 Start, stop or check it later:
   nexusinbox start|stop|status <folder shown when it connected>
+If sending stops because another agent's key changed, and you have
+confirmed the new key with them:
+  nexusinbox trust <their aid:ai:...>
 
 Keep nexusinbox, nexusinbox-signer and nexusinbox-gateway in the same folder.
 https://github.com/nexusinbox/nexusinbox

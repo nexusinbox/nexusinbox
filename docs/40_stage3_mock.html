@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パソコンでも端末を確かめる（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; --danger-soft: #fdecef; --term: #14181f; --term-ink: #d7dde6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .head { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 17px; }
+  .body { padding: 18px 22px; }
+  .foot { border-top: 1px solid var(--line); padding: 12px 20px; color: var(--muted); font-size: 13px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .step { font-weight: 700; margin: 14px 0 6px; }
+  .cmd { display: flex; align-items: center; gap: 8px; background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 10px 12px; font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace; overflow-x: auto; }
+  .cmd span { flex: 1; white-space: nowrap; }
+  .cmd .secret { color: #9fe0b5; }
+  .cmd button { font: 12px system-ui; border: 1px solid #3a4250; background: transparent; color: var(--term-ink); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .note { margin-top: 10px; border-radius: 12px; background: var(--warn-soft); border: 1px solid #f0c36d; padding: 10px 12px; font-size: 13px; }
+  .okbox { margin-top: 12px; border-radius: 12px; background: var(--ok-soft); padding: 10px 12px; font-size: 14px; }
+  .banner { margin: 12px 16px; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--danger); background: var(--danger-soft); }
+  .banner b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .dev { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px dashed var(--line); }
+  .dev:first-child { border-top: 0; }
+  .ico { width: 34px; height: 34px; border-radius: 10px; background: var(--soft); display: grid; place-items: center; flex: none; }
+  .grow { flex: 1; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .b-here { color: var(--primary); background: var(--soft); }
+  .b-danger { color: var(--danger); background: var(--danger-soft); }
+  .b-ok { color: var(--ok); background: var(--ok-soft); }
+  .list { border-top: 1px solid var(--line); }
+  .row { display: flex; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+  .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 15px; background: var(--soft); }
+  .dot.warn { background: var(--warn-soft); }
+  .time { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+  .term { background: var(--term); color: var(--term-ink); font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace; padding: 16px 18px; white-space: pre-wrap; overflow-x: auto; }
+  .term .p { color: #7aa2f7; }
+  .term .ok { color: #9fe0b5; }
+  .term .warn { color: #f0c36d; }
+  .term .err { color: #f7768e; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>パソコンでも端末を確かめる（案）</h1>
+  <p class="lead">docs/40 段階 3。接続コードに、サーバに渡さない秘密を足す。パソコン側（自動返信・AI ツール・クラウドの AI の下書き）も送る前に相手の名簿を確かめる。<span class="new">新</span> が変わるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① パソコンをつなぐ</button>
+    <button data-s="s2">② つながったとき</button>
+    <button data-s="s3">③ 鍵が合わないとき</button>
+    <button data-s="s4">④ AI の操作履歴</button>
+    <button data-s="s5">⑤ パソコンのターミナル</button>
+  </div>
+
+  <!-- ① connect -->
+  <section id="s1" class="app">
+    <div class="head">はじめての設定 › パソコンとつなぎます</div>
+    <div class="body">
+      <p class="muted" style="margin:0">パソコンのターミナルで、次のコマンドを実行してください。この画面はそのままで大丈夫です。</p>
+      <div class="step">① はじめての場合は、プログラムを入れます（Mac、Homebrew）:</div>
+      <div class="cmd"><span>brew install nexusinbox/tap/nexusinbox</span><button>コピー</button></div>
+      <div class="step">② つなぎます:</div>
+      <div class="cmd"><span>nexusinbox connect 7KQ4P-ZX9M2-<span class="secret">H3TD-9QWB-0KMA-R4XE</span></span><button>コピー</button></div>
+      <p class="muted" style="margin:6px 0 0">実行すると、パソコンの中の鍵を守るパスフレーズを決めるよう聞かれます。</p>
+      <p class="muted" style="margin:4px 0 0">コードは 10 分間、1 回だけ使えます。人には教えないでください。<span class="new">新</span> 後半はこのブラウザとパソコンだけが知る部分で、運営のサーバには送りません。</p>
+      <div class="note"><b>すでに入れている場合</b>は、先に <code>brew upgrade nexusinbox</code> で最新（v0.5.0 以上）にしてください。古いままだと「A pairing code is 10 letters and digits」と出て、つながりません。<span class="new">新</span></div>
+      <p class="muted" style="margin:14px 0 0">⏳ パソコンからの接続を待っています…</p>
+    </div>
+    <div class="foot">コードは 10 文字 → 26 文字になる（コピーして貼るので手間は同じ）。後半の色分けは説明のためで、実際の画面では分けない。</div>
+  </section>
+
+  <!-- ② connected -->
+  <section id="s2" class="app" hidden>
+    <div class="head">はじめての設定 › パソコンとつなぎます</div>
+    <div class="body">
+      <div class="okbox">✓ 接続しました（パソコン（macOS））<br><span class="muted">このパソコンの鍵が、コードを打ったパソコンのものだと確かめ、読める端末として認めました。<span class="new">新</span></span></div>
+      <div style="margin-top:16px">
+        <div class="dev">
+          <div class="ico">🌐</div>
+          <div class="grow"><b>ブラウザ <span class="badge b-here">この端末</span></b>
+            <span class="muted">エージェントを作ったときの鍵 · 11/08 から</span></div>
+        </div>
+        <div class="dev">
+          <div class="ico">💻</div>
+          <div class="grow"><b>パソコン（macOS） <span class="badge b-ok">動作中</span></b>
+            <span class="muted">11/13 10:02 につないだ · いま確認</span></div>
+          <button class="btn">外す</button>
+        </div>
+      </div>
+    </div>
+    <div class="foot">いまの「このブラウザでつないだ直後は自動で認める」と見た目は同じ。違いは、認める前に鍵を確かめていること。ブラウザを閉じていても、次に開いたときに同じく確かめて認める（何も出さない）。</div>
+  </section>
+
+  <!-- ③ mismatch -->
+  <section id="s3" class="app" hidden>
+    <div class="head">メッセージ</div>
+    <div class="banner">
+      <b>つないだパソコンの鍵と、サーバが見せている鍵が違います <span class="new">新</span></b>
+      <span class="muted">「秘書」に 11/13 10:02 につながったパソコン（macOS）は、あなたがコードを打ったパソコンの鍵ではありません。運営のサーバか、だれかがすり替えようとしている可能性があります。このパソコンは読める端末として認めていません。</span>
+      <div class="actions"><button class="btn">端末を見る</button><button class="btn danger">外す</button><button class="btn danger">緊急停止</button></div>
+    </div>
+    <div class="body" style="border-top:1px solid var(--line)">
+      <div class="sec muted" style="font-weight:700;margin-bottom:6px">エージェント › 秘書 › 読める端末</div>
+      <div class="dev">
+        <div class="ico">💻</div>
+        <div class="grow"><b>パソコン（macOS） <span class="badge b-danger">つないだパソコンの鍵と違います</span> <span class="new">新</span></b>
+          <span class="muted">11/13 10:02 につないだ</span></div>
+        <button class="btn danger">外す</button>
+      </div>
+    </div>
+    <div class="foot">「認める」は出さない（すり替えの疑いが強いので）。外して、新しいコードでつなぎ直してもらう。</div>
+  </section>
+
+  <!-- ④ activity -->
+  <section id="s4" class="app" hidden>
+    <div class="head">AI の操作履歴</div>
+    <div class="list">
+      <div class="row"><div class="dot warn">⏸</div><div><b>秘書（パソコン） が アレックスさんの秘書 への自動返信を見送りました</b> <span class="new">新</span><div class="muted">相手の鍵が変わっています。返事が要るなら、確かめてから手で送ってください。</div></div><span class="time">10:41</span></div>
+      <div class="row"><div class="dot warn">⏸</div><div><b>秘書（このブラウザ） が ジェイミーさんの秘書 への自動返信を見送りました</b> <span class="new">新</span><div class="muted">相手の端末の一覧がおかしくなっています。</div></div><span class="time">09:15</span></div>
+      <div class="row"><div class="dot">↩︎</div><div><b>秘書 が アレックスさんの秘書 に自動で返事を送りました</b><div class="muted">日程の提案に「承諾」</div></div><span class="time">昨日</span></div>
+    </div>
+    <div class="foot">パソコンでもブラウザでも、見送ったらサーバに理由の種類だけを記録する。その会話の「自動返信しませんでした」も、この記録から出す（どのブラウザで見ても出る）。</div>
+  </section>
+
+  <!-- ⑤ terminal -->
+  <section id="s5" class="app" hidden>
+    <div class="head">パソコンのターミナル</div>
+    <div class="term"><span class="p">$</span> nexusinbox connect 7KQ4P-ZX9M2-H3TD-9QWB-0KMA-R4XE
+鍵のパスフレーズを決めてください: ********
+<span class="ok">✓ 「秘書」につながりました。</span>
+<span class="ok">✓ ブラウザから届いた「秘書」の鍵を確かめました。</span> <span class="warn">← 新</span>
+起動しています…
+
+<span class="p">$</span> nexusinbox connect 7KQ4P-ZX9M2-H3TD-9QWB-0KMA-R4XE   <span class="warn"># 古い v0.4.0 のとき</span>
+<span class="err">[ERROR] A pairing code is 10 letters and digits, like 7KQ4P-ZX9M2.</span>
+（手元で断るだけで、秘密はどこにも送られない）
+
+<span class="warn"># 相手の鍵が変わったとき、AI ツールに返るエラー（AI が人に伝える）</span>
+<span class="err">送れません: アレックスさんの秘書 (aid:ai:01K…) の鍵が変わりました。</span>
+<span class="err">確かめてから、ターミナルで nexusinbox trust aid:ai:01K… を実行してください。</span>
+
+<span class="p">$</span> nexusinbox trust aid:ai:01K…   <span class="warn">← 新</span>
+アレックスさんの秘書 (aid:ai:01K…) の鍵が変わっています。
+  前の鍵:  did:key:z6MkhaX…a2doK
+  新しい鍵: did:key:z6Mkjch…RDjVJG
+会うか電話で、相手が鍵を作り直したことを確かめましたか？ 新しい鍵を覚えますか [y/N]: y
+<span class="ok">✓ 新しい鍵を覚えました。次から送れます。</span></div>
+    <div class="foot">名簿がおかしい（署名が合わない・古い・消えた）ときは、<code>trust</code> でも覚え直さない（ブラウザで「それでも送る」を出さないのと同じ）。</div>
+  </section>
+</main>
+
+<aside>
+  <div class="box">
+    <h3>変わること</h3>
+    <ul>
+      <li>接続コードの後半（16 文字）はサーバに渡さない。パソコンはこれで自分の鍵に印を付け、ブラウザが確かめてから名簿に入れる</li>
+      <li>逆に、ブラウザはエージェントの鍵をパソコンに確かに伝える</li>
+      <li>パソコンの自動返信・AI ツール・クラウドの AI の下書きも、送る前に相手の名簿を確かめる（判定はゲートウェイに 1 つ）</li>
+      <li>自動返信を見送ったら、どの端末で見送っても「AI の操作履歴」に出る</li>
+      <li>v0.5.0 を出してから、Web が長いコードを出すように切り替える</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>決めてほしいこと</h3>
+    <ul>
+      <li>コードの後半を色分けせず、1 本のコマンドとして見せるか（推奨: 見せる。コピーして貼るだけなので）</li>
+      <li>③ 鍵が合わないパソコンには「認める」を出さず「外す」だけにするか（推奨: 外すだけ）</li>
+      <li>④ 見送りの行に「確かめてから手で送ってください」と次の一手を書くか（推奨: 書く）</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+</script>
+</body>
+</html>
