@@ -108,6 +108,34 @@ describe("planSend (docs/40 §12)", () => {
     expect(updateContact).not.toHaveBeenCalled();
   });
 
+  it("stops on a root whose confirmation number did not match, and accepting clears it (docs/40 §16.2)", async () => {
+    const peer = await agent(PEER);
+    const contact: ContactEntry = {
+      id: "c1",
+      did: peer.did,
+      person_name: "Alex",
+      agent_label: null,
+      note: null,
+      aid: PEER,
+      root: peer.did,
+      verified: { root: "did:key:z6MkOlderRoot", at: "2026-11-01T00:00:00.000Z" },
+      distrusted_root: peer.did,
+      readable: true,
+      created_at: "",
+      updated_at: "",
+    };
+    rememberContactRoots([contact]);
+    resolveRecipient.mockRejectedValue(new Error("no sender"));
+    await expect(planSend(peer.served, PEER, null)).rejects.toMatchObject({ reason: "root_changed", root: peer.did });
+    sealForSave.mockResolvedValue("cs1:sealed");
+    await planSend(peer.served, PEER, null, { acceptRoot: peer.did });
+    await vi.waitFor(() => expect(updateContact).toHaveBeenCalled());
+    const saved = sealForSave.mock.calls.at(-1)![2];
+    expect(saved.distrusted_root).toBeNull();
+    // Checked before, and the person compared the new number: checked now.
+    expect(saved.verified).toMatchObject({ root: peer.did });
+  });
+
   it("seals a first-seen root into the contact", async () => {
     const peer = await agent(PEER);
     rememberContactRoots([

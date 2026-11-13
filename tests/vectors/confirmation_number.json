@@ -1,0 +1,20 @@
+{
+  "description": "Confirmation numbers (docs/40 \u00a716.2): SHA-256(\"nexusinbox-confirm-v1\\n\" + smaller root + \"\\n\" + larger root), first 9 bytes big-endian mod 10^20, 20 digits in groups of 5. The same either way round. Shared by core and the gateway.",
+  "cases": [
+    {
+      "a": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+      "b": "did:key:z6Mko9hTggMwjSTEaJaPUfE6tqcy2xvU6BnNq3e3o8qVBiyH",
+      "number": "44750 00596 61516 65069"
+    },
+    {
+      "a": "did:key:z6MkuRmCjnFz7MKmU9KPmqXBeGE2Doq4ykLNzssYSwKXyroM",
+      "b": "did:key:z6MksRLCg2L8xE6ryVrNiqFSnvuPq3DEkYQShuiWNPgweede",
+      "number": "45622 19583 80683 67291"
+    },
+    {
+      "a": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+      "b": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+      "number": "89522 06397 48782 96969"
+    }
+  ]
+}

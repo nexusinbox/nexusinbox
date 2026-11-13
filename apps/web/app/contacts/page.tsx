@@ -9,6 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { ContactsTabs } from "./ContactsTabs";
 import { AppShell } from "../_components/AppShell";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
+import { ConfirmationPanel } from "../_components/ConfirmationPanel";
 import { Avatar } from "../_components/messages/ConversationView";
 import {
   useAgentsQuery,
@@ -61,6 +62,9 @@ function ContactsPageInner() {
     [contactsQuery.data],
   );
   const agents = agentsQuery.data?.agents ?? [];
+  // Which of the person's agents the confirmation number is made with.
+  const [confirmAs, setConfirmAs] = useState<string | null>(null);
+  const confirmAgent = agents.find((a) => a.did === confirmAs) ?? agents[0];
   // Names and notes are sealed with a key this device may not hold.
   const locked = contactsQuery.data?.keyState === "locked";
   const canReset = contactsQuery.data?.canReset ?? false;
@@ -287,6 +291,33 @@ function ContactsPageInner() {
         />
         <span className="ct-help">{t("contacts.didHelp")}</span>
       </label>
+
+      {selectedContact?.readable && confirmAgent ? (
+        <div>
+          {agents.length > 1 ? (
+            <select
+              className="input"
+              style={{ marginTop: 8 }}
+              value={confirmAgent.did}
+              onChange={(event) => setConfirmAs(event.target.value)}
+              aria-label={t("confirm.title")}
+            >
+              {agents.map((a) => (
+                <option key={a.did} value={a.did}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <ConfirmationPanel
+            key={`${selectedContact.id}:${confirmAgent.did}`}
+            counterpart={selectedContact.aid ?? selectedContact.did}
+            name={displayName(selectedContact)}
+            ownAgent={confirmAgent}
+            contact={selectedContact}
+          />
+        </div>
+      ) : null}
 
       {status?.kind === "error" ? (
         <p className="ct-status error" role="status">

@@ -399,6 +399,29 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
+/// The confirmation number two people read aloud to check each other's
+/// agent (docs/40 §16.2): the same as core `confirmationNumber`
+/// (tests/vectors/confirmation_number.json).
+pub fn confirmation_number(root_a: &str, root_b: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let (first, second) = if root_a <= root_b {
+        (root_a, root_b)
+    } else {
+        (root_b, root_a)
+    };
+    let digest = Sha256::digest(format!("nexusinbox-confirm-v1\n{first}\n{second}").as_bytes());
+    let value = digest[..9]
+        .iter()
+        .fold(0u128, |acc, byte| (acc << 8) | u128::from(*byte));
+    let digits = format!("{:020}", value % 10u128.pow(20));
+    digits
+        .as_bytes()
+        .chunks(5)
+        .map(|c| std::str::from_utf8(c).expect("ascii digits"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,5 +541,19 @@ mod tests {
             assert_eq!(mode & 0o777, 0o600);
         }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn confirmation_numbers_match_the_shared_vectors() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/vectors/confirmation_number.json"
+        );
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for c in v["cases"].as_array().unwrap() {
+            let (a, b) = (c["a"].as_str().unwrap(), c["b"].as_str().unwrap());
+            assert_eq!(confirmation_number(a, b), c["number"].as_str().unwrap());
+            assert_eq!(confirmation_number(b, a), c["number"].as_str().unwrap());
+        }
     }
 }

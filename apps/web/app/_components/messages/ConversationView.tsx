@@ -22,6 +22,7 @@ import {
   queryKeys as apiQueryKeys,
   useAgentDraftsQuery,
   useAuditLogQuery,
+  useContactsQuery,
   useDeleteAgentDraftMutation,
   useReviewKeysQuery,
   useSendAgentDraftMutation,
@@ -47,8 +48,7 @@ import {
   wrapContentKeyForSender,
 } from "../../../lib/crypto/keywrap";
 import {
-  findThisBrowsersReviewKey,
-  openDraft,
+  openDraftHere,
   draftDeviceWraps,
   senderCopyForDraft,
   type OpenedDraft,
@@ -65,6 +65,7 @@ import {
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
 import { deviceWraps, isSendStop, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
 import { SendStopNotice } from "./SendStopNotice";
+import { ConfirmationPanel } from "../ConfirmationPanel";
 import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
@@ -205,6 +206,11 @@ export function ConversationView({
   const [rendered, setRendered] = useState<Record<string, Rendered>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
+  // The confirmation number with them (docs/40 §16.2).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const contactsQuery = useContactsQuery();
+  const contact =
+    contactsQuery.data?.contacts.find((c) => c.did === conversation.counterpartDid && c.readable) ?? null;
   const [blockStatus, setBlockStatus] = useState<BlockStatus | null>(null);
   const [archiveError, setArchiveError] = useState(false);
 
@@ -441,6 +447,19 @@ export function ConversationView({
                     {t("messages.addContact")}
                   </Link>
                 ) : null}
+                {conversation.ownAgent ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setConfirmOpen(true);
+                    }}
+                    data-testid="conversation-confirmation"
+                  >
+                    {t("confirm.menu")}
+                  </button>
+                ) : null}
                 {latestReceived ? (
                   <button
                     type="button"
@@ -478,6 +497,19 @@ export function ConversationView({
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
+        {confirmOpen && conversation.ownAgent ? (
+          <div className="dm-status" style={{ textAlign: "left" }}>
+            <ConfirmationPanel
+              counterpart={contact?.aid ?? conversation.counterpartDid}
+              name={name}
+              ownAgent={conversation.ownAgent}
+              contact={contact}
+            />
+            <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setConfirmOpen(false)}>
+              {t("sendStop.close")}
+            </button>
+          </div>
+        ) : null}
         {blockOpen && latestReceived ? (
           <BlockSenderPanel
             messageId={latestReceived.id}
@@ -611,6 +643,7 @@ export function ConversationView({
         {protocolStop ? (
           <SendStopNotice
             stop={protocolStop.stop}
+            ownRoot={conversation.ownAgent?.did}
             name={name}
             onClose={() => setProtocolStop(null)}
             onAccept={(root) => void protocolStop.retry(root).catch(() => undefined)}
@@ -701,7 +734,6 @@ function ConversationDrafts({
   const sendDraft = useSendAgentDraftMutation();
   const deleteDraft = useDeleteAgentDraftMutation();
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
-  const [keyId, setKeyId] = useState<string | null | undefined>(undefined);
   const [status, setStatus] = useState("");
   const [sendStop, setSendStop] = useState<{ draftId: string; stop: SendStop } | null>(null);
 
@@ -718,22 +750,11 @@ function ConversationDrafts({
   const keys = keysQuery.data?.review_keys;
 
   useEffect(() => {
-    if (drafts.length === 0 || !keys) return;
-    let cancelled = false;
-    findThisBrowsersReviewKey(keys).then((key) => {
-      if (!cancelled) setKeyId(key?.id ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [drafts.length, keys]);
-
-  useEffect(() => {
-    if (!keyId) return;
+    if (keysQuery.isLoading) return;
     const missing = drafts.filter((d) => !(d.id in opened));
     if (missing.length === 0) return;
     let cancelled = false;
-    Promise.all(missing.map(async (d) => [d.id, await openDraft(d, keyId)] as const)).then(
+    Promise.all(missing.map(async (d) => [d.id, await openDraftHere(d, keys)] as const)).then(
       (pairs) => {
         if (!cancelled) setOpened((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
       },
@@ -741,22 +762,9 @@ function ConversationDrafts({
     return () => {
       cancelled = true;
     };
-  }, [drafts, keyId, opened]);
+  }, [drafts, keys, keysQuery.isLoading, opened]);
 
   if (drafts.length === 0) return null;
-
-  if (keyId === null) {
-    return (
-      <div className="dm-msg mine">
-        <div className="dm-draft">
-          <p>{t("messages.draftNoKey")}</p>
-          <Link href="/pending" className="dm-link">
-            {t("messages.draftSetUp")}
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   const handleSend = async (draft: AgentDraft, acceptRoot?: string) => {
     setStatus("");
@@ -803,12 +811,15 @@ function ConversationDrafts({
                   <p className="dm-draft-body">{plain.body}</p>
                 </>
               ) : (
-                <p className="dm-muted">{t("agentDrafts.unreadableBody")}</p>
+                <p className="dm-muted" data-testid="dm-draft-unreadable">
+                  {t("agentDrafts.notHere", { agent: conversation.ownAgent?.label ?? t("agentDrafts.unknownParty") })}
+                </p>
               )}
               {sendStop?.draftId === draft.id ? (
                 <SendStopNotice
                   stop={sendStop.stop}
                   name={name}
+                  ownRoot={conversation.ownAgent?.did}
                   onClose={() => setSendStop(null)}
                   onAccept={(root) => void handleSend(draft, root)}
                 />
@@ -978,6 +989,7 @@ function Composer({
         <SendStopNotice
           stop={sendStop}
           name={name}
+          ownRoot={ownAgent?.did}
           onClose={() => setSendStop(null)}
           onAccept={(root) => void send(root)}
         />

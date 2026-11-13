@@ -711,3 +711,58 @@ async fn a_v2_draft_is_sent_with_the_wraps_it_was_signed_with() {
     assert_eq!(content["signature_v2"], sig);
     assert_eq!(content["encrypted_keys"], wraps_json(&m.encrypted_keys));
 }
+
+#[tokio::test]
+#[serial]
+async fn a_draft_is_read_by_the_agents_listed_devices() {
+    // docs/40 §16.3: no review keys, the devices on the agent's list read it.
+    let (app, pool) = setup!();
+    let me = seed_user_with_agent(&pool, "0xv2-draft-me-2", "secretary", 0x6a).await;
+    let friend = seed_user_with_agent(&pool, "0xv2-draft-friend-2", "friend", 0x6b).await;
+    let agent = seed_agent_token(&pool, &me).await;
+    let m = v2_message(&me, &friend.did, 9);
+    let sig = sign_v2(&me.signing_key, &me, &friend.did, &me.aid, &friend.aid, &m);
+    let draft = |sender_keys: Value| {
+        json!({
+            "sender_did": me.did,
+            "recipient_did": friend.did,
+            "subject_encrypted": m.subject_encrypted,
+            "encrypted_content": m.encrypted_content,
+            "encrypted_key": m.encrypted_key,
+            "nonce": m.nonce,
+            "signature_v2": sig,
+            "sender_encrypted_key": m.sender_encrypted_key,
+            "encrypted_keys": wraps_json(&m.encrypted_keys),
+            "sender_encrypted_keys": sender_keys,
+            "content_type": "text/plain",
+        })
+    };
+
+    // Nobody could read it: refused.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/agent-drafts",
+        &agent,
+        Some(draft(json!([]))),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/agent-drafts",
+        &agent,
+        Some(draft(wraps_json(&m.sender_encrypted_keys))),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let (_, list) = call(&app, "GET", "/agent-drafts", &me.auth, None).await;
+    let listed = &list["drafts"][0];
+    assert_eq!(
+        listed["sender_encrypted_keys"],
+        wraps_json(&m.sender_encrypted_keys)
+    );
+    assert_eq!(listed["review_wraps"], json!([]));
+}

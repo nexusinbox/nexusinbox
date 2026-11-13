@@ -10,7 +10,6 @@ import {
   AddContactKeysRequest,
   ContactKeysResponse,
   AgentDraftsResponse,
-  ReviewKey,
   ReviewKeysResponse,
   OAuthAuthorizeInfo,
   OAuthGrant,
@@ -699,17 +698,6 @@ export class NexusInboxApiClient {
 
   async listReviewKeys(): Promise<ReviewKeysResponse> {
     return this.request<ReviewKeysResponse>("/review-keys");
-  }
-
-  async createReviewKey(payload: { public_key: string; label: string }): Promise<ReviewKey> {
-    return this.request<ReviewKey>("/review-keys", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  }
-
-  async deleteReviewKey(id: string): Promise<void> {
-    await this.requestNoContent("/review-keys/" + encodeURIComponent(id), { method: "DELETE" });
   }
 
   async listAgentDrafts(): Promise<AgentDraftsResponse> {

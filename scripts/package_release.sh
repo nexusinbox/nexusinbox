@@ -42,6 +42,8 @@ Start, stop or check it later:
 If sending stops because another agent's key changed, and you have
 confirmed the new key with them:
   nexusinbox trust <their aid:ai:...>
+To check another agent's key with its owner (read the number aloud):
+  nexusinbox verify <their aid:ai:...>
 
 Keep nexusinbox, nexusinbox-signer and nexusinbox-gateway in the same folder.
 https://github.com/nexusinbox/nexusinbox

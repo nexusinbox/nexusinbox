@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { resolveRecipient } = vi.hoisted(() => ({ resolveRecipient: vi.fn() }));
+const { resolveRecipient, getRecipientPrivateKey } = vi.hoisted(() => ({
+  resolveRecipient: vi.fn(),
+  getRecipientPrivateKey: vi.fn(),
+}));
 vi.mock("../api/client", () => ({ defaultApiClient: { resolveRecipient } }));
+vi.mock("./recipient-keyring", () => ({ getRecipientPrivateKey }));
 
 import type { Agent, AgentDraft } from "../api/types";
-import { unwrapContentKeyWithRecipientPrivateKey } from "./keywrap";
-import { senderCopyForDraft } from "./review-key";
+import { encryptEnvelopeText, generateContentKey } from "./envelope";
+import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForRecipient } from "./keywrap";
+import { openDraftHere, senderCopyForDraft } from "./review-key";
 
 async function keyPair(): Promise<{ pair: CryptoKeyPair; pub: string }> {
   const pair = (await crypto.subtle.generateKey({ name: "X25519" }, true, [
@@ -20,6 +25,7 @@ async function keyPair(): Promise<{ pair: CryptoKeyPair; pub: string }> {
 }
 
 const draft = { aid: "aid:ai:me", sender_did: "did:key:zSigner" } as AgentDraft;
+const draft0 = draft;
 const opened = { subject: "s", body: "b", contentKey: "content-key-1" };
 
 describe("senderCopyForDraft", () => {
@@ -59,5 +65,36 @@ describe("senderCopyForDraft", () => {
     const agents = [{ aid: "aid:ai:me", encryption_key: (await keyPair()).pub } as Agent];
     expect(await senderCopyForDraft({ ...draft, signed_v2: true }, opened, agents)).toBeUndefined();
     expect(resolveRecipient).not.toHaveBeenCalled();
+  });
+});
+
+describe("openDraftHere (docs/40 §16.3)", () => {
+  it("opens a draft with the key of a listed device this browser holds, and not otherwise", async () => {
+    const device = await keyPair();
+    const contentKey = generateContentKey();
+    const subject = await encryptEnvelopeText("Next week", { contentKey });
+    const body = await encryptEnvelopeText("How about Thursday?", { contentKey });
+    const wrapped = await wrapContentKeyForRecipient(contentKey, device.pub);
+    const draft = {
+      ...draft0,
+      subject_encrypted: subject.serialized,
+      encrypted_content: body.serialized,
+      review_wraps: [],
+      sender_encrypted_keys: [
+        { did: "did:key:zComputer", key: "x25519v1:not:for:this:browser" },
+        { did: "did:key:zBrowser", key: wrapped.wrappedKey },
+      ],
+    } as AgentDraft;
+    getRecipientPrivateKey.mockImplementation(async (did: string) =>
+      did === "did:key:zBrowser" ? device.pair.privateKey : null,
+    );
+    await expect(openDraftHere(draft, [])).resolves.toMatchObject({
+      subject: "Next week",
+      body: "How about Thursday?",
+      contentKey,
+    });
+    // A browser that is not on the agent's list cannot open it.
+    getRecipientPrivateKey.mockResolvedValue(null);
+    await expect(openDraftHere(draft, [])).resolves.toBeNull();
   });
 });

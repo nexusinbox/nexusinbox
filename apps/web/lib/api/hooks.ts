@@ -23,7 +23,6 @@ import {
   UpdateContactRequest,
   UpdateProfileRequest,
 } from "./types";
-import { createReviewKeyMaterial, describeThisBrowser } from "../crypto/review-key";
 
 export const queryKeys = {
   agentCredentials: () => ["agent-credentials"] as const,
@@ -169,7 +168,12 @@ export function useUpdateContactMutation() {
         ?.contacts.find((c) => c.id === payload.id);
       const rootFields =
         existing?.aid && existing.root
-          ? { aid: existing.aid, root: existing.root }
+          ? {
+              aid: existing.aid,
+              root: existing.root,
+              verified: existing.verified ?? null,
+              distrusted_root: existing.distrusted_root ?? null,
+            }
           : await rootFieldsFor(payload.did);
       const sealed = await sealForSave(defaultApiClient, payload.did, { ...payload.body, ...rootFields });
       return defaultApiClient.updateContact(payload.id, { sealed });
@@ -545,32 +549,6 @@ export function useDeleteAgentDraftMutation() {
     mutationFn: (id: string) => defaultApiClient.deleteAgentDraft(id),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agentDrafts() });
-    },
-  });
-}
-
-export function useDeleteReviewKeyMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => defaultApiClient.deleteReviewKey(id),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.reviewKeys() });
-    },
-  });
-}
-
-export function useCreateReviewKeyMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const publicKey = await createReviewKeyMaterial();
-      return defaultApiClient.createReviewKey({
-        public_key: publicKey,
-        label: describeThisBrowser(),
-      });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.reviewKeys() });
     },
   });
 }

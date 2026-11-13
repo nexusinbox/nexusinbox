@@ -6623,6 +6623,10 @@ struct CreateAgentDraftRequest {
     #[serde(default)]
     sender_encrypted_keys: Option<Vec<KeyWrap>>,
     content_type: Option<String>,
+    /// Browsers set up for review (computers before v0.7.0). Since v0.7.0 a
+    /// draft is read by the devices on the agent's list through
+    /// `sender_encrypted_keys` instead (docs/40 §16.3).
+    #[serde(default)]
     review_wraps: Vec<ReviewWrap>,
     via: Option<String>,
 }
@@ -6651,6 +6655,10 @@ struct AgentDraftEntry {
     /// Signed with signature v2 and its wraps (docs/40 §14.4): approving
     /// sends it as it is, without adding wraps.
     signed_v2: bool,
+    /// The content key for each device on the agent's list: how a browser
+    /// on the list opens the draft (docs/40 §16.3).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sender_encrypted_keys: Vec<KeyWrap>,
     created_at: String,
     expires_at: String,
 }
@@ -6878,13 +6886,16 @@ async fn create_agent_draft(
         Some(_) => return Err(validation_error("content_type is too long")),
     };
 
-    // Every wrap must be for one of this person's review keys.
-    if payload.review_wraps.is_empty()
-        || payload.review_wraps.len() as i64 > REVIEW_KEYS_MAX_PER_USER
-    {
+    // Someone must be able to read it: the devices on the agent's list
+    // (docs/40 §16.3), or browsers set up for review (older computers).
+    if payload.review_wraps.is_empty() && sender_encrypted_keys.is_empty() {
         return Err(validation_error(
-            "review_wraps must hold 1 to 10 entries; set up a browser for review first",
+            "a draft needs sender_encrypted_keys for the agent's devices",
         ));
+    }
+    // Every review wrap must be for one of this person's review keys.
+    if payload.review_wraps.len() as i64 > REVIEW_KEYS_MAX_PER_USER {
+        return Err(validation_error("review_wraps may hold at most 10 entries"));
     }
     let key_ids: Vec<Uuid> = payload
         .review_wraps
@@ -6909,7 +6920,7 @@ async fn create_agent_draft(
             .fetch_one(&pool)
             .await
             .map_err(|error| internal_error("failed to check review keys", error))?;
-    if known != key_ids.len() as i64 {
+    if !key_ids.is_empty() && known != key_ids.len() as i64 {
         return Err(validation_error("review_wraps names an unknown review key"));
     }
 
@@ -7052,6 +7063,7 @@ async fn list_agent_drafts(
         SELECT d.id, d.aid, d.sender_did, d.recipient_did, d.thread_id, d.in_reply_to,
                d.subject_encrypted, d.encrypted_content, d.content_type, d.review_wraps,
                d.signature_v2 IS NOT NULL AS signed_v2,
+               d.sender_encrypted_keys,
                d.via, d.created_at::text AS created_at, d.expires_at::text AS expires_at,
                sa.label AS sender_agent_label, su.display_name AS sender_user_name,
                ra.label AS recipient_agent_label, ru.display_name AS recipient_user_name
@@ -7099,6 +7111,10 @@ async fn list_agent_drafts(
             review_wraps: serde_json::from_value(row.get("review_wraps")).unwrap_or_default(),
             via: row.get("via"),
             signed_v2: row.get("signed_v2"),
+            sender_encrypted_keys: row
+                .get::<Option<serde_json::Value>, _>("sender_encrypted_keys")
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap_or_default(),
             created_at: row.get("created_at"),
             expires_at: row.get("expires_at"),
         })

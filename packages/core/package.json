@@ -29,6 +29,10 @@
     "./envelope-v2": {
       "types": "./dist/envelope-v2.d.ts",
       "default": "./dist/envelope-v2.js"
+    },
+    "./confirmation": {
+      "types": "./dist/confirmation.d.ts",
+      "default": "./dist/confirmation.js"
     }
   },
   "scripts": {

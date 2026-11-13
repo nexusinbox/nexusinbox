@@ -59,11 +59,11 @@ only_agent_dir() {
 }
 case "${1:-}" in
   start | stop | status | run) AGENT_DIR="${2:-}"; DIR_GIVEN="${2:+1}" ;;
-  autostart | trust) AGENT_DIR="${3:-}"; DIR_GIVEN="${3:+1}" ;;
+  autostart | trust | verify) AGENT_DIR="${3:-}"; DIR_GIVEN="${3:+1}" ;;
   *) AGENT_DIR=""; DIR_GIVEN="" ;;
 esac
 case "${1:-}" in
-  start | stop | status | run | autostart | trust)
+  start | stop | status | run | autostart | trust | verify)
     # Settings spelled out in the environment (docs/19) need no directory.
     if [ -z "$DIR_GIVEN" ] && [ -z "${AGENT_INBOX_AID:-}" ]; then
       AGENT_DIR="$(only_agent_dir)" || exit 1
@@ -139,6 +139,10 @@ Or enroll the daemon by hand first (docs/19 §3.1):
       Another agent's key has changed and sending to it stopped. Once you
       have confirmed with them that they made a new key, remember it.
 
+  $SELF_NAME verify <aid> [<dir>]
+      Show the confirmation number with another agent, to read aloud with
+      its owner in person or on the phone (docs/40 §16.2).
+
   $SELF_NAME autostart on|off [<dir>]      (macOS)
       Start the agent by itself when you log in: the passphrase is saved in
       the login keychain, readable only by nexusinbox-signer (docs/39).
@@ -147,6 +151,7 @@ Or enroll the daemon by hand first (docs/19 §3.1):
 Commands:
   connect Pair with the web UI, then start
   trust   Accept another agent's new key
+  verify  Show the confirmation number with another agent
   start   Ask for the key passphrase (one stdin line when not a terminal),
           then start signer-daemon and agent-gateway in background
   stop    Stop both processes
@@ -473,6 +478,19 @@ trust() {
   exec_gateway --state-dir "$AGENT_DIR" --trust "$target"
 }
 
+verify() {
+  target="${1:-}"
+  if [ -z "$target" ]; then
+    usage
+    exit 1
+  fi
+  if [ -z "$AGENT_DIR" ]; then
+    echo "verify needs the agent's directory." >&2
+    exit 1
+  fi
+  exec_gateway --state-dir "$AGENT_DIR" --verify "$target"
+}
+
 stop() {
   # Started at login: unload it (until the next login or `start`).
   if [ -n "$AGENT_DIR" ] && [ "$(uname)" = Darwin ] && autostart_is_on; then
@@ -525,6 +543,7 @@ case "$cmd" in
     esac
     ;;
   trust) trust "${2:-}" ;;
+  verify) verify "${2:-}" ;;
   stop) stop ;;
   status) status ;;
   *) usage; exit 1 ;;

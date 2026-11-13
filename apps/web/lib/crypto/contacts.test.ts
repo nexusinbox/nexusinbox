@@ -31,6 +31,18 @@ describe("sealed contacts", () => {
     ).resolves.toEqual(fields);
   });
 
+  it("carries the confirmation-number check (docs/40 §16.2)", async () => {
+    const key = generateContactsKey();
+    const checked = {
+      ...fields,
+      aid: "aid:ai:01ALEX",
+      root: DID_B,
+      verified: { root: DID_B, at: "2026-11-14T10:00:00.000Z" },
+      distrusted_root: "did:key:z6MkSwapped",
+    };
+    await expect(openContactFields(key, DID_A, await sealContactFields(key, DID_A, checked))).resolves.toEqual(checked);
+  });
+
   it("refuses a sealed name moved onto another DID", async () => {
     const key = generateContactsKey();
     const sealed = await sealContactFields(key, DID_A, fields);

@@ -1,18 +1,18 @@
-// review-key.ts — this browser's key for reading AI drafts (docs/33 §9).
+// review-key.ts — opening and sending AI drafts (docs/33 §9, docs/40 §16.3).
 //
 // A cloud-hosted AI cannot send; the person's computer stores its drafts
 // encrypted for the recipient, with the same content key also wrapped to
-// every browser the person set up for review. This module keeps that
-// browser's X25519 private key (non-extractable, IndexedDB) and opens
-// drafts with it. The public half is remembered in localStorage so the page
-// can tell which server-side review key is this browser's.
+// every device on the agent's signed list. A browser on the list opens
+// drafts with its own key. Drafts from computers before v0.7.0 were wrapped
+// to browsers set up for review instead (an X25519 key kept here, its
+// public half remembered in localStorage); those still open with it.
 
 import { defaultApiClient } from "../api/client";
 import type { Agent, AgentDraft, KeyWrap, ReviewKey } from "../api/types";
 import { decryptEnvelopeTextWithContentKey } from "./envelope";
-import { isKeystoreAvailable, secureLoadKey, secureStoreKey } from "./keystore";
+import { isKeystoreAvailable, secureLoadKey } from "./keystore";
 import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForSender } from "./keywrap";
-import { generateX25519KeyPairMaterial } from "./recipient-keyring";
+import { getRecipientPrivateKey } from "./recipient-keyring";
 import { deviceWraps, planSend, SendStop } from "./device-wraps";
 
 const PRIVATE_KEY_ID = "nexusinbox.review-key.v1";
@@ -38,52 +38,6 @@ export async function findThisBrowsersReviewKey(
   return privateKey ? match : null;
 }
 
-/** Make a new key pair for this browser. The caller registers the public half. */
-export async function createReviewKeyMaterial(): Promise<string> {
-  if (!isKeystoreAvailable()) {
-    throw new Error("this browser cannot keep keys");
-  }
-  const { publicKey, privateKey } = await generateX25519KeyPairMaterial();
-  await secureStoreKey(PRIVATE_KEY_ID, privateKey);
-  window.localStorage.setItem(PUBLIC_KEY_STORAGE, publicKey);
-  return publicKey;
-}
-
-/** Forget which key is this browser's (after it was removed on the server). */
-export function forgetReviewKey(): void {
-  try {
-    window.localStorage.removeItem(PUBLIC_KEY_STORAGE);
-  } catch {
-    // nothing to forget
-  }
-}
-
-/** A short name for this browser, shown in the list of review browsers. */
-export function describeThisBrowser(): string {
-  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const browser = /Edg\//.test(ua)
-    ? "Edge"
-    : /Firefox\//.test(ua)
-      ? "Firefox"
-      : /Chrome\//.test(ua)
-        ? "Chrome"
-        : /Safari\//.test(ua)
-          ? "Safari"
-          : "Browser";
-  const os = /iPhone|iPad/.test(ua)
-    ? "iPhone/iPad"
-    : /Android/.test(ua)
-      ? "Android"
-      : /Mac OS X/.test(ua)
-        ? "Mac"
-        : /Windows/.test(ua)
-          ? "Windows"
-          : /Linux/.test(ua)
-            ? "Linux"
-            : "";
-  return os ? `${browser} (${os})` : browser;
-}
-
 export type OpenedDraft = {
   subject: string;
   body: string;
@@ -91,29 +45,57 @@ export type OpenedDraft = {
   contentKey: string;
 };
 
+async function openWithContentKey(draft: AgentDraft, contentKey: string): Promise<OpenedDraft | null> {
+  const [subject, body] = await Promise.all([
+    decryptEnvelopeTextWithContentKey(draft.subject_encrypted, contentKey),
+    decryptEnvelopeTextWithContentKey(draft.encrypted_content, contentKey),
+  ]);
+  if (subject.state === "error" || body.state === "error") return null;
+  return { subject: subject.text, body: body.text, contentKey };
+}
+
 /** Decrypt a draft with this browser's review key, or null if it cannot. */
-export async function openDraft(
-  draft: AgentDraft,
-  reviewKeyId: string,
-): Promise<OpenedDraft | null> {
+async function openWithReviewKey(draft: AgentDraft, reviewKeyId: string): Promise<OpenedDraft | null> {
   const wrap = draft.review_wraps.find((w) => w.review_key_id === reviewKeyId);
   if (!wrap) return null;
   const privateKey = await secureLoadKey(PRIVATE_KEY_ID);
   if (!privateKey) return null;
   try {
-    const contentKey = await unwrapContentKeyWithRecipientPrivateKey(
-      wrap.wrapped_key,
-      privateKey,
+    return await openWithContentKey(
+      draft,
+      await unwrapContentKeyWithRecipientPrivateKey(wrap.wrapped_key, privateKey),
     );
-    const [subject, body] = await Promise.all([
-      decryptEnvelopeTextWithContentKey(draft.subject_encrypted, contentKey),
-      decryptEnvelopeTextWithContentKey(draft.encrypted_content, contentKey),
-    ]);
-    if (subject.state === "error" || body.state === "error") return null;
-    return { subject: subject.text, body: body.text, contentKey };
   } catch {
     return null;
   }
+}
+
+/**
+ * Open a draft here, or null when this browser cannot. Drafts are wrapped
+ * for the devices on the agent's signed list (docs/40 §16.3): this browser
+ * opens one when it holds the key of a listed device. Drafts made by
+ * computers before v0.7.0 were wrapped to the browsers set up for review
+ * instead; this browser opens those with its review key, if it has one.
+ */
+export async function openDraftHere(
+  draft: AgentDraft,
+  reviewKeys: ReviewKey[] | undefined,
+): Promise<OpenedDraft | null> {
+  for (const wrap of draft.sender_encrypted_keys ?? []) {
+    const privateKey = await getRecipientPrivateKey(wrap.did).catch(() => null);
+    if (!privateKey) continue;
+    try {
+      const opened = await openWithContentKey(
+        draft,
+        await unwrapContentKeyWithRecipientPrivateKey(wrap.key, privateKey),
+      );
+      if (opened) return opened;
+    } catch {
+      // Another listed device's wrap may still open it.
+    }
+  }
+  const legacy = reviewKeys && reviewKeys.length > 0 ? await findThisBrowsersReviewKey(reviewKeys) : null;
+  return legacy ? openWithReviewKey(draft, legacy.id) : null;
 }
 
 /**

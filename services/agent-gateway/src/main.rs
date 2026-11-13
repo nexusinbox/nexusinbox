@@ -130,6 +130,12 @@ struct Cli {
     /// (docs/40 §13.3). Needs --state-dir.
     #[arg(long, requires = "state_dir")]
     trust: Option<String>,
+
+    /// Show the confirmation number with this agent (an AID, or a DID of
+    /// it), to read aloud with its owner, then exit (docs/40 §16.2). Needs
+    /// --state-dir and this agent's AID in AGENT_INBOX_AID.
+    #[arg(long, requires = "state_dir")]
+    verify: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1512,6 +1518,10 @@ async fn api_patch(
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    if let (Some(target), Some(dir)) = (cli.verify.as_deref(), cli.state_dir.as_deref()) {
+        let own_aid = std::env::var("AGENT_INBOX_AID").unwrap_or_default();
+        std::process::exit(run_verify(dir, &own_aid, target));
+    }
     if let (Some(target), Some(dir)) = (cli.trust.as_deref(), cli.state_dir.as_deref()) {
         std::process::exit(run_trust(dir, target));
     }
@@ -2158,6 +2168,52 @@ async fn confirm_own_root(state: Arc<GatewayState>) {
 
 /// `--trust <aid>`: accept the new root an agent's list came back signed
 /// by, after asking (docs/40 §13.3). Returns the exit code.
+/// `nexusinbox verify <aid>`: the confirmation number from the roots this
+/// computer remembers (docs/40 §16.2). Recording that it matched is done in
+/// the browser, which holds the contacts.
+fn run_verify(dir: &std::path::Path, own_aid: &str, target: &str) -> i32 {
+    let peers = match device_trust::PeerStore::new(Some(dir)).load() {
+        Ok(peers) => peers,
+        Err(e) => {
+            eprintln!("[ERROR] {e}");
+            return 1;
+        }
+    };
+    let aid = if target.starts_with("aid:") {
+        target.to_string()
+    } else if let Some(aid) = peers.dids.get(target) {
+        aid.clone()
+    } else {
+        eprintln!("[ERROR] {target} is not an agent this computer has sent to or read from.");
+        return 2;
+    };
+    let Some(own) = peers.pins.get(own_aid) else {
+        eprintln!(
+            "[ERROR] This computer has not confirmed its own agent's key yet. Start the agent once (it learns the key from the browser), then try again."
+        );
+        return 2;
+    };
+    let Some(theirs) = peers.pins.get(&aid) else {
+        eprintln!(
+            "[ERROR] This computer has not seen {aid}'s key yet: send to it or read a message from it first."
+        );
+        return 2;
+    };
+    println!("Confirmation number for {own_aid} and {aid}:");
+    println!();
+    println!(
+        "    {}",
+        device_trust::confirmation_number(&own.root, &theirs.root)
+    );
+    println!();
+    println!(
+        "Their owner sees the same number. Read it aloud together, in person or on the phone."
+    );
+    println!("If it differs, someone swapped a key: do not send to them from this computer.");
+    println!("Record that it matched in the NexusInbox app (Contacts).");
+    0
+}
+
 fn run_trust(dir: &std::path::Path, target: &str) -> i32 {
     let store = device_trust::PeerStore::new(Some(dir));
     let mut peers = match store.load() {

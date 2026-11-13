@@ -10,6 +10,10 @@ export type ContactFields = {
   /** The contact's agent and the root its device list is signed by (docs/40 §12.4). */
   aid?: string | null;
   root?: string | null;
+  /** The root the person checked with the confirmation number, and when (docs/40 §16.2). */
+  verified?: { root: string; at: string } | null;
+  /** A root whose confirmation number did not match: not sent to. */
+  distrusted_root?: string | null;
 };
 
 const SEALED_PREFIX = "cs1:";
@@ -66,6 +70,8 @@ export async function sealContactFields(
       agent_label: fields.agent_label,
       note: fields.note,
       ...(fields.aid && fields.root ? { aid: fields.aid, root: fields.root } : {}),
+      ...(fields.verified ? { verified: { root: fields.verified.root, at: fields.verified.at } } : {}),
+      ...(fields.distrusted_root ? { distrusted_root: fields.distrusted_root } : {}),
     }),
   );
   const ciphertext = await crypto.subtle.encrypt(
@@ -74,6 +80,12 @@ export async function sealContactFields(
     asArrayBuffer(plaintext),
   );
   return `${SEALED_PREFIX}${toBase64Url(iv)}:${toBase64Url(new Uint8Array(ciphertext))}`;
+}
+
+function verifiedOf(value: unknown): { root: string; at: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  return typeof v.root === "string" && typeof v.at === "string" ? { root: v.root, at: v.at } : null;
 }
 
 export async function openContactFields(
@@ -100,5 +112,7 @@ export async function openContactFields(
     ...(typeof parsed.aid === "string" && typeof parsed.root === "string"
       ? { aid: parsed.aid, root: parsed.root }
       : {}),
+    ...(verifiedOf(parsed.verified) ? { verified: verifiedOf(parsed.verified) } : {}),
+    ...(typeof parsed.distrusted_root === "string" ? { distrusted_root: parsed.distrusted_root } : {}),
   };
 }

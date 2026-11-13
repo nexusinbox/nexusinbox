@@ -86,9 +86,17 @@ async function openContacts(): Promise<void> {
 }
 
 /** Seal the root into the person's contact for this agent (best effort). */
-async function sealRootIntoContact(aid: string, root: string): Promise<void> {
+async function sealRootIntoContact(aid: string, root: string, accepted: boolean): Promise<void> {
   const contact = contactForAid(aid);
-  if (!contact || contact.root === root) return;
+  if (!contact) return;
+  // Sending after comparing the new confirmation number (docs/40 §16.2):
+  // the new root is the checked one, and no longer distrusted.
+  const verified =
+    accepted && contact.verified ? { root, at: new Date().toISOString() } : (contact.verified ?? null);
+  const distrusted = accepted && contact.distrusted_root === root ? null : (contact.distrusted_root ?? null);
+  if (contact.root === root && verified === (contact.verified ?? null) && distrusted === (contact.distrusted_root ?? null)) {
+    return;
+  }
   try {
     const sealed = await sealForSave(defaultApiClient, contact.did, {
       person_name: contact.person_name,
@@ -96,9 +104,13 @@ async function sealRootIntoContact(aid: string, root: string): Promise<void> {
       note: contact.note,
       aid,
       root,
+      verified,
+      distrusted_root: distrusted,
     });
     await defaultApiClient.updateContact(contact.id, { sealed });
     contact.root = root;
+    contact.verified = verified;
+    contact.distrusted_root = distrusted;
   } catch {
     // The next send or save tries again.
   }
@@ -118,13 +130,15 @@ async function decide(
   if (decision.kind === "stop") return decision;
   if (requested.startsWith("did:")) rememberDidAid(requested, served.aid);
   const root = decision.list.root;
-  // The contact remembers another root than this browser does.
-  if (contactRoot && contactRoot !== root && acceptRoot !== root) {
+  // The contact remembers another root than this browser does, or the
+  // person found its confirmation number did not match (docs/40 §16.2).
+  const distrusted = contactForAid(served.aid)?.distrusted_root === root;
+  if (((contactRoot && contactRoot !== root) || distrusted) && acceptRoot !== root) {
     return { kind: "stop", reason: "root_changed", root };
   }
   const next = pinAfter(pin, decision);
   if (next) savePin(served.aid, next);
-  void sealRootIntoContact(served.aid, root);
+  void sealRootIntoContact(served.aid, root, acceptRoot === root);
   return decision;
 }
 
@@ -161,6 +175,16 @@ async function ownSide(
         ? decision.targets.find((d) => d.did === senderIdentifier)?.encryption_public_key
         : undefined,
   };
+}
+
+/**
+ * The root of `aid`'s device list, checked as a send would check it: what
+ * the confirmation number is made from (docs/40 §16.2).
+ */
+export async function checkedRoot(aid: string): Promise<{ root: string } | { stop: StopReason }> {
+  const served = await defaultApiClient.resolveRecipient(aid);
+  const decision = await decide(served, aid);
+  return decision.kind === "stop" ? { stop: decision.reason } : { root: decision.list.root };
 }
 
 /**

@@ -1079,6 +1079,7 @@ function ComposePageInner() {
               <SendStopNotice
                 stop={sendStop.stop}
                 name={sendStop.name}
+                ownRoot={apiAgents.find((a) => a.did === senderDid || a.dids?.includes(senderDid))?.did}
                 onClose={() => setSendStop(null)}
                 onAccept={(root) => void submit(root)}
               />

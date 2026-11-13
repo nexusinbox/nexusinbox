@@ -483,6 +483,9 @@ export type ContactEntry = {
   /** Sealed with the fields: the contact's agent and its list's root (docs/40 §12.4). */
   aid?: string | null;
   root?: string | null;
+  /** Checked with the confirmation number (docs/40 §16.2). */
+  verified?: { root: string; at: string } | null;
+  distrusted_root?: string | null;
   /** false when this device cannot open the sealed fields */
   readable: boolean;
   created_at: string;
@@ -669,6 +672,8 @@ export type AgentDraft = {
   via: string | null;
   /** Signed with v2 and its wraps by the computer: approving only sends it (docs/40 §14.4). */
   signed_v2?: boolean;
+  /** The draft's content key for each device on the agent's list (docs/40 §16.3). */
+  sender_encrypted_keys?: KeyWrap[];
   created_at: string;
   expires_at: string;
 };

@@ -943,8 +943,9 @@ async fn wrap_for(
         .ok_or_else(|| "the signer returned no wrapped key".into())
 }
 
-/// Encrypt a draft for its recipient and for every browser the person set
-/// up for review, have the signer sign it, and store it for approval.
+/// Encrypt a draft for every listed device of the recipient and of this
+/// agent (the person reads it on the latter, docs/40 §16.3), have the
+/// signer sign it, and store it for approval.
 async fn create_draft(
     gateway: &GatewayState,
     args: &serde_json::Value,
@@ -1016,42 +1017,10 @@ async fn create_draft(
         .filter(|k| !k.is_empty())
         .ok_or_else(|| "the recipient has no encryption key".to_string())?;
 
-    let keys_url = format!("{}/review-keys", gateway.api_url);
-    let keys = crate::api_get(gateway, &keys_url, &token).await?;
-    let review_keys: Vec<(String, String)> = keys
-        .get("review_keys")
-        .and_then(|v| v.as_array())
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|r| {
-                    Some((
-                        r.get("id")?.as_str()?.to_string(),
-                        r.get("public_key")?.as_str()?.to_string(),
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if review_keys.is_empty() {
-        return Err(
-            "No browser is set up to review drafts yet. Ask the person to open \
-                    確認が必要 in the NexusInbox app and choose このブラウザを確認に使う, \
-                    then try again."
-                .into(),
-        );
-    }
-
     let content_key = generate_content_key();
     let subject_ct = encrypt_envelope_text(&subject, &content_key)?;
     let body_ct = encrypt_envelope_text(body, &content_key)?;
     let encrypted_key = wrap_for(gateway, &recipient_key, &content_key).await?;
-    let mut review_wraps = Vec::with_capacity(review_keys.len());
-    for (id, public_key) in &review_keys {
-        review_wraps.push(serde_json::json!({
-            "review_key_id": id,
-            "wrapped_key": wrap_for(gateway, public_key, &content_key).await?,
-        }));
-    }
     // Every listed device of both agents now, so approving only sends it
     // (docs/40 §14.4): the signature covers these wraps.
     let mut encrypted_keys = Vec::with_capacity(recipient.devices.len());
@@ -1061,16 +1030,22 @@ async fn create_draft(
             key: wrap_for(gateway, &device.encryption_public_key, &content_key).await?,
         });
     }
-    let own_devices = match crate::check_recipient(gateway, &token, &me.did).await {
-        Ok(own) => own.devices,
-        Err(e) => {
-            eprintln!(
-                "[remote-mcp] listing this agent's devices failed: {}",
+    // The person reads the draft on this agent's listed devices (§16.3).
+    let own_devices = crate::check_recipient(gateway, &token, &me.did)
+        .await
+        .map_err(|e| {
+            format!(
+                "This agent's own list of devices does not check out, so no device could read the draft. Ask the person to open NexusInbox. ({})",
                 e.message()
-            );
-            Vec::new()
-        }
-    };
+            )
+        })?
+        .devices;
+    if own_devices.is_empty() {
+        return Err(
+            "This agent has no device that could read the draft. Ask the person to open NexusInbox."
+                .into(),
+        );
+    }
     let mut sender_encrypted_keys = Vec::with_capacity(own_devices.len());
     for device in &own_devices {
         sender_encrypted_keys.push(envelope_v2::Wrap {
@@ -1119,7 +1094,6 @@ async fn create_draft(
         "sender_encrypted_keys": wraps_json(&fields.sender_encrypted_keys),
     });
     request["content_type"] = serde_json::json!("text/plain");
-    request["review_wraps"] = serde_json::json!(review_wraps);
     request["thread_id"] = serde_json::json!(thread_id);
     request["in_reply_to"] = serde_json::json!(in_reply_to);
     request["via"] = serde_json::json!(via);
