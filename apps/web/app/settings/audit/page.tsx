@@ -86,10 +86,13 @@ const PRESETS: { prefix: string; labelKey: string }[] = [
   { prefix: "attachment_", labelKey: "audit.presetFiles" },
 ];
 
-/** Why an auto-reply was left to the person (docs/40 §13.3). */
+/** Why an auto-reply was left to the person (docs/40 §13.3, §14.5). */
 function skipReasonKey(reason: string): string {
   if (reason === "root_changed") return "audit.skipChanged";
   if (reason === "no_device") return "audit.skipNoDevice";
+  if (reason === "altered" || reason === "not_listed") return "audit.skipUnchecked";
+  if (reason === "unsigned") return "audit.skipOld";
+  if (reason === "stale") return "audit.skipStale";
   return "audit.skipBroken";
 }
 

@@ -21,6 +21,7 @@ import {
   type ScheduleCandidate,
 } from "@nexusinbox/core/a2a";
 import type { MessageContentResponse, MessageIndexEntry } from "../api/types";
+import { autoReplyBlock, type SenderCheckState } from "@nexusinbox/core/envelope-v2";
 import { wrapsForDid } from "../crypto/wrap-select";
 import {
   evaluateAutoReplyPolicyClient,
@@ -119,6 +120,13 @@ export type RunAutoReplyExecutorInput = {
    * to queue_for_human (calendar_unavailable).
    */
   calendarFreebusy?: (candidates: readonly IsoInterval[]) => Promise<IsoInterval | null>;
+  /**
+   * Who sent the message (docs/40 §14.5): only a verified sender, within
+   * 24 hours, is answered automatically.
+   */
+  checkSender: (content: MessageContentResponse) => Promise<SenderCheckState | "unchecked">;
+  /** Signed messages already answered, so a delivery again is not answered twice. */
+  answered: { has(signature: string): boolean; add(signature: string): void };
   onProgress?: (event: AutoReplyExecutorEvent) => void;
 };
 
@@ -368,6 +376,14 @@ export async function runAutoReplyExecutor(
         continue;
       }
 
+      // Who sent it (docs/40 §14.5). A check that could not run is tried
+      // again on the next render.
+      const sender = await input.checkSender(content);
+      if (sender === "unchecked") {
+        progress({ kind: "skipped", messageId: entry.id, reason: "sender_unchecked" });
+        continue;
+      }
+
       // Take the row first, so a second tab or the Agent Gateway cannot
       // send the same reply (docs/29 §2.5).
       if (!(await input.api.claimAutoReply(entry.id))) {
@@ -376,6 +392,21 @@ export async function runAutoReplyExecutor(
           messageId: entry.id,
           reason: "claimed_by_another_executor",
         });
+        continue;
+      }
+
+      // Only a verified sender, recently: otherwise keep the claim and
+      // leave the reply to the person, saying why.
+      const block = autoReplyBlock(sender, content.signature_v2?.sent_at);
+      if (block) {
+        await input.api.skipAutoReply?.(entry.id, block).catch(() => undefined);
+        progress({ kind: "skipped", messageId: entry.id, reason: `sender_${block}` });
+        continue;
+      }
+      // The same signed message delivered again under a new id.
+      const signature = content.signature_v2?.signature;
+      if (signature && input.answered.has(signature)) {
+        progress({ kind: "skipped", messageId: entry.id, reason: "already_answered" });
         continue;
       }
 
@@ -405,6 +436,7 @@ export async function runAutoReplyExecutor(
         }
         throw error;
       }
+      if (signature) input.answered.add(signature);
       await input.api.markAutoReplySent(entry.id, { replyMessageId });
       progress({ kind: "sent", messageId: entry.id, action: resolvedAction });
     } catch (error) {

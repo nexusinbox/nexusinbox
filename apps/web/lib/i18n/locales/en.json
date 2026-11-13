@@ -896,7 +896,10 @@
     "byBrowser": "browser",
     "skipChanged": "Their key has changed. If they need an answer, check with them, then reply by hand.",
     "skipBroken": "Their list of devices does not check out.",
-    "skipNoDevice": "They have no device that can read it."
+    "skipNoDevice": "They have no device that can read it.",
+    "skipUnchecked": "The sender could not be verified. Check with them another way, then reply by hand.",
+    "skipOld": "The message is in the old format. Once they update, automatic replies work again.",
+    "skipStale": "It was sent more than 24 hours ago. If they need an answer, reply by hand."
   },
   "profile": {
     "title": "Profile",
@@ -1618,7 +1621,24 @@
     "autoSkippedChanged": "Didn't auto-reply: their key has changed",
     "autoSkippedBroken": "Didn't auto-reply: their list of devices looks wrong",
     "autoSkippedNoDevice": "Didn't auto-reply: they have no device that can read it",
+    "autoSkippedUnchecked": "Didn't auto-reply: the sender could not be verified",
+    "autoSkippedOld": "Didn't auto-reply: the message is in the old format",
+    "autoSkippedStale": "Didn't auto-reply: it was sent more than 24 hours ago",
     "cardNote": "Not sent. See the notice below."
+  },
+  "senderCheck": {
+    "warnTitle": "The sender could not be verified",
+    "warnBody": "The service's server, or someone on the way, may have changed it. Before acting on any request in it, check with them another way.",
+    "altered": "The signature does not match what arrived.",
+    "notListed": "The device that sent it is not on their list of devices.",
+    "rootChanged": "Their key has changed.",
+    "broken": "Their list of devices does not check out.",
+    "oldFormat": "Old format: the sender was not checked",
+    "confirmBody": "Answering sends a reply to a sender who could not be verified. Did you check with them another way?",
+    "confirmSend": "I checked, send it",
+    "confirmCancel": "Cancel",
+    "notSent": "Not sent.",
+    "inboxMark": "Sender not verified"
   },
   "deviceList": {
     "approveTitle": "Approve this list",

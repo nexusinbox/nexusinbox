@@ -69,11 +69,26 @@ function makeApi(overrides: Partial<AutoReplyExecutorApi> = {}): AutoReplyExecut
       encrypted_key: "ek",
       nonce: "n",
       content_type: "application/vnd.nexusinbox.a2a+json; v=1",
+      signature_v2: {
+        signature: "sig-1",
+        sent_at: new Date().toISOString(),
+        sender_aid: "aid:ai:sender",
+        recipient_aid: "aid:ai:viewer",
+      },
     })),
     markAutoReplySent: vi.fn(async () => ({ auto_reply_sent_at: "2026-04-24T21:34:00Z" })),
     claimAutoReply: vi.fn(async () => true),
     releaseAutoReplyClaim: vi.fn(async () => {}),
     ...overrides,
+  };
+}
+
+/** A verified sender, and nothing answered yet (docs/40 §14.5). */
+function senderOk(state: "verified" | "altered" | "unchecked" = "verified") {
+  const answered = new Set<string>();
+  return {
+    checkSender: vi.fn(async () => state),
+    answered: { has: (s: string) => answered.has(s), add: (s: string) => void answered.add(s) },
   };
 }
 
@@ -90,6 +105,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(api.markAutoReplySent).not.toHaveBeenCalled();
@@ -108,6 +124,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(sendProtocolReply).not.toHaveBeenCalled();
@@ -125,6 +142,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(sendProtocolReply).not.toHaveBeenCalled();
@@ -142,6 +160,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(sendProtocolReply).toHaveBeenCalledTimes(1);
@@ -171,6 +190,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => taskDelegateBody,
     });
     expect(sendProtocolReply).toHaveBeenCalledTimes(1);
@@ -207,6 +227,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     // Still skipped at eligibility gate because decision was queue_for_human.
@@ -225,6 +246,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(sendProtocolReply).not.toHaveBeenCalled();
@@ -240,6 +262,7 @@ describe("runAutoReplyExecutor", () => {
           encrypted_key: "ek",
           nonce: "n",
           content_type: "application/vnd.nexusinbox.a2a+json; v=1",
+          signature_v2: { signature: "sig-b", sent_at: new Date().toISOString(), sender_aid: "a", recipient_aid: "b" },
         }),
     });
     const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
@@ -252,9 +275,85 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
     expect(sendProtocolReply).toHaveBeenCalledTimes(1);
+  });
+
+  // docs/40 §14.5: only a verified sender, recently, and once.
+  it("leaves a sender that did not check out to the person, saying why", async () => {
+    const skipAutoReply = vi.fn(async () => {});
+    const api = makeApi({ skipAutoReply });
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
+    await runAutoReplyExecutor({
+      viewerAgentDid: "did:key:zViewer",
+      viewerHasSigningKey: true,
+      messages: [makeEntry()],
+      policy: { v: 1, default_action: "auto_accept" },
+      masterAutoReplyEnabled: true,
+      isContact: () => true,
+      api,
+      sendProtocolReply,
+      ...senderOk("altered"),
+      decrypt: async () => scheduleProposeBody,
+    });
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+    expect(skipAutoReply).toHaveBeenCalledWith("msg-1", "altered");
+    expect(api.releaseAutoReplyClaim).not.toHaveBeenCalled();
+  });
+
+  it("tries again later when the sender could not be checked, without claiming", async () => {
+    const api = makeApi();
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
+    await runAutoReplyExecutor({
+      viewerAgentDid: "did:key:zViewer",
+      viewerHasSigningKey: true,
+      messages: [makeEntry()],
+      policy: { v: 1, default_action: "auto_accept" },
+      masterAutoReplyEnabled: true,
+      isContact: () => true,
+      api,
+      sendProtocolReply,
+      ...senderOk("unchecked"),
+      decrypt: async () => scheduleProposeBody,
+    });
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+    expect(api.claimAutoReply).not.toHaveBeenCalled();
+  });
+
+  it("does not answer a stale message or the same message twice", async () => {
+    const skipAutoReply = vi.fn(async () => {});
+    const stale = makeApi({
+      skipAutoReply,
+      getMessageContent: vi.fn(async () => ({
+        encrypted_content: "ct",
+        encrypted_key: "ek",
+        nonce: "n",
+        content_type: "application/vnd.nexusinbox.a2a+json; v=1",
+        signature_v2: { signature: "sig-old", sent_at: new Date(Date.now() - 25 * 3600_000).toISOString(), sender_aid: "a", recipient_aid: "b" },
+      })),
+    });
+    const send: SendProtocolReplyFn = vi.fn(async () => {});
+    const base = {
+      viewerAgentDid: "did:key:zViewer",
+      viewerHasSigningKey: true,
+      policy: { v: 1, default_action: "auto_accept" },
+      masterAutoReplyEnabled: true,
+      isContact: () => true,
+      sendProtocolReply: send,
+      decrypt: async () => scheduleProposeBody,
+    };
+    await runAutoReplyExecutor({ ...base, ...senderOk(), messages: [makeEntry()], api: stale });
+    expect(send).not.toHaveBeenCalled();
+    expect(skipAutoReply).toHaveBeenCalledWith("msg-1", "stale");
+
+    // Answered once; delivered again under another id, not answered again.
+    const shared = senderOk();
+    const api = makeApi();
+    await runAutoReplyExecutor({ ...base, ...shared, messages: [makeEntry({ id: "msg-1" })], api });
+    await runAutoReplyExecutor({ ...base, ...shared, messages: [makeEntry({ id: "msg-2" })], api });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   // -----------------------------------------------------------------
@@ -282,6 +381,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
       calendarFreebusy,
     });
@@ -316,6 +416,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
       calendarFreebusy,
     });
@@ -340,6 +441,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
       // No calendarFreebusy — user hasn't connected Google Calendar.
     });
@@ -367,6 +469,7 @@ describe("runAutoReplyExecutor", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
       calendarFreebusy,
     });
@@ -406,6 +509,7 @@ describe("runAutoReplyExecutor: only answers live, well-formed requests", () => 
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => body,
     });
     return { api, sendProtocolReply };
@@ -467,6 +571,7 @@ describe("runAutoReplyExecutor claim (docs/29 §2.5)", () => {
       isContact: () => true,
       api,
       sendProtocolReply,
+      ...senderOk(),
       decrypt: async () => scheduleProposeBody,
     });
   }

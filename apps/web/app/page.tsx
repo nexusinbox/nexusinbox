@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppShell } from "./_components/AppShell";
+import { checkReceived, receivedWarns } from "../lib/agents/sender-check";
 import { RefreshIconButton } from "./_components/RefreshIconButton";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
 import { InviteCard, useInviteName } from "./_components/InviteCard";
@@ -61,6 +62,8 @@ type Preview = {
   state: "readable" | "no_key" | "error";
   text: string;
   protocolType: string | null;
+  /** A received message whose sender could not be verified (docs/40 §14.7). */
+  unverified?: boolean;
 };
 
 // Shared outer frame for the two inbox onboarding variants. Kept
@@ -279,6 +282,9 @@ function MessagesPageInner() {
 
   const agentsQuery = useAgentsQuery();
   const agentList = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
+  // Read by the preview workers, which outlive a render.
+  const agentsRef = useRef(agentList);
+  agentsRef.current = agentList;
   const agentCount = agentsQuery.data?.agents.length ?? null;
   const firstAgentAid = agentsQuery.data?.agents?.[0]?.aid ?? null;
 
@@ -482,10 +488,15 @@ function MessagesPageInner() {
             const body = await decryptMessageBody(content, entry, mine, c.ownDids);
             if (body.state === "readable") {
               const parsed = parseProtocolBody(body.text, content.content_type ?? null);
+              // Checked whichever side this row is: two of the person's own
+              // agents share one row, and the mark is shown only where it
+              // was received.
+              const sender = await checkReceived(content, agentsRef.current).catch(() => "unchecked" as const);
               preview = {
                 state: "readable",
                 text: previewSnippet(parsed?.body ?? body.text),
                 protocolType: parsed?.protocol?.type ?? null,
+                unverified: receivedWarns(sender),
               };
             } else {
               preview = { state: body.state, text: "", protocolType: null };
@@ -623,6 +634,7 @@ function MessagesPageInner() {
               visible.map((c) => {
                 const name = counterpartName(c);
                 const protocolType = previews[c.latest.entry.id]?.protocolType ?? null;
+                const unverified = !c.latest.mine && previews[c.latest.entry.id]?.unverified === true;
                 // Not a contact (nor one of the person's own agents); no tag
                 // when the name already says so.
                 const unknown =
@@ -651,8 +663,13 @@ function MessagesPageInner() {
                         <span className="dm-time">{timeText(c.latest.entry.created_at)}</span>
                       </span>
                       <span className="dm-preview">{previewText(c)}</span>
-                      {protocolType || c.autoReplied || unknown ? (
+                      {protocolType || c.autoReplied || unknown || unverified ? (
                         <span className="dm-tags">
+                          {unverified ? (
+                            <span className="dm-tag danger" data-testid="dm-row-unverified">
+                              {t("senderCheck.inboxMark")}
+                            </span>
+                          ) : null}
                           {protocolType === "schedule_negotiation" ? (
                             <span className="dm-tag sched">{t("messages.tagSchedule")}</span>
                           ) : protocolType === "task_delegation" ? (

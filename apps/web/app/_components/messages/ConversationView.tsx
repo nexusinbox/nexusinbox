@@ -65,6 +65,7 @@ import {
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
 import { deviceWraps, isSendStop, isUnlisted, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
 import { SendStopNotice, UnlistedHint } from "./SendStopNotice";
+import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
 
@@ -102,9 +103,29 @@ type Rendered = {
   subject: string;
   protocol: A2AProtocolBlock | null;
   key: ViewerKey | null;
+  /** Who sent it, for received messages (docs/40 §14.5). */
+  sender?: ReceivedCheck;
 };
 
 const LOADING: Rendered = { state: "loading", text: "", subject: "", protocol: null, key: null };
+
+/** The conversation's line for an auto-reply left to the person (docs/40 §13.3, §14.5). */
+function autoSkippedKey(reason: string): string {
+  if (reason === "root_changed") return "sendStop.autoSkippedChanged";
+  if (reason === "no_device") return "sendStop.autoSkippedNoDevice";
+  if (reason === "altered" || reason === "not_listed") return "sendStop.autoSkippedUnchecked";
+  if (reason === "unsigned") return "sendStop.autoSkippedOld";
+  if (reason === "stale") return "sendStop.autoSkippedStale";
+  return "sendStop.autoSkippedBroken";
+}
+
+/** Why a received message's sender did not check out. */
+function unverifiedReasonKey(check: ReceivedCheck | undefined): string {
+  if (check === "not_listed") return "senderCheck.notListed";
+  if (check === "root_changed") return "senderCheck.rootChanged";
+  if (check === "broken") return "senderCheck.broken";
+  return "senderCheck.altered";
+}
 
 function dayLabel(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
@@ -153,6 +174,20 @@ export function ConversationView({
     stop: SendStop;
     retry: (root: string) => Promise<void>;
   } | null>(null);
+  // Answering a request whose sender could not be verified asks once
+  // (docs/40 §14.7): the card waits on this.
+  const [confirming, setConfirming] = useState<{ id: string; settle: (ok: boolean) => void } | null>(null);
+  const confirmUnverified = (id: string) =>
+    new Promise<void>((resolve, reject) => {
+      setConfirming({
+        id,
+        settle: (ok) => (ok ? resolve() : reject(new Error(t("senderCheck.notSent")))),
+      });
+    });
+  const settleConfirm = (ok: boolean) => {
+    confirming?.settle(ok);
+    setConfirming(null);
+  };
   // An auto-reply a browser or the computer did not send to them, as the
   // server recorded it (docs/40 §13.3).
   const skips = useAuditLogQuery({ event: "auto_reply_skipped", limit: 50 }, { refetchInterval: 30_000 });
@@ -202,6 +237,8 @@ export function ConversationView({
             staleTime: 30_000,
           });
           const body = await decryptMessageBody(content, m.entry, m.mine, conversation.ownDids);
+          // Who sent it (docs/40 §14.5); the person's own copies are not marked.
+          const sender = m.mine ? undefined : await checkReceived(content, agents).catch(() => "unchecked" as const);
           if (body.state === "readable" && body.key) {
             const parsed = parseProtocolBody(body.text, content.content_type ?? null);
             let subject = "";
@@ -219,9 +256,10 @@ export function ConversationView({
               subject,
               protocol: parsed?.protocol ?? null,
               key: body.key,
+              sender,
             };
           } else {
-            result = { ...LOADING, state: body.state === "readable" ? "error" : body.state };
+            result = { ...LOADING, state: body.state === "readable" ? "error" : body.state, sender };
           }
         } catch {
           result = { ...LOADING, state: "error" };
@@ -235,7 +273,7 @@ export function ConversationView({
     return () => {
       cancelled = true;
     };
-  }, [messages, conversation.ownDids, queryClient]);
+  }, [messages, conversation.ownDids, queryClient, agents]);
 
   // Keep the newest message in view while bodies load, unless the person
   // scrolled up to read.
@@ -488,9 +526,26 @@ export function ConversationView({
                     mine
                       ? undefined
                       : (reply) =>
-                          handleProtocolRespond(entry, protocol.type, protocol.id, r.subject, reply)
+                          receivedWarns(r.sender)
+                            ? confirmUnverified(entry.id).then(() =>
+                                handleProtocolRespond(entry, protocol.type, protocol.id, r.subject, reply),
+                              )
+                            : handleProtocolRespond(entry, protocol.type, protocol.id, r.subject, reply)
                   }
                 />
+                {confirming?.id === entry.id ? (
+                  <div className="dm-confirm" role="alertdialog" data-testid="sender-unverified-confirm">
+                    {t("senderCheck.confirmBody")}
+                    <div className="dm-confirm-actions">
+                      <button type="button" className="danger" onClick={() => settleConfirm(true)}>
+                        {t("senderCheck.confirmSend")}
+                      </button>
+                      <button type="button" onClick={() => settleConfirm(false)}>
+                        {t("senderCheck.confirmCancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           } else if (r.state === "readable") {
@@ -512,7 +567,13 @@ export function ConversationView({
               {showDay ? <div className="dm-sys">{day}</div> : null}
               <div className={"dm-msg" + (mine ? " mine" : "")} data-testid="dm-message">
                 {mine ? null : <Avatar did={conversation.counterpartDid} name={name} small />}
-                <div className="dm-msg-body">
+                <div className={"dm-msg-body" + (!mine && receivedWarns(r.sender) ? " unverified" : "")}>
+                  {!mine && receivedWarns(r.sender) ? (
+                    <div className="dm-unverified" role="note" data-testid="sender-unverified">
+                      <b>{t("senderCheck.warnTitle")}</b>
+                      {t("senderCheck.warnBody")} {t(unverifiedReasonKey(r.sender))}
+                    </div>
+                  ) : null}
                   {showSubject ? <div className="dm-subject">{r.subject}</div> : null}
                   {body}
                   {r.state === "readable" && r.key ? (
@@ -525,6 +586,11 @@ export function ConversationView({
                   <div className="dm-meta">
                     {isAutoReply ? `${t("messages.autoReplyMark")} · ` : ""}
                     {time}
+                    {!mine && receivedOldFormat(r.sender) ? (
+                      <span className="dm-oldformat" data-testid="sender-old-format">
+                        {` · ${t("senderCheck.oldFormat")}`}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -534,13 +600,7 @@ export function ConversationView({
 
         {autoReplySkip ? (
           <div className="dm-sys" data-testid="auto-reply-skipped">
-            {t(
-              autoReplySkip.reason === "root_changed"
-                ? "sendStop.autoSkippedChanged"
-                : autoReplySkip.reason === "no_device"
-                  ? "sendStop.autoSkippedNoDevice"
-                  : "sendStop.autoSkippedBroken",
-            )}
+            {t(autoSkippedKey(autoReplySkip.reason))}
           </div>
         ) : null}
 

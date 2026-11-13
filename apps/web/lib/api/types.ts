@@ -328,6 +328,11 @@ export type MessageContentResponse = {
   // The content key for each recipient device / each sender device (docs/38).
   encrypted_keys?: KeyWrap[];
   sender_encrypted_keys?: KeyWrap[];
+  // Envelope signature v2, the attachments it covers and the sender's
+  // device list when it was sent (docs/40 §14.6). Absent on older messages.
+  signature_v2?: { signature: string; sent_at: string; sender_aid: string; recipient_aid: string } | null;
+  attachments?: { id: string; metadata_encrypted: string; metadata_nonce: string }[];
+  sender_device_list?: { version: number; jws: string } | null;
 };
 
 // --- Attachment upload types (docs/17_attachment_upload_r2_spec.md) -------
@@ -662,6 +667,8 @@ export type AgentDraft = {
   content_type: string | null;
   review_wraps: { review_key_id: string; wrapped_key: string }[];
   via: string | null;
+  /** Signed with v2 and its wraps by the computer: approving only sends it (docs/40 §14.4). */
+  signed_v2?: boolean;
   created_at: string;
   expires_at: string;
 };

@@ -601,6 +601,10 @@ button, input, textarea, select {
   background: color-mix(in srgb, var(--ok) 12%, transparent);
   color: var(--ok);
 }
+.dm-tag.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
 .dm-dot {
   flex: none;
   align-self: center;
@@ -821,6 +825,52 @@ button, input, textarea, select {
 }
 .dm-card {
   min-width: min(260px, 100%);
+}
+/* A received message whose sender could not be verified (docs/40 §14.7). */
+.dm-msg-body.unverified {
+  padding: 8px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+}
+.dm-unverified {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.dm-unverified b {
+  display: block;
+}
+.dm-confirm {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--danger-soft);
+  font-size: var(--fs-sm);
+}
+.dm-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dm-confirm-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dm-confirm-actions button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 /* Request cards (日程調整 / タスク依頼) inside the conversation. */
 .dm-card .ai-protocol-card {

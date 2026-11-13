@@ -20,6 +20,8 @@ import { runAutoReplyExecutor } from "../../lib/protocol/autoReplyExecutor";
 import { sendProtocolReply as realSendProtocolReply } from "./protocol/sendProtocolReply";
 import { getCalendarToken } from "../../lib/calendar/gcalAuth";
 import { findFirstFreeCandidate } from "../../lib/calendar/gcalFreebusy";
+import { checkReceived } from "../../lib/agents/sender-check";
+import { answeredReplies } from "../../lib/protocol/answered";
 
 export function BrowserAutoReply({ agent }: { agent: Agent }) {
   const currentAgent = agent;
@@ -94,6 +96,8 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
               defaultApiClient.releaseAutoReplyClaim(id),
             skipAutoReply: (id, reason) => defaultApiClient.skipAutoReply(id, reason),
           },
+          checkSender: (content) => checkReceived(content, [agent]),
+          answered: answeredReplies,
           sendProtocolReply: (input) =>
             realSendProtocolReply({
               protocolType: input.protocolType,

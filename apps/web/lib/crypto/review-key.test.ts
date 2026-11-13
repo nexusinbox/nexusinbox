@@ -54,4 +54,10 @@ describe("senderCopyForDraft", () => {
       await unwrapContentKeyWithRecipientPrivateKey(wrapped!, browserEra.pair.privateKey),
     ).toBe("content-key-1");
   });
+
+  it("adds nothing to a draft the computer signed with its wraps (docs/40 §14.4)", async () => {
+    const agents = [{ aid: "aid:ai:me", encryption_key: (await keyPair()).pub } as Agent];
+    expect(await senderCopyForDraft({ ...draft, signed_v2: true }, opened, agents)).toBeUndefined();
+    expect(resolveRecipient).not.toHaveBeenCalled();
+  });
 });

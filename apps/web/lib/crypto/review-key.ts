@@ -139,7 +139,9 @@ export async function draftDeviceWraps(
   if (!plan.unlisted && !plan.recipientDevices.some((d) => d.did === draft.recipient_did)) {
     throw new SendStop("signature", served.aid);
   }
-  if (!opened) return { encryptedKeys: [], senderEncryptedKeys: [] };
+  // A v2 draft was wrapped for every device and signed by the computer
+  // (docs/40 §14.4): approving only sends it.
+  if (!opened || draft.signed_v2) return { encryptedKeys: [], senderEncryptedKeys: [] };
   return deviceWraps(opened.contentKey, plan);
 }
 
@@ -148,7 +150,7 @@ export async function senderCopyForDraft(
   opened: OpenedDraft | null | undefined,
   agents: Agent[],
 ): Promise<string | undefined> {
-  if (!opened) return undefined;
+  if (!opened || draft.signed_v2) return undefined;
   // The key of the DID the draft is sent from: for an agent on a computer
   // that is the signer's key, not the agent's browser-era `encryption_key`.
   const senderKey = await defaultApiClient
