@@ -322,6 +322,8 @@ async function makeCryptoFixture() {
   const senderPublic = await exportRawPublicKeyBase64Url(sender.publicKey);
   const recipientPublic = await exportRawPublicKeyBase64Url(recipient.publicKey);
   return {
+    senderAid: "aid:ai:sender",
+    recipientAid: "aid:ai:recipient",
     senderDid: `did:key:z-sender-${senderPublic.slice(0, 8)}`,
     recipientDid: `did:key:z-recipient-${recipientPublic.slice(0, 8)}`,
     senderSigningPrivateKey: sender.privateKey,
@@ -353,7 +355,8 @@ describe("buildA2AEnvelope", () => {
     expect(env.metadata.content_type).toBe(A2A_CONTENT_TYPE);
     expect(env.metadata.thread_id).toBe("thread-abc");
     expect(typeof env.encrypted_content).toBe("string");
-    expect(typeof env.signature).toBe("string");
+    expect(typeof env.signature_v2?.signature).toBe("string");
+    expect(env.signature_v2?.recipient_aid).toBe("aid:ai:recipient");
   });
 
   it("tags envelope with text/plain when protocol is omitted", async () => {

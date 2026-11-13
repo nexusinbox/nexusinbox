@@ -25,6 +25,10 @@
     "./pairing": {
       "types": "./dist/pairing.d.ts",
       "default": "./dist/pairing.js"
+    },
+    "./envelope-v2": {
+      "types": "./dist/envelope-v2.d.ts",
+      "default": "./dist/envelope-v2.js"
     }
   },
   "scripts": {

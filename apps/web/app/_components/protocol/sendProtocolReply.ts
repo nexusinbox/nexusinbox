@@ -27,7 +27,7 @@ import {
   type A2AProtocolBlock,
   type A2AProtocolType,
 } from "@nexusinbox/core/a2a";
-import { defaultApiClient } from "../../../lib/api/client";
+import { defaultApiClient, type SendSigning } from "../../../lib/api/client";
 import {
   encryptEnvelopeText,
   generateContentKey,
@@ -36,9 +36,8 @@ import {
   wrapContentKeyForRecipient,
   wrapContentKeyForSender,
 } from "../../../lib/crypto/keywrap";
-import { signEnvelopePayload } from "../../../lib/crypto/signature";
 import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
-import { deviceWraps, planSend } from "../../../lib/crypto/device-wraps";
+import { deviceWraps, planSend, sendSigning } from "../../../lib/crypto/device-wraps";
 import type { KeyWrap } from "../../../lib/api/types";
 import {
   buildReplyPayload,
@@ -52,7 +51,7 @@ type SendMessageFn = (payload: {
   encryptedContent: string;
   encryptedKey: string;
   nonce: string;
-  signature: string;
+  signing: SendSigning;
   threadId?: string | null;
   contentType?: string;
   autoReplyOrigin?: string;
@@ -163,16 +162,6 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
   );
   // Every device of both agents can read the reply (docs/38).
   const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, plan);
-  const signature = await signEnvelopePayload({
-    signingPrivateKey,
-    senderDid: input.viewerAgentDid,
-    recipientDid,
-    subjectEncrypted: encryptedSubject.serialized,
-    encryptedContent: encryptedBody.serialized,
-    encryptedKey: wrapped.wrappedKey,
-    nonce: encryptedBody.nonce,
-  });
-
   await input.sendMessage({
     senderDid: input.viewerAgentDid,
     recipientDid,
@@ -180,7 +169,7 @@ export async function sendProtocolReply(input: SendProtocolReplyInput): Promise<
     encryptedContent: encryptedBody.serialized,
     encryptedKey: wrapped.wrappedKey,
     nonce: encryptedBody.nonce,
-    signature,
+    signing: sendSigning(signingPrivateKey, plan),
     threadId: input.threadId,
     contentType: A2A_CONTENT_TYPE,
     autoReplyOrigin: input.autoReplyOrigin,

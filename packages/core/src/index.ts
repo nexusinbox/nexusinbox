@@ -9,6 +9,7 @@ import {
   type A2AMessagePayload,
   type A2AProtocolBlock,
 } from "./a2a.js";
+import { sentAtNow, signEnvelopeV2, type SignatureV2 } from "./envelope-v2.js";
 
 // Re-export the A2A surface so consumers can reach it from
 // `@nexusinbox/core` without knowing about the `./a2a` sub-module.
@@ -131,6 +132,11 @@ export type MessageContentResponse = {
   /** The content key for each recipient device / each sender device (docs/38). */
   encrypted_keys?: KeyWrap[];
   sender_encrypted_keys?: KeyWrap[];
+  content_type?: string | null;
+  /** Envelope signature v2, with what it covers and the sender's list then (docs/40 §14.6). */
+  signature_v2?: SignatureV2 | null;
+  attachments?: Array<{ id: string; metadata_encrypted: string; metadata_nonce: string }>;
+  sender_device_list?: { version: number; jws: string } | null;
 };
 
 export type SendMessageResponse = {
@@ -246,14 +252,17 @@ export type SendEnvelope = {
   encrypted_key: string;
   /**
    * The same content key wrapped for the sender, so the sender can reread
-   * the message (docs/35 §5). Not covered by the signature.
+   * the message (docs/35 §5).
    */
   sender_encrypted_key?: string;
   /** The content key for each device of the recipient / of the sender (docs/38). */
   encrypted_keys?: KeyWrap[];
   sender_encrypted_keys?: KeyWrap[];
   nonce: string;
+  /** v1, from older senders only. */
   signature?: string;
+  /** Envelope signature v2 over everything here (docs/40 §14.2). */
+  signature_v2?: SignatureV2;
   metadata: {
     subject_encrypted: string;
     thread_id?: string | null;
@@ -263,6 +272,9 @@ export type SendEnvelope = {
 };
 
 export type SendTextMessageInput = {
+  /** The sending agent and the recipient's agent, which signature v2 names (docs/40 §14.2). */
+  senderAid: string;
+  recipientAid: string;
   senderDid: string;
   recipientDid: string;
   recipientEncryptionPublicKey: string;
@@ -551,30 +563,30 @@ async function deviceWrapFields(
   };
 }
 
-export async function signEnvelopePayload(params: {
-  signingPrivateKey: CryptoKey;
-  senderDid: string;
-  recipientDid: string;
-  subjectEncrypted: string;
-  encryptedContent: string;
-  encryptedKey: string;
-  nonce: string;
-}): Promise<string> {
-  const crypto = ensureCrypto();
-  const payload = [
-    params.senderDid,
-    params.recipientDid,
-    params.subjectEncrypted,
-    params.encryptedContent,
-    params.encryptedKey,
-    params.nonce,
-  ].join("\n");
-  const signature = await crypto.subtle.sign(
-    "Ed25519",
-    params.signingPrivateKey,
-    asArrayBuffer(encoder().encode(payload)),
-  );
-  return toBase64Url(new Uint8Array(signature));
+/** Sign a built envelope with signature v2 (docs/40 §14.2). */
+async function withSignatureV2(input: SendTextMessageInput, envelope: SendEnvelope): Promise<SendEnvelope> {
+  const sentAt = sentAtNow();
+  const signature = await signEnvelopeV2(input.senderSigningPrivateKey, {
+    sender_aid: input.senderAid,
+    sender_did: input.senderDid,
+    recipient_aid: input.recipientAid,
+    recipient_did: input.recipientDid,
+    sent_at: sentAt,
+    content_type: envelope.metadata.content_type ?? "text/plain",
+    thread_id: envelope.metadata.thread_id ?? null,
+    subject_encrypted: envelope.metadata.subject_encrypted,
+    encrypted_content: envelope.encrypted_content,
+    encrypted_key: envelope.encrypted_key,
+    nonce: envelope.nonce,
+    sender_encrypted_key: envelope.sender_encrypted_key ?? null,
+    encrypted_keys: envelope.encrypted_keys ?? [],
+    sender_encrypted_keys: envelope.sender_encrypted_keys ?? [],
+    attachments: [],
+  });
+  return {
+    ...envelope,
+    signature_v2: { signature, sent_at: sentAt, sender_aid: input.senderAid, recipient_aid: input.recipientAid },
+  };
 }
 
 export async function buildEncryptedTextEnvelope(input: SendTextMessageInput): Promise<SendEnvelope> {
@@ -584,34 +596,23 @@ export async function buildEncryptedTextEnvelope(input: SendTextMessageInput): P
   const subjectEncrypted = serializeEncryptedPayload(encryptedSubject);
   const encryptedContent = serializeEncryptedPayload(encryptedBody);
   const encryptedKey = await wrapContentKeyForRecipient(contentKey, input.recipientEncryptionPublicKey);
-  const signature = await signEnvelopePayload({
-    signingPrivateKey: input.senderSigningPrivateKey,
-    senderDid: input.senderDid,
-    recipientDid: input.recipientDid,
-    subjectEncrypted,
-    encryptedContent,
-    encryptedKey,
-    nonce: encryptedBody.iv,
-  });
-
   const senderEncryptedKey = input.senderEncryptionPublicKey
     ? await wrapContentKeyForRecipient(contentKey, input.senderEncryptionPublicKey)
     : undefined;
 
-  return {
+  return withSignatureV2(input, {
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
     ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
     ...(await deviceWrapFields(contentKey, input)),
     nonce: encryptedBody.iv,
-    signature,
     metadata: {
       subject_encrypted: subjectEncrypted,
       thread_id: input.threadId,
       content_type: "text/plain",
       has_attachments: false,
     },
-  };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -642,9 +643,8 @@ export type SendA2AMessageInput = Omit<SendTextMessageInput, "body"> & {
 /**
  * Build an E2E envelope whose decrypted body is an A2A v=1 JSON
  * document. Thin wrapper around {@link buildEncryptedTextEnvelope}
- * — the signature lives on ciphertext so the protocol block is
- * inside the encryption boundary and the signature verifier has
- * nothing extra to check.
+ * — the protocol block is inside the encryption boundary, and
+ * signature v2 covers the ciphertext and the content type.
  *
  * Validates the protocol payload before serialisation so invalid
  * input (bad timestamps, candidate count limits, etc.) fails
@@ -675,34 +675,23 @@ export async function buildA2AEnvelope(input: SendA2AMessageInput): Promise<Send
     contentKey,
     input.recipientEncryptionPublicKey,
   );
-  const signature = await signEnvelopePayload({
-    signingPrivateKey: input.senderSigningPrivateKey,
-    senderDid: input.senderDid,
-    recipientDid: input.recipientDid,
-    subjectEncrypted,
-    encryptedContent,
-    encryptedKey,
-    nonce: encryptedBody.iv,
-  });
-
   const senderEncryptedKey = input.senderEncryptionPublicKey
     ? await wrapContentKeyForRecipient(contentKey, input.senderEncryptionPublicKey)
     : undefined;
 
-  return {
+  return withSignatureV2(input, {
     encrypted_content: encryptedContent,
     encrypted_key: encryptedKey,
     ...(senderEncryptedKey ? { sender_encrypted_key: senderEncryptedKey } : {}),
     ...(await deviceWrapFields(contentKey, input)),
     nonce: encryptedBody.iv,
-    signature,
     metadata: {
       subject_encrypted: subjectEncrypted,
       thread_id: input.threadId,
       content_type: input.protocol ? A2A_CONTENT_TYPE : "text/plain",
       has_attachments: false,
     },
-  };
+  });
 }
 
 export async function createEd25519KeyPair(): Promise<CryptoKeyPair> {

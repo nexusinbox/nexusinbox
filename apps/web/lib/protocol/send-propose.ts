@@ -12,9 +12,9 @@ import {
 } from "@nexusinbox/core/a2a";
 import { encryptEnvelopeText, generateContentKey } from "../crypto/envelope";
 import { wrapContentKeyForRecipient, wrapContentKeyForSender } from "../crypto/keywrap";
-import { signEnvelopePayload } from "../crypto/signature";
-import { deviceWraps, type SendPlan } from "../crypto/device-wraps";
+import { deviceWraps, sendSigning, type SendPlan } from "../crypto/device-wraps";
 import type { KeyWrap } from "../api/types";
+import type { SendSigning } from "../api/client";
 
 export type SendEncryptedMessage = (payload: {
   senderDid: string;
@@ -23,7 +23,7 @@ export type SendEncryptedMessage = (payload: {
   encryptedContent: string;
   encryptedKey: string;
   nonce: string;
-  signature: string;
+  signing: SendSigning;
   threadId: string | null;
   contentType: string;
   senderEncryptedKey?: string;
@@ -34,6 +34,8 @@ export type SendEncryptedMessage = (payload: {
 export async function sendScheduleProposal(
   input: {
     senderDid: string;
+    /** The sending agent (signature v2 names it, docs/40 §14.2). */
+    senderAid?: string;
     signingPrivateKey: CryptoKey;
     /** Whom to wrap for, checked against the recipient's device list (planSend, docs/40 §12). */
     plan: SendPlan;
@@ -71,16 +73,6 @@ export async function sendScheduleProposal(
   );
   // Every device of both agents can read it (docs/38).
   const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, input.plan);
-  const signature = await signEnvelopePayload({
-    signingPrivateKey: input.signingPrivateKey,
-    senderDid: input.senderDid,
-    recipientDid,
-    subjectEncrypted: encSubject.serialized,
-    encryptedContent: encBody.serialized,
-    encryptedKey: wrapped.wrappedKey,
-    nonce: encBody.nonce,
-  });
-
   input.onSending?.();
   const sent = await send({
     senderDid: input.senderDid,
@@ -89,7 +81,7 @@ export async function sendScheduleProposal(
     encryptedContent: encBody.serialized,
     encryptedKey: wrapped.wrappedKey,
     nonce: encBody.nonce,
-    signature,
+    signing: sendSigning(input.signingPrivateKey, input.plan, input.senderAid),
     // New thread — the server assigns the id.
     threadId: null,
     contentType: A2A_CONTENT_TYPE,

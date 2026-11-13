@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deliveredFields, verifyEnvelopeV2Signature } from "@nexusinbox/core/envelope-v2";
+import { deriveDidKeyFromPublicKey } from "@nexusinbox/core";
 import { NexusInboxApiClient, ApiError } from "./client";
 
 describe("NexusInboxApiClient", () => {
@@ -199,5 +201,51 @@ describe("NexusInboxApiClient", () => {
       "http://localhost:8080/messages/..%2Fauth%2Fsession%3Fx%3D1/content",
       "http://localhost:8080/messages/m%2F1/attachments/a%2F2/download",
     ]);
+  });
+  it("signs the whole envelope with signature v2 (docs/40 §14.2)", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message_id: "m1", status: "delivered" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])) as CryptoKeyPair;
+    const did = await deriveDidKeyFromPublicKey(pair.publicKey);
+    const client = new NexusInboxApiClient({ baseUrl: "http://localhost:8080", bearerToken: "t" });
+    await client.seedMessage({
+      senderDid: did,
+      recipientDid: "did:key:zRecipient",
+      subjectEncrypted: "enc:v1:s:s",
+      encryptedContent: "enc:v1:b:b",
+      encryptedKey: "x25519v1:a:b:c:d",
+      nonce: "b",
+      signing: { key: pair.privateKey, senderAid: "aid:ai:me", recipientAid: "aid:ai:them" },
+      threadId: "0193f1d2-7c4a-7b3e-9a10-5d2f8e6c4b21",
+      contentType: "text/plain",
+      encryptedKeys: [{ did: "did:key:zRecipient", key: "x25519v1:r" }],
+      senderEncryptedKeys: [{ did, key: "x25519v1:s" }],
+      attachments: [{ attachment_id: "att-1", metadata_encrypted: "enc:v1:m:m", metadata_nonce: "mn" }],
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const sig = body.envelope.signature_v2;
+    expect(body.envelope.signature).toBeUndefined();
+    expect(sig).toMatchObject({ sender_aid: "aid:ai:me", recipient_aid: "aid:ai:them" });
+    const delivered = {
+      sender_did: did,
+      recipient_did: "did:key:zRecipient",
+      subject_encrypted: "enc:v1:s:s",
+      encrypted_content: "enc:v1:b:b",
+      encrypted_key: "x25519v1:a:b:c:d",
+      nonce: "b",
+      content_type: "text/plain",
+      thread_id: "0193f1d2-7c4a-7b3e-9a10-5d2f8e6c4b21",
+      encrypted_keys: body.envelope.encrypted_keys,
+      sender_encrypted_keys: body.envelope.sender_encrypted_keys,
+      attachments: [{ id: "att-1", metadata_encrypted: "enc:v1:m:m", metadata_nonce: "mn" }],
+    };
+    expect(await verifyEnvelopeV2Signature(deliveredFields(delivered, sig), sig.signature)).toBe(true);
+    // The server cannot add a wrap the sender did not sign.
+    const added = { ...delivered, encrypted_keys: [...delivered.encrypted_keys, { did: "did:key:zEvil", key: "k" }] };
+    expect(await verifyEnvelopeV2Signature(deliveredFields(added, sig), sig.signature)).toBe(false);
   });
 });

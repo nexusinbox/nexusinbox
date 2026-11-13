@@ -22,7 +22,7 @@ import {
   rememberDidAid,
   savePin,
 } from "../agents/peer-pins";
-import { defaultApiClient } from "../api/client";
+import { defaultApiClient, type SendSigning } from "../api/client";
 import type { DeviceKey, KeyWrap, MessageContentResponse, RecipientResolutionResponse } from "../api/types";
 import { loadAddressBook, sealForSave } from "../contacts/address-book";
 import { isValidX25519PublicKeyB64Url, wrapContentKeyForRecipient } from "./keywrap";
@@ -70,6 +70,10 @@ export function isSendStop(error: unknown): error is SendStop {
 export type SendPlan = {
   /** The device `encrypted_key` (and `recipient_did`) goes to. */
   recipient: WrapTarget;
+  /** The recipient's agent, as signature v2 names it (docs/40 §14.2). */
+  recipientAid: string;
+  /** The sending agent, when the server resolved it. */
+  senderAid?: string;
   recipientDevices: DeviceKey[];
   senderDevices: DeviceKey[];
   /** The sender's own key from its checked list, for `sender_encrypted_key`. */
@@ -127,7 +131,9 @@ async function decide(
   return decision;
 }
 
-async function ownSide(senderIdentifier: string | null | undefined): Promise<Pick<SendPlan, "senderDevices" | "senderKey">> {
+async function ownSide(
+  senderIdentifier: string | null | undefined,
+): Promise<Pick<SendPlan, "senderDevices" | "senderKey" | "senderAid">> {
   if (!senderIdentifier) return { senderDevices: [] };
   let served: RecipientResolutionResponse;
   try {
@@ -144,13 +150,14 @@ async function ownSide(senderIdentifier: string | null | undefined): Promise<Pic
   if (decision.kind === "stop") {
     // The agent page and Messages already warn about the person's own
     // list; the copy goes only to the one key the caller holds.
-    return { senderDevices: [] };
+    return { senderDevices: [], senderAid: served.aid };
   }
   if (decision.kind === "listed") {
     const next = pinAfter(loadPin(served.aid), decision);
     if (next) savePin(served.aid, next);
   }
   return {
+    senderAid: served.aid,
     senderDevices: decision.targets,
     senderKey:
       decision.kind === "listed"
@@ -174,6 +181,7 @@ export async function planSend(
   if (decision.kind === "stop") throw new SendStop(decision.reason, served.aid, decision.root);
   return {
     recipient: decision.single,
+    recipientAid: served.aid,
     recipientDevices: decision.targets,
     unlisted: decision.kind === "unlisted",
     ...(await ownSide(senderIdentifier)),
@@ -187,6 +195,20 @@ export async function planSend(
  */
 export function isUnlisted(served: Pick<RecipientResolutionResponse, "aid" | "device_list">): boolean {
   return !served.device_list && !loadPin(served.aid) && !contactForAid(served.aid)?.root;
+}
+
+/**
+ * What signs a planned send (docs/40 §14.2). `senderAid` is the sending
+ * agent when the caller knows it; otherwise the one the server resolved.
+ */
+export function sendSigning(
+  key: CryptoKey,
+  plan: Pick<SendPlan, "recipientAid" | "senderAid">,
+  senderAid?: string,
+): SendSigning {
+  const aid = senderAid ?? plan.senderAid;
+  if (!aid) throw new Error("the sending agent could not be found");
+  return { key, senderAid: aid, recipientAid: plan.recipientAid };
 }
 
 /** Both per-device lists for a planned send. */

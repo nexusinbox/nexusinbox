@@ -38,9 +38,18 @@ export type ReadMessageResult = {
   message_id: string;
   sender?: { aid?: string | null; did: string };
   recipient?: { aid?: string | null; did: string };
+  /** Whether the sender was verified (docs/40 §14.5); `note` says what to do when not. */
+  sender_check?: SenderCheckResult;
   subject: string;
   body: string;
   attachments: MessageAttachmentSummary[];
+};
+
+export type SenderCheckResult = {
+  /** verified | unsigned | no_list | altered | not_listed | root_changed | broken | unchecked */
+  state: string;
+  warn: boolean;
+  note: string | null;
 };
 
 export type RecipientResolutionResult = {

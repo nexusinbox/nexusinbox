@@ -41,6 +41,7 @@ use uuid::Uuid;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
+pub mod envelope_v2;
 mod oauth;
 
 const AUTH_COOKIE_NAME: &str = "nexusinbox_session";
@@ -820,6 +821,9 @@ struct StoredMessageContent {
     encrypted_keys: Vec<KeyWrap>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     sender_encrypted_keys: Vec<KeyWrap>,
+    /// Envelope signature v2 (docs/40 §14.6); absent on older messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature_v2: Option<StoredSignatureV2>,
 }
 
 #[derive(Deserialize)]
@@ -909,7 +913,31 @@ struct Envelope {
     sender_encrypted_keys: Option<Vec<KeyWrap>>,
     nonce: Option<String>,
     signature: Option<String>,
+    /// Envelope signature v2 (docs/40 §14.2). When present it is checked
+    /// instead of `signature`, and kept with the ciphertext.
+    #[serde(default)]
+    signature_v2: Option<SignatureV2>,
     metadata: Option<EnvelopeMetadata>,
+}
+
+/// A v2 envelope signature and the signed values the envelope does not
+/// otherwise carry (docs/40 §14.2).
+#[derive(Clone, Serialize, Deserialize)]
+struct SignatureV2 {
+    signature: String,
+    sent_at: String,
+    sender_aid: String,
+    recipient_aid: String,
+}
+
+/// What is kept with the ciphertext: the signature, and the version of the
+/// sender's device list when it was sent (docs/40 §14.6).
+#[derive(Clone, Serialize, Deserialize)]
+struct StoredSignatureV2 {
+    #[serde(flatten)]
+    signature: SignatureV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sender_list_version: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -1088,6 +1116,23 @@ struct MessageContentResponse {
     encrypted_keys: Vec<KeyWrap>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sender_encrypted_keys: Vec<KeyWrap>,
+    /// Envelope signature v2 (docs/40 §14.6), so the reader can check the
+    /// sender; with the attachments it covers and the sender's device list
+    /// as it was when the message was sent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signature_v2: Option<SignatureV2>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attachments: Vec<SignedAttachmentRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender_device_list: Option<DeviceListRef>,
+}
+
+/// An attachment as a v2 signature covers it.
+#[derive(Serialize)]
+struct SignedAttachmentRef {
+    id: String,
+    metadata_encrypted: String,
+    metadata_nonce: String,
 }
 
 #[derive(Serialize)]
@@ -2149,6 +2194,150 @@ async fn recipient_exists_in_db(pool: &PgPool, recipient_did: &str) -> Result<bo
     .await
     .map_err(|error| format!("failed to query recipient existence: {error}"))?;
     Ok(row.get::<bool, _>("exists"))
+}
+
+/// The parts of an envelope a v2 signature covers, as the server received them.
+struct SignedEnvelope<'a> {
+    sender_did: &'a str,
+    recipient_did: &'a str,
+    content_type: Option<&'a str>,
+    thread_id: Option<Uuid>,
+    subject_encrypted: &'a str,
+    encrypted_content: &'a str,
+    encrypted_key: &'a str,
+    nonce: &'a str,
+    sender_encrypted_key: Option<&'a str>,
+    encrypted_keys: &'a [KeyWrap],
+    sender_encrypted_keys: &'a [KeyWrap],
+    attachments: &'a [AttachmentRef],
+}
+
+fn v2_wraps(list: &[KeyWrap]) -> Vec<envelope_v2::Wrap<'_>> {
+    list.iter()
+        .map(|w| envelope_v2::Wrap {
+            did: &w.did,
+            key: &w.key,
+        })
+        .collect()
+}
+
+/// Check a v2 envelope signature (docs/40 §14.2, §14.6) by the sending
+/// agent's key over what the server received, and that it names the
+/// sending and receiving agents. Returns the version of the sender's
+/// device list now, kept with the message so readers check the device
+/// against the list it was sent under.
+async fn verify_signature_v2(
+    state: &AppState,
+    pool: Option<&PgPool>,
+    sender_aid: &str,
+    sender_public_key: &str,
+    sig: &SignatureV2,
+    e: &SignedEnvelope<'_>,
+) -> Result<Option<i64>, (StatusCode, Json<ErrorResponse>)> {
+    let content_type = e
+        .content_type
+        .filter(|c| !c.trim().is_empty())
+        .ok_or_else(|| {
+            validation_error("envelope.metadata.content_type is required with signature_v2")
+        })?;
+    if !envelope_v2::is_sent_at(&sig.sent_at) {
+        return Err(validation_error(
+            "signature_v2.sent_at must be RFC 3339 UTC with milliseconds",
+        ));
+    }
+    if sig.sender_aid != sender_aid {
+        return Err(validation_error(
+            "signature_v2.sender_aid is not the sending agent",
+        ));
+    }
+    let recipient_aid = if let Some(pool) = pool {
+        aid_of_did_in_db(pool, e.recipient_did)
+            .await
+            .map_err(|message| internal_server_error(&message))?
+    } else {
+        aid_of_did_in_memory(state, e.recipient_did)
+    };
+    if recipient_aid.as_deref() != Some(sig.recipient_aid.as_str()) {
+        return Err(validation_error(
+            "signature_v2.recipient_aid is not the recipient's agent",
+        ));
+    }
+    let thread_id = e.thread_id.map(|t| t.to_string());
+    let attachment_ids: Vec<String> = e
+        .attachments
+        .iter()
+        .map(|a| a.attachment_id.to_string())
+        .collect();
+    let fields = envelope_v2::Fields {
+        sender_aid: &sig.sender_aid,
+        sender_did: e.sender_did,
+        recipient_aid: &sig.recipient_aid,
+        recipient_did: e.recipient_did,
+        sent_at: &sig.sent_at,
+        content_type,
+        thread_id: thread_id.as_deref(),
+        subject_encrypted: e.subject_encrypted,
+        encrypted_content: e.encrypted_content,
+        encrypted_key: e.encrypted_key,
+        nonce: e.nonce,
+        sender_encrypted_key: e.sender_encrypted_key,
+        encrypted_keys: v2_wraps(e.encrypted_keys),
+        sender_encrypted_keys: v2_wraps(e.sender_encrypted_keys),
+        attachments: e
+            .attachments
+            .iter()
+            .zip(attachment_ids.iter())
+            .map(|(a, id)| envelope_v2::Attachment {
+                id,
+                metadata_encrypted: &a.metadata_encrypted,
+                metadata_nonce: &a.metadata_nonce,
+            })
+            .collect(),
+    };
+    if !verify_envelope_signature(
+        sender_public_key,
+        &sig.signature,
+        &envelope_v2::signing_input(&fields),
+    ) {
+        return Err(unauthorized_error("invalid envelope signature"));
+    }
+    let Some(pool) = pool else {
+        return Ok(None);
+    };
+    sqlx::query("SELECT MAX(version) AS version FROM agent_device_lists WHERE aid = $1")
+        .bind(&sig.sender_aid)
+        .fetch_one(pool)
+        .await
+        .map(|row| row.get::<Option<i64>, _>("version"))
+        .map_err(|e| internal_error("failed to read the sender's device list", e))
+}
+
+/// The agent a device DID belongs to (docs/40 §14.6).
+async fn aid_of_did_in_db(pool: &PgPool, did: &str) -> Result<Option<String>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT aid FROM agent_identity_keys WHERE did = $1 AND status = 'active'
+        UNION ALL
+        SELECT ai.aid FROM agents a JOIN agent_identities ai ON ai.agent_id = a.id WHERE a.did = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(did)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("failed to look up the recipient's agent: {error}"))?;
+    Ok(row.map(|row| row.get("aid")))
+}
+
+fn aid_of_did_in_memory(state: &AppState, did: &str) -> Option<String> {
+    let lock = state
+        .agents_by_user
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    lock.values()
+        .flatten()
+        .find(|agent| agent.did == did)
+        .map(|agent| agent.aid.clone())
 }
 
 async fn resolve_recipient_in_db(pool: &PgPool, recipient: &str) -> Result<Option<String>, String> {
@@ -6419,7 +6608,18 @@ struct CreateAgentDraftRequest {
     encrypted_content: String,
     encrypted_key: String,
     nonce: String,
-    signature: String,
+    /// v1 (older computers). A v2 draft carries `signature_v2` and the
+    /// wraps for every device instead (docs/40 §14.4).
+    #[serde(default)]
+    signature: Option<String>,
+    #[serde(default)]
+    signature_v2: Option<SignatureV2>,
+    #[serde(default)]
+    sender_encrypted_key: Option<String>,
+    #[serde(default)]
+    encrypted_keys: Option<Vec<KeyWrap>>,
+    #[serde(default)]
+    sender_encrypted_keys: Option<Vec<KeyWrap>>,
     content_type: Option<String>,
     review_wraps: Vec<ReviewWrap>,
     via: Option<String>,
@@ -6446,6 +6646,9 @@ struct AgentDraftEntry {
     content_type: Option<String>,
     review_wraps: Vec<ReviewWrap>,
     via: Option<String>,
+    /// Signed with signature v2 and its wraps (docs/40 §14.4): approving
+    /// sends it as it is, without adding wraps.
+    signed_v2: bool,
     created_at: String,
     expires_at: String,
 }
@@ -6636,7 +6839,30 @@ async fn create_agent_draft(
     )?;
     let encrypted_key = bounded_field(&payload.encrypted_key, "encrypted_key", 512)?;
     let nonce = bounded_field(&payload.nonce, "nonce", 256)?;
-    let signature = bounded_field(&payload.signature, "signature", 512)?;
+    let signature = match (&payload.signature, &payload.signature_v2) {
+        (_, Some(_)) => None,
+        (Some(signature), None) => Some(bounded_field(signature, "signature", 512)?),
+        (None, None) => return Err(validation_error("signature or signature_v2 is required")),
+    };
+    let sender_encrypted_key = payload
+        .sender_encrypted_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty());
+    if sender_encrypted_key
+        .is_some_and(|k| k.len() > 512 || !is_valid_wrapped_encrypted_key_format(k))
+    {
+        return Err(validation_error(
+            "sender_encrypted_key must use x25519v1 wrapped key format",
+        ));
+    }
+    let encrypted_keys = parse_key_wraps("encrypted_keys", payload.encrypted_keys.as_ref())
+        .map_err(|e| validation_error(&e))?;
+    let sender_encrypted_keys = parse_key_wraps(
+        "sender_encrypted_keys",
+        payload.sender_encrypted_keys.as_ref(),
+    )
+    .map_err(|e| validation_error(&e))?;
     if !is_valid_wrapped_encrypted_key_format(encrypted_key) {
         return Err(validation_error(
             "encrypted_key must use x25519v1 wrapped key format",
@@ -6690,17 +6916,57 @@ async fn create_agent_draft(
         .map_err(|message| internal_server_error(&message))?
         .ok_or_else(|| forbidden_error("sender_did is not owned by the authenticated user"))?;
     enforce_agent_bound_aid(&ctx, &signing_agent.aid)?;
-    let signing_payload = build_envelope_signing_payload(
-        sender_did,
-        recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
-    if !verify_envelope_signature(&signing_agent.public_key, signature, &signing_payload) {
-        return Err(unauthorized_error("invalid envelope signature"));
+    if let Some(sig) = &payload.signature_v2 {
+        verify_signature_v2(
+            &state,
+            Some(&pool),
+            &signing_agent.aid,
+            &signing_agent.public_key,
+            sig,
+            &SignedEnvelope {
+                sender_did,
+                recipient_did,
+                content_type: content_type.as_deref(),
+                thread_id: payload.thread_id,
+                subject_encrypted,
+                encrypted_content,
+                encrypted_key,
+                nonce,
+                sender_encrypted_key,
+                encrypted_keys: &encrypted_keys,
+                sender_encrypted_keys: &sender_encrypted_keys,
+                attachments: &[],
+            },
+        )
+        .await?;
+    } else {
+        let signing_payload = build_envelope_signing_payload(
+            sender_did,
+            recipient_did,
+            subject_encrypted,
+            encrypted_content,
+            encrypted_key,
+            nonce,
+        );
+        let signature = signature.unwrap_or_default();
+        if !verify_envelope_signature(&signing_agent.public_key, signature, &signing_payload) {
+            return Err(unauthorized_error("invalid envelope signature"));
+        }
     }
+    let signature_v2 = payload
+        .signature_v2
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| internal_error("failed to encode the signature", error))?;
+    let wraps_json = |list: &Vec<KeyWrap>| {
+        (payload.signature_v2.is_some())
+            .then(|| serde_json::to_value(list))
+            .transpose()
+            .map_err(|error| internal_error("failed to encode wraps", error))
+    };
+    let encrypted_keys_json = wraps_json(&encrypted_keys)?;
+    let sender_encrypted_keys_json = wraps_json(&sender_encrypted_keys)?;
 
     let pending: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM agent_drafts WHERE owner_user_id = $1 AND expires_at > NOW()",
@@ -6735,10 +7001,11 @@ async fn create_agent_draft(
         INSERT INTO agent_drafts (
           owner_user_id, aid, sender_did, recipient_did, thread_id, in_reply_to,
           subject_encrypted, encrypted_content, encrypted_key, nonce, signature,
-          content_type, review_wraps, via, expires_at
+          content_type, review_wraps, via, expires_at,
+          signature_v2, sender_encrypted_key, encrypted_keys, sender_encrypted_keys
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                NOW() + ($15::bigint * INTERVAL '1 day'))
+                NOW() + ($15::bigint * INTERVAL '1 day'), $16, $17, $18, $19)
         RETURNING id, expires_at::text AS expires_at
         "#,
     )
@@ -6757,6 +7024,10 @@ async fn create_agent_draft(
     .bind(&wraps)
     .bind(short_label(payload.via.as_deref()))
     .bind(AGENT_DRAFT_TTL_DAYS)
+    .bind(&signature_v2)
+    .bind(sender_encrypted_key.filter(|_| payload.signature_v2.is_some()))
+    .bind(&encrypted_keys_json)
+    .bind(&sender_encrypted_keys_json)
     .fetch_one(&pool)
     .await
     .map_err(|error| internal_error("failed to save draft", error))?;
@@ -6790,6 +7061,7 @@ async fn list_agent_drafts(
         r#"
         SELECT d.id, d.aid, d.sender_did, d.recipient_did, d.thread_id, d.in_reply_to,
                d.subject_encrypted, d.encrypted_content, d.content_type, d.review_wraps,
+               d.signature_v2 IS NOT NULL AS signed_v2,
                d.via, d.created_at::text AS created_at, d.expires_at::text AS expires_at,
                sa.label AS sender_agent_label, su.display_name AS sender_user_name,
                ra.label AS recipient_agent_label, ru.display_name AS recipient_user_name
@@ -6836,6 +7108,7 @@ async fn list_agent_drafts(
             content_type: row.get("content_type"),
             review_wraps: serde_json::from_value(row.get("review_wraps")).unwrap_or_default(),
             via: row.get("via"),
+            signed_v2: row.get("signed_v2"),
             created_at: row.get("created_at"),
             expires_at: row.get("expires_at"),
         })
@@ -6885,7 +7158,10 @@ async fn send_agent_draft(
         WHERE id = $1 AND owner_user_id = $2 AND expires_at > NOW()
           AND (sending_at IS NULL OR sending_at < NOW() - INTERVAL '5 minutes')
         RETURNING aid, sender_did, recipient_did, thread_id, subject_encrypted,
-                  encrypted_content, encrypted_key, nonce, signature, content_type
+                  encrypted_content, encrypted_key, nonce, signature, content_type,
+                  signature_v2, sender_encrypted_key AS signed_sender_encrypted_key,
+                  encrypted_keys AS signed_encrypted_keys,
+                  sender_encrypted_keys AS signed_sender_encrypted_keys
         "#,
     )
     .bind(id)
@@ -6896,6 +7172,24 @@ async fn send_agent_draft(
     .ok_or_else(|| not_found_error("draft not found"))?;
 
     let aid: String = row.get("aid");
+    // A v2 draft was signed with the wraps for every device (docs/40
+    // §14.4): send it as it is, and ignore wraps a browser adds.
+    let signature_v2: Option<SignatureV2> = row
+        .get::<Option<serde_json::Value>, _>("signature_v2")
+        .and_then(|value| serde_json::from_value(value).ok());
+    let signed_wraps = |column: &str| -> Option<Vec<KeyWrap>> {
+        row.get::<Option<serde_json::Value>, _>(column)
+            .and_then(|value| serde_json::from_value(value).ok())
+    };
+    let (sender_encrypted_key, encrypted_keys, sender_encrypted_keys) = if signature_v2.is_some() {
+        (
+            row.get::<Option<String>, _>("signed_sender_encrypted_key"),
+            signed_wraps("signed_encrypted_keys"),
+            signed_wraps("signed_sender_encrypted_keys"),
+        )
+    } else {
+        (sender_encrypted_key, encrypted_keys, sender_encrypted_keys)
+    };
     let request = SendMessageRequest {
         sender_did: Some(row.get("sender_did")),
         recipient_did: Some(row.get("recipient_did")),
@@ -6906,7 +7200,8 @@ async fn send_agent_draft(
             encrypted_keys,
             sender_encrypted_keys,
             nonce: Some(row.get("nonce")),
-            signature: Some(row.get("signature")),
+            signature: row.get("signature"),
+            signature_v2,
             metadata: Some(EnvelopeMetadata {
                 subject_encrypted: Some(row.get("subject_encrypted")),
                 thread_id: row.get("thread_id"),
@@ -11516,6 +11811,7 @@ async fn send_message_as(
         .as_ref()
         .and_then(|e| e.signature.clone())
         .unwrap_or_default();
+    let signature_v2 = envelope.as_ref().and_then(|e| e.signature_v2.clone());
 
     let _ = envelope.as_ref().and_then(|e| e.encrypted_content.as_ref());
     let _ = envelope.as_ref().and_then(|e| e.encrypted_key.as_ref());
@@ -11549,10 +11845,10 @@ async fn send_message_as(
         || encrypted_content.trim().is_empty()
         || encrypted_key.trim().is_empty()
         || nonce.trim().is_empty()
-        || signature.trim().is_empty()
+        || (signature.trim().is_empty() && signature_v2.is_none())
     {
         return Err(validation_error(
-            "sender_did, recipient_did, envelope.{encrypted_content,encrypted_key,nonce,signature} and envelope.metadata.subject_encrypted are required",
+            "sender_did, recipient_did, envelope.{encrypted_content,encrypted_key,nonce,signature or signature_v2} and envelope.metadata.subject_encrypted are required",
         ));
     }
     // Validate DID format
@@ -11663,17 +11959,49 @@ async fn send_message_as(
         return Err(unauthorized_error("sender_did does not match signing key"));
     }
 
-    let signing_payload = build_envelope_signing_payload(
-        &sender_did,
-        &recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
-    if !verify_envelope_signature(&signing_agent.public_key, &signature, &signing_payload) {
-        return Err(unauthorized_error("invalid envelope signature"));
-    }
+    // Signature v2 covers the whole envelope (docs/40 §14.2); without it,
+    // the v1 signature from older senders.
+    let stored_signature_v2 = if let Some(sig) = signature_v2 {
+        let sender_list_version = verify_signature_v2(
+            &state,
+            maybe_pool.as_ref(),
+            &signing_agent.aid,
+            &signing_agent.public_key,
+            &sig,
+            &SignedEnvelope {
+                sender_did: &sender_did,
+                recipient_did: &recipient_did,
+                content_type: content_type.as_deref(),
+                thread_id: metadata.and_then(|m| m.thread_id),
+                subject_encrypted: &subject_encrypted,
+                encrypted_content: &encrypted_content,
+                encrypted_key: &encrypted_key,
+                nonce: &nonce,
+                sender_encrypted_key: sender_encrypted_key.as_deref(),
+                encrypted_keys: &encrypted_keys,
+                sender_encrypted_keys: &sender_encrypted_keys,
+                attachments: payload.attachments.as_deref().unwrap_or(&[]),
+            },
+        )
+        .await?;
+        Some(StoredSignatureV2 {
+            signature: sig,
+            sender_list_version,
+        })
+    } else {
+        let signing_payload = build_envelope_signing_payload(
+            &sender_did,
+            &recipient_did,
+            &subject_encrypted,
+            &encrypted_content,
+            &encrypted_key,
+            &nonce,
+        );
+        if !verify_envelope_signature(&signing_agent.public_key, &signature, &signing_payload) {
+            return Err(unauthorized_error("invalid envelope signature"));
+        }
+        None
+    };
 
     // Per-device wraps must name devices of the recipient agent and of the
     // sending agent. Without a database there is one device per agent.
@@ -11882,6 +12210,7 @@ async fn send_message_as(
         sender_encrypted_key,
         encrypted_keys,
         sender_encrypted_keys,
+        signature_v2: stored_signature_v2,
     };
     let encoded_payload = serde_json::to_string(&stored_payload).map_err(|_| {
         audit_storage_event(
@@ -14817,6 +15146,48 @@ async fn list_messages(
     }))
 }
 
+async fn signed_message_extras(
+    pool: &PgPool,
+    message_id: Uuid,
+    stored: &StoredSignatureV2,
+) -> Result<(Vec<SignedAttachmentRef>, Option<DeviceListRef>), (StatusCode, Json<ErrorResponse>)> {
+    let attachments = sqlx::query(
+        r#"
+        SELECT attachment_upload_id::text AS id, metadata_encrypted, metadata_nonce
+        FROM message_attachments
+        WHERE message_id = $1
+        ORDER BY created_at ASC
+        "#,
+    )
+    .bind(message_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| internal_error("failed to load attachments", error))?
+    .into_iter()
+    .map(|row| SignedAttachmentRef {
+        id: row.get("id"),
+        metadata_encrypted: row.get("metadata_encrypted"),
+        metadata_nonce: row.get("metadata_nonce"),
+    })
+    .collect();
+    let list = match stored.sender_list_version {
+        Some(version) => sqlx::query(
+            "SELECT version, jws FROM agent_device_lists WHERE aid = $1 AND version = $2",
+        )
+        .bind(&stored.signature.sender_aid)
+        .bind(version)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| internal_error("failed to load the sender's device list", error))?
+        .map(|row| DeviceListRef {
+            version: row.get("version"),
+            jws: row.get("jws"),
+        }),
+        None => None,
+    };
+    Ok((attachments, list))
+}
+
 async fn message_content(
     State(state): State<AppState>,
     method: Method,
@@ -14835,6 +15206,7 @@ async fn message_content(
         return Err(database_required_but_unavailable_error());
     }
 
+    let extras_pool = maybe_pool.clone();
     let maybe = if let Some(pool) = maybe_pool {
         let user_uuid = parse_user_uuid(&user_id)?;
         let row = sqlx::query(
@@ -15055,6 +15427,16 @@ async fn message_content(
                     None,
                 );
 
+                // What a reader needs to check the sender (docs/40 §14.6):
+                // the attachments as they are served, and the sender's
+                // device list as it was when the message was sent.
+                let (attachments, sender_device_list) =
+                    match (extras_pool.as_ref(), payload.signature_v2.as_ref()) {
+                        (Some(pool), Some(stored)) => {
+                            signed_message_extras(pool, message.id, stored).await?
+                        }
+                        _ => (Vec::new(), None),
+                    };
                 return Ok(Json(MessageContentResponse {
                     encrypted_content: payload.encrypted_content,
                     encrypted_key: payload.encrypted_key,
@@ -15067,6 +15449,9 @@ async fn message_content(
                     sender_encrypted_key: payload.sender_encrypted_key,
                     encrypted_keys: payload.encrypted_keys,
                     sender_encrypted_keys: payload.sender_encrypted_keys,
+                    signature_v2: payload.signature_v2.map(|stored| stored.signature),
+                    attachments,
+                    sender_device_list,
                 }));
             }
             audit_storage_event(
@@ -15489,13 +15874,19 @@ async fn release_auto_reply_claim(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Why an executor left an auto-reply to the person (docs/40 §12.3, §13.3).
+/// Why an executor left an auto-reply to the person (docs/40 §12.3, §13.3,
+/// §14.5).
 const AUTO_REPLY_SKIP_REASONS: &[&str] = &[
     "root_changed",
     "signature",
     "rollback",
     "removed",
     "no_device",
+    // The sender could not be checked (docs/40 §14.5).
+    "unsigned",
+    "altered",
+    "not_listed",
+    "stale",
 ];
 
 #[derive(Deserialize)]

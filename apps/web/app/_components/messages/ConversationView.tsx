@@ -53,7 +53,6 @@ import {
   senderCopyForDraft,
   type OpenedDraft,
 } from "../../../lib/crypto/review-key";
-import { signEnvelopePayload } from "../../../lib/crypto/signature";
 import {
   getSigningPrivateKey,
   hasSigningPrivateKeyMaterial,
@@ -64,7 +63,7 @@ import {
   type Conversation,
 } from "../../../lib/inbox/conversations";
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
-import { deviceWraps, isSendStop, isUnlisted, planSend, type SendStop } from "../../../lib/crypto/device-wraps";
+import { deviceWraps, isSendStop, isUnlisted, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
 import { SendStopNotice, UnlistedHint } from "./SendStopNotice";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
@@ -879,15 +878,6 @@ function Composer({
       );
       // Every device of both agents can read it (docs/38).
       const { encryptedKeys, senderEncryptedKeys } = await deviceWraps(contentKey, plan);
-      const signature = await signEnvelopePayload({
-        signingPrivateKey,
-        senderDid,
-        recipientDid: plan.recipient.did,
-        subjectEncrypted: encryptedSubject.serialized,
-        encryptedContent: encryptedBody.serialized,
-        encryptedKey: wrapped.wrappedKey,
-        nonce: encryptedBody.nonce,
-      });
       await sendMessage.mutateAsync({
         senderDid,
         recipientDid: plan.recipient.did,
@@ -895,7 +885,7 @@ function Composer({
         encryptedContent: encryptedBody.serialized,
         encryptedKey: wrapped.wrappedKey,
         nonce: encryptedBody.nonce,
-        signature,
+        signing: sendSigning(signingPrivateKey, plan, ownAgent?.aid),
         threadId,
         senderEncryptedKey,
         encryptedKeys,

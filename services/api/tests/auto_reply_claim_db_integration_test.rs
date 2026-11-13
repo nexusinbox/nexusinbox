@@ -765,6 +765,27 @@ async fn post_skip(app: &axum::Router, row: Uuid, auth: &str, reason: &str) -> S
 /// the reason code only, so every device shows it (docs/40 §13.3).
 #[tokio::test]
 #[serial]
+async fn a_sender_that_did_not_check_out_is_a_skip_reason() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xskip-v2").await;
+    let agent = seed_agent(&pool, &owner, "a", true).await;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+    // docs/40 §14.5: the sender's signature or list did not check out.
+    for reason in ["unsigned", "altered", "not_listed", "stale"] {
+        let row = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
+        assert_eq!(
+            post_skip(&app, row, &token, reason).await,
+            StatusCode::OK,
+            "{reason}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn a_skipped_auto_reply_is_recorded_with_its_reason() {
     skip_without_db!();
     let app = common::test_app();

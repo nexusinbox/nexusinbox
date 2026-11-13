@@ -239,7 +239,8 @@ export type WrapDecision =
   | { kind: "unlisted"; targets: WrapTarget[]; single: WrapTarget }
   | { kind: "stop"; reason: StopReason; root?: string };
 
-function listRoot(jws: string): string | null {
+/** The root (`kid`) a list says it is signed by, unchecked. */
+export function deviceListRoot(jws: string): string | null {
   const headerBytes = fromBase64Url(jws.split(".")[0] ?? "");
   if (!headerBytes) return null;
   try {
@@ -283,7 +284,7 @@ export async function decideWrapTargets(input: {
     };
   }
 
-  const root = listRoot(ref.jws);
+  const root = deviceListRoot(ref.jws);
   const list = root ? await verifyDeviceList(ref.jws, { aid: served.aid, root }) : null;
   if (!list || list.version !== ref.version) return { kind: "stop", reason: "signature" };
 

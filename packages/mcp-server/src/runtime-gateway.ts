@@ -49,6 +49,7 @@ import {
   type Auditor,
 } from "./audit.js";
 import { decryptEnvelopeTextWithContentKey } from "./decrypt.js";
+import { senderCheckResult } from "./device-trust.js";
 import { assertFromBoundAgent } from "./tools.js";
 import type {
   NexusInboxMcpRuntime,
@@ -57,6 +58,7 @@ import type {
   ReadMessageResult,
   RecipientResolutionResult,
   SentMessageResult,
+  SenderCheckResult,
 } from "./types.js";
 
 export type GatewayRuntimeConfig = {
@@ -168,6 +170,8 @@ function buildGatewayRuntime(
         recipient: plain.content.recipient_did
           ? { did: plain.content.recipient_did }
           : undefined,
+        // Checked by the gateway (docs/40 §14.5); missing from an older one.
+        sender_check: (plain.content as { sender_check?: SenderCheckResult }).sender_check ?? senderCheckResult("unchecked"),
         subject: plain.subject,
         body: plain.body,
         // Attachment listing / decryption is Phase 2; the Gateway does

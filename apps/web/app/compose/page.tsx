@@ -17,7 +17,7 @@ import {
   generateContentKey,
   ENCRYPTED_PLACEHOLDER,
 } from "../../lib/crypto/envelope";
-import { isValidEd25519PublicKeyB64Url, signEnvelopePayload } from "../../lib/crypto/signature";
+import { isValidEd25519PublicKeyB64Url } from "../../lib/crypto/signature";
 import {
   isValidX25519PublicKeyB64Url,
   wrapContentKeyForRecipient,
@@ -28,6 +28,7 @@ import {
   isUnlisted,
   planSend,
   receivedWrap,
+  sendSigning,
   wrapContentKeyForDevices,
   type SendStop,
 } from "../../lib/crypto/device-wraps";
@@ -708,15 +709,6 @@ function ComposePageInner() {
         });
         return;
       }
-      const signature = await signEnvelopePayload({
-        signingPrivateKey,
-        senderDid,
-        recipientDid: recipientAddress,
-        subjectEncrypted: encryptedSubject.serialized,
-        encryptedContent: encryptedBody.serialized,
-        encryptedKey,
-        nonce: encryptedBody.nonce,
-      });
       setStatus({ kind: "info", message: t("compose.statusSending") });
 
       // Propagate the original thread so back-and-forth replies
@@ -737,7 +729,11 @@ function ComposePageInner() {
         encryptedContent: encryptedBody.serialized,
         encryptedKey,
         nonce: encryptedBody.nonce,
-        signature,
+        signing: sendSigning(
+          signingPrivateKey,
+          plan,
+          apiAgents.find((a) => a.did === senderDid || a.dids?.includes(senderDid))?.aid,
+        ),
         threadId,
         attachments: outboundAttachments,
         senderEncryptedKey,

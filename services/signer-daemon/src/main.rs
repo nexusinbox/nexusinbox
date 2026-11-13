@@ -36,6 +36,7 @@ use tokio::{
 };
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
+mod envelope_v2;
 mod keychain;
 
 pub(crate) fn derive_did_from_verifying_key(verifying_key: &VerifyingKey) -> String {
@@ -700,6 +701,7 @@ fn handle_rpc(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
     match req.method.as_str() {
         "sign_assertion" => handle_sign_assertion(state, req),
         "sign_envelope" => handle_sign_envelope(state, req),
+        "sign_envelope_v2" => handle_sign_envelope_v2(state, req),
         "get_public_key" => handle_get_public_key(state, req),
         "unwrap_content_key" => handle_unwrap_content_key(state, req),
         "wrap_content_key" => handle_wrap_content_key(state, req),
@@ -944,6 +946,54 @@ fn handle_sign_envelope(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
         serde_json::json!({
             "sender_did": current_did,
             "signature": signature_b64,
+        }),
+    )
+}
+
+/// Sign an envelope with signature v2 (docs/40 §14.3). Only for this
+/// daemon's own key and agent, and only dated now.
+fn handle_sign_envelope_v2(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
+    let params: envelope_v2::SignEnvelopeV2Params = match serde_json::from_value(req.params.clone())
+    {
+        Ok(params) => params,
+        Err(e) => {
+            return RpcResponse::error(
+                req.id.clone(),
+                -32602,
+                format!("invalid sign_envelope_v2 params: {}", e),
+            )
+        }
+    };
+    let current_did = derive_did_from_verifying_key(&state.verifying_key);
+    if params.sender_did != current_did {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "sender_did does not match current signer DID".into(),
+        );
+    }
+    if params.sender_aid != state.aid {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "sender_aid is not this daemon's agent".into(),
+        );
+    }
+    if !envelope_v2::sent_at_is_now(&params.sent_at, chrono::Utc::now()) {
+        return RpcResponse::error(
+            req.id.clone(),
+            -32602,
+            "sent_at must be the current time (RFC 3339 UTC with milliseconds)".into(),
+        );
+    }
+    let signature = state
+        .signing_key
+        .sign(envelope_v2::signing_input(&params).as_bytes());
+    RpcResponse::success(
+        req.id.clone(),
+        serde_json::json!({
+            "sender_did": current_did,
+            "signature": URL_SAFE_NO_PAD.encode(signature.to_bytes()),
         }),
     )
 }
@@ -2074,6 +2124,69 @@ mod tests {
             allowed_scopes: vec!["messages.read".to_string(), "messages.send".to_string()],
             allowed_uid: None,
         }
+    }
+
+    /// docs/40 §14.3: v2 only for this daemon's key and agent, dated now.
+    #[test]
+    fn sign_envelope_v2_signs_only_its_own_agent_now() {
+        let state = sign_assertion_test_state();
+        let did = derive_did_from_verifying_key(&state.verifying_key);
+        let params = |sender_aid: &str, sent_at: String| {
+            serde_json::json!({
+                "sender_aid": sender_aid,
+                "sender_did": did,
+                "recipient_aid": "aid:ai:them",
+                "recipient_did": "did:key:zThem",
+                "sent_at": sent_at,
+                "content_type": "text/plain",
+                "thread_id": null,
+                "subject_encrypted": "enc:v1:s:s",
+                "content_sha256": "hash",
+                "encrypted_key": "x25519v1:k",
+                "nonce": "n",
+                "sender_encrypted_key": null,
+                "encrypted_keys": [{ "did": "did:key:zThem", "key": "x25519v1:k" }],
+                "sender_encrypted_keys": [],
+                "attachments": [],
+            })
+        };
+        let rpc = |params: serde_json::Value| {
+            handle_rpc(
+                &state,
+                &RpcRequest {
+                    id: serde_json::json!(1),
+                    method: "sign_envelope_v2".into(),
+                    params,
+                },
+            )
+        };
+        let now = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let ok = rpc(params("aid:ai:01TEST", now.clone()));
+        assert!(ok.error.is_none(), "{:?}", ok.error.map(|e| e.message));
+        let signature = ok.result.unwrap()["signature"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let input = envelope_v2::signing_input(
+            &serde_json::from_value(params("aid:ai:01TEST", now.clone())).unwrap(),
+        );
+        let sig = ed25519_dalek::Signature::from_slice(&URL_SAFE_NO_PAD.decode(signature).unwrap())
+            .unwrap();
+        assert!(state
+            .verifying_key
+            .verify_strict(input.as_bytes(), &sig)
+            .is_ok());
+
+        assert!(rpc(params("aid:ai:someone-else", now.clone()))
+            .error
+            .is_some());
+        let old = (Utc::now() - chrono::Duration::hours(2))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
+        assert!(rpc(params("aid:ai:01TEST", old)).error.is_some());
+        let mut other_key = params("aid:ai:01TEST", now);
+        other_key["sender_did"] = "did:key:zSomeoneElse".into();
+        assert!(rpc(other_key).error.is_some());
     }
 
     fn decode_assertion_payload(assertion: &str) -> serde_json::Value {

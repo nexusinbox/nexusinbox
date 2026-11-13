@@ -19,6 +19,7 @@ import {
   wrapContentKeyForRecipient,
 } from "../src/index";
 import { deriveMessageState } from "../src/visibility";
+import { deliveredFields, verifyEnvelopeV2Signature } from "../src/envelope-v2";
 
 describe("@nexusinbox/core", () => {
   it("generates a content key", () => {
@@ -101,8 +102,11 @@ describe("@nexusinbox/core", () => {
     const senderPubJwk = (await crypto.subtle.exportKey("jwk", signingKeyPair.publicKey)) as JsonWebKey;
     expect(isValidEd25519PublicKeyB64Url(String(senderPubJwk.x))).toBe(true);
 
+    const senderDid = await deriveDidKeyFromPublicKey(signingKeyPair.publicKey);
     const envelope = await buildEncryptedTextEnvelope({
-      senderDid: "did:key:zSender",
+      senderAid: "aid:ai:sender",
+      recipientAid: "aid:ai:recipient",
+      senderDid,
       recipientDid: "did:key:zRecipient",
       recipientEncryptionPublicKey: recipientPublicKey,
       senderSigningPrivateKey: signingKeyPair.privateKey,
@@ -113,7 +117,19 @@ describe("@nexusinbox/core", () => {
     expect(envelope.metadata.subject_encrypted.startsWith("enc:v1:")).toBe(true);
     expect(envelope.encrypted_content.startsWith("enc:v1:")).toBe(true);
     expect(envelope.encrypted_key.startsWith("x25519v1:")).toBe(true);
-    expect(envelope.signature?.length).toBeGreaterThan(20);
+    // Signature v2 over the whole envelope (docs/40 §14.2).
+    expect(envelope.signature).toBeUndefined();
+    const sig = envelope.signature_v2!;
+    expect(sig).toMatchObject({ sender_aid: "aid:ai:sender", recipient_aid: "aid:ai:recipient" });
+    const delivered = {
+      ...envelope,
+      sender_did: senderDid,
+      recipient_did: "did:key:zRecipient",
+      subject_encrypted: envelope.metadata.subject_encrypted,
+      content_type: envelope.metadata.content_type,
+      thread_id: envelope.metadata.thread_id,
+    };
+    expect(await verifyEnvelopeV2Signature(deliveredFields(delivered, sig), sig.signature)).toBe(true);
   });
 
   it("builds API request paths for list and resolve", async () => {

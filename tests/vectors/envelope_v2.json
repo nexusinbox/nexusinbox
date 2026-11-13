@@ -1,0 +1,80 @@
+{
+  "description": "Envelope signature v2 (docs/40 §14.2). signing_input is the prefix \"nexusinbox-envelope-v2\\n\" and the canonical JSON (keys sorted, no whitespace, wraps sorted by did, attachments by id, encrypted_content and each attachment's metadata_encrypted as SHA-256 base64url). Signed with the Ed25519 seed below (deterministic). Shared by core, services/api, services/agent-gateway and services/signer-daemon.",
+  "signing_seed_hex": "0303030303030303030303030303030303030303030303030303030303030303",
+  "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+  "cases": [
+    {
+      "name": "full envelope",
+      "fields": {
+        "sender_aid": "aid:ai:01VECTORSENDER000000000000",
+        "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "recipient_aid": "aid:ai:01VECTORRECIPIENT000000000",
+        "recipient_did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "sent_at": "2026-11-20T10:41:00.000Z",
+        "content_type": "application/vnd.nexusinbox.a2a+json",
+        "thread_id": "0193f1d2-7c4a-7b3e-9a10-5d2f8e6c4b21",
+        "subject_encrypted": "enc:v1:c3ViamVjdC1pdg:c3ViamVjdC1jdC1fLQ",
+        "encrypted_content": "enc:v1:Ym9keS1pdi0tLQ:Ym9keS1jdC1fLS1fLQ",
+        "encrypted_key": "x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0",
+        "nonce": "Ym9keS1pdi0tLQ",
+        "sender_encrypted_key": "x25519v1:c2VuZGVy:c2FsdA:aXY:a2V5LWN0",
+        "encrypted_keys": [
+          {
+            "did": "did:key:z6MkZZZRecipientPhone",
+            "key": "x25519v1:cGhvbmU:c2FsdA:aXY:a2V5"
+          },
+          {
+            "did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "key": "x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0"
+          }
+        ],
+        "sender_encrypted_keys": [
+          {
+            "did": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+            "key": "x25519v1:cm9vdA:c2FsdA:aXY:a2V5"
+          },
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "key": "x25519v1:ZGV2aWNl:c2FsdA:aXY:a2V5"
+          }
+        ],
+        "attachments": [
+          {
+            "id": "b6c1e7a0-0000-4000-8000-000000000002",
+            "metadata_encrypted": "enc:v1:bWV0YTI:Y3QyCg",
+            "metadata_nonce": "bm9uY2Uy"
+          },
+          {
+            "id": "b6c1e7a0-0000-4000-8000-000000000001",
+            "metadata_encrypted": "enc:v1:bWV0YTE:Y3QxCg",
+            "metadata_nonce": "bm9uY2Ux"
+          }
+        ]
+      },
+      "signing_input": "nexusinbox-envelope-v2\n{\"attachments\":[{\"id\":\"b6c1e7a0-0000-4000-8000-000000000001\",\"metadata_nonce\":\"bm9uY2Ux\",\"metadata_sha256\":\"9uUMdsVvnBbtwzIROKv3pieVlE2wOH4GrtnE8cGEEbk\"},{\"id\":\"b6c1e7a0-0000-4000-8000-000000000002\",\"metadata_nonce\":\"bm9uY2Uy\",\"metadata_sha256\":\"M2_v9zl5f4k03sEITKJ991-OmGD7QZuXT3o3U6zPhCE\"}],\"content_sha256\":\"DTuTrbZEetK2hCleND5gIRnyn7Mcsy96XVmCHaDGAC8\",\"content_type\":\"application/vnd.nexusinbox.a2a+json\",\"encrypted_key\":\"x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0\",\"encrypted_keys\":[{\"did\":\"did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\",\"key\":\"x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0\"},{\"did\":\"did:key:z6MkZZZRecipientPhone\",\"key\":\"x25519v1:cGhvbmU:c2FsdA:aXY:a2V5\"}],\"nonce\":\"Ym9keS1pdi0tLQ\",\"recipient_aid\":\"aid:ai:01VECTORRECIPIENT000000000\",\"recipient_did\":\"did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\",\"sender_aid\":\"aid:ai:01VECTORSENDER000000000000\",\"sender_did\":\"did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2\",\"sender_encrypted_key\":\"x25519v1:c2VuZGVy:c2FsdA:aXY:a2V5LWN0\",\"sender_encrypted_keys\":[{\"did\":\"did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX\",\"key\":\"x25519v1:cm9vdA:c2FsdA:aXY:a2V5\"},{\"did\":\"did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2\",\"key\":\"x25519v1:ZGV2aWNl:c2FsdA:aXY:a2V5\"}],\"sent_at\":\"2026-11-20T10:41:00.000Z\",\"subject_encrypted\":\"enc:v1:c3ViamVjdC1pdg:c3ViamVjdC1jdC1fLQ\",\"thread_id\":\"0193f1d2-7c4a-7b3e-9a10-5d2f8e6c4b21\",\"v\":2}",
+      "signature": "paKcTf62hgqLOI4Zr5xuJQYFPEdhqWfOoMe3MKoQNMMEV6iapOytFFTlFDqeePgGvuF9aqAt90EFT3JFtta3BA"
+    },
+    {
+      "name": "no thread, wraps or attachments",
+      "fields": {
+        "sender_aid": "aid:ai:01VECTORSENDER000000000000",
+        "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "recipient_aid": "aid:ai:01VECTORRECIPIENT000000000",
+        "recipient_did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "sent_at": "2026-11-20T10:41:00.000Z",
+        "content_type": "text/plain",
+        "thread_id": null,
+        "subject_encrypted": "",
+        "encrypted_content": "enc:v1:Ym9keS1pdi0tLQ:Ym9keS1jdC1fLS1fLQ",
+        "encrypted_key": "x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0",
+        "nonce": "Ym9keS1pdi0tLQ",
+        "sender_encrypted_key": null,
+        "encrypted_keys": [],
+        "sender_encrypted_keys": [],
+        "attachments": []
+      },
+      "signing_input": "nexusinbox-envelope-v2\n{\"attachments\":[],\"content_sha256\":\"DTuTrbZEetK2hCleND5gIRnyn7Mcsy96XVmCHaDGAC8\",\"content_type\":\"text/plain\",\"encrypted_key\":\"x25519v1:ZXBoZW1lcmFs-_:c2FsdA:aXY:a2V5LWN0\",\"encrypted_keys\":[],\"nonce\":\"Ym9keS1pdi0tLQ\",\"recipient_aid\":\"aid:ai:01VECTORRECIPIENT000000000\",\"recipient_did\":\"did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\",\"sender_aid\":\"aid:ai:01VECTORSENDER000000000000\",\"sender_did\":\"did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2\",\"sender_encrypted_key\":null,\"sender_encrypted_keys\":[],\"sent_at\":\"2026-11-20T10:41:00.000Z\",\"subject_encrypted\":\"\",\"thread_id\":null,\"v\":2}",
+      "signature": "z61aMVd3BNuKZmmtTNCOd-EG-fM7MuhfDQDsVgVaPhsnK4pUgA3iJO_Bnk-0sNlXfOfUX9tLr5iMi1l-EQOWCA"
+    }
+  ]
+}

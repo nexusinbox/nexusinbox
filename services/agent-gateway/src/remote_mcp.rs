@@ -17,8 +17,8 @@
 
 use crate::{
     envelope_crypto::{decrypt_envelope_text, encrypt_envelope_text, generate_content_key},
-    handle_list_inbox, handle_resolve_recipient, handle_whoami, is_uuid, sanitise_json,
-    GatewayState, RpcRequest, RpcResponse,
+    envelope_v2, handle_list_inbox, handle_resolve_recipient, handle_whoami, is_uuid,
+    sanitise_json, GatewayState, RpcRequest, RpcResponse,
 };
 use axum::{
     body::Bytes,
@@ -790,12 +790,19 @@ async fn read_message(
         "" => String::new(),
         s => decrypt_envelope_text(s, content_key).unwrap_or_default(),
     };
+    // Who sent it (docs/40 §14.5): the AI is told when it could not be checked.
+    let check = crate::check_message_sender(gateway, &token, &content).await;
+    if let Err(e) = &check {
+        eprintln!("[remote-mcp] checking the sender of {id} failed: {e}");
+    }
+    let sender_check = crate::sender_check_json(check.as_ref().map_err(String::as_str));
     Ok(serde_json::json!({
         "message_id": id,
         "from_did": content.get("sender_did"),
         "to_did": content.get("recipient_did"),
         "thread_id": content.get("thread_id"),
         "content_type": content.get("content_type"),
+        "sender_check": sender_check,
         "notice": UNTRUSTED_NOTICE,
         "subject": subject,
         "body": body,
@@ -1045,23 +1052,72 @@ async fn create_draft(
             "wrapped_key": wrap_for(gateway, public_key, &content_key).await?,
         }));
     }
-    let signing = serde_json::json!({
-        "sender_did": me.did,
-        "recipient_did": recipient.did,
-        "subject_encrypted": subject_ct.serialized,
-        "encrypted_content": body_ct.serialized,
-        "encrypted_key": encrypted_key,
-        "nonce": body_ct.nonce_b64url,
-    });
-    let signed =
-        crate::call_signer(&gateway.signer_socket, "sign_envelope", signing.clone()).await?;
-    let signature = signed
-        .get("signature")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "the signer returned no signature".to_string())?;
+    // Every listed device of both agents now, so approving only sends it
+    // (docs/40 §14.4): the signature covers these wraps.
+    let mut encrypted_keys = Vec::with_capacity(recipient.devices.len());
+    for device in &recipient.devices {
+        encrypted_keys.push(envelope_v2::Wrap {
+            did: device.did.clone(),
+            key: wrap_for(gateway, &device.encryption_public_key, &content_key).await?,
+        });
+    }
+    let own_devices = match crate::check_recipient(gateway, &token, &me.did).await {
+        Ok(own) => own.devices,
+        Err(e) => {
+            eprintln!(
+                "[remote-mcp] listing this agent's devices failed: {}",
+                e.message()
+            );
+            Vec::new()
+        }
+    };
+    let mut sender_encrypted_keys = Vec::with_capacity(own_devices.len());
+    for device in &own_devices {
+        sender_encrypted_keys.push(envelope_v2::Wrap {
+            did: device.did.clone(),
+            key: wrap_for(gateway, &device.encryption_public_key, &content_key).await?,
+        });
+    }
+    let sender_encrypted_key = match me.encryption_public_key.as_deref() {
+        Some(own) if !own.is_empty() => Some(wrap_for(gateway, own, &content_key).await?),
+        _ => None,
+    };
+    let fields = envelope_v2::Fields {
+        sender_aid: me.aid.clone(),
+        sender_did: me.did.clone(),
+        recipient_aid: recipient.aid.clone(),
+        recipient_did: recipient.did.clone(),
+        sent_at: envelope_v2::sent_at_now(),
+        content_type: "text/plain".into(),
+        thread_id: thread_id.clone(),
+        subject_encrypted: subject_ct.serialized,
+        encrypted_content: body_ct.serialized,
+        encrypted_key,
+        nonce: body_ct.nonce_b64url,
+        sender_encrypted_key,
+        encrypted_keys,
+        sender_encrypted_keys,
+        attachments: Vec::new(),
+    };
+    let signature = crate::sign_v2(gateway, &fields).await?;
+    let wraps_json = |list: &[envelope_v2::Wrap]| -> serde_json::Value {
+        list.iter()
+            .map(|w| serde_json::json!({ "did": w.did, "key": w.key }))
+            .collect()
+    };
 
-    let mut request = signing;
-    request["signature"] = serde_json::json!(signature);
+    let mut request = serde_json::json!({
+        "sender_did": fields.sender_did,
+        "recipient_did": fields.recipient_did,
+        "subject_encrypted": fields.subject_encrypted,
+        "encrypted_content": fields.encrypted_content,
+        "encrypted_key": fields.encrypted_key,
+        "nonce": fields.nonce,
+        "signature_v2": fields.signature_json(&signature),
+        "sender_encrypted_key": fields.sender_encrypted_key,
+        "encrypted_keys": wraps_json(&fields.encrypted_keys),
+        "sender_encrypted_keys": wraps_json(&fields.sender_encrypted_keys),
+    });
     request["content_type"] = serde_json::json!("text/plain");
     request["review_wraps"] = serde_json::json!(review_wraps);
     request["thread_id"] = serde_json::json!(thread_id);

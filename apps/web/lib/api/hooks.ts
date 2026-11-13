@@ -5,7 +5,7 @@ import { disconnectCalendar } from "../calendar/gcalAuth";
 import { loadAddressBook, resetContactsKey, sealForSave } from "../contacts/address-book";
 import { loadPin } from "../agents/peer-pins";
 import { disconnectLLM } from "../llm/llmAuth";
-import { defaultApiClient } from "./client";
+import { defaultApiClient, type SendSigning } from "./client";
 import {
   AuditLogQuery,
   KeyWrap,
@@ -367,7 +367,7 @@ export function useSendMessageMutation() {
       encryptedContent: string;
       encryptedKey: string;
       nonce: string;
-      signature: string;
+      signing: SendSigning;
       threadId?: string | null;
       attachments?: OutboundAttachmentRef[];
       /**

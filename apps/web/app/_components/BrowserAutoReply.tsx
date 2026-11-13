@@ -114,7 +114,7 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
                   encryptedContent: payload.encryptedContent,
                   encryptedKey: payload.encryptedKey,
                   nonce: payload.nonce,
-                  signature: payload.signature,
+                  signing: payload.signing,
                   threadId: payload.threadId,
                   contentType: payload.contentType,
                   autoReplyOrigin: payload.autoReplyOrigin,

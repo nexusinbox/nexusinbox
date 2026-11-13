@@ -32,7 +32,7 @@ import {
   type Auditor,
 } from "./audit.js";
 import { decryptEnvelopeTextForRecipient } from "./decrypt.js";
-import { checkRecipient } from "./device-trust.js";
+import { checkMessageSender, checkRecipient } from "./device-trust.js";
 import { loadOrActivateCredential, type LoadedCredential } from "./keystore.js";
 import { assertFromBoundAgent } from "./tools.js";
 import type {
@@ -169,6 +169,13 @@ function buildRuntime(
 
     async readMessage(input): Promise<ReadMessageResult> {
       const plain = await decryptIncoming(client, credential, input.message_id);
+      // Who sent it (docs/40 §14.5): the AI is told when it could not be checked.
+      const senderCheck = await checkMessageSender(
+        plain.content,
+        credential.aid,
+        (aid) => client.resolveRecipient(aid).catch((e: unknown) => (isNotFound(e) ? null : Promise.reject(e))),
+        peersFile,
+      );
       audit({
         tool_name: "read_message",
         mode: "read",
@@ -184,6 +191,7 @@ function buildRuntime(
         recipient: plain.content.recipient_did
           ? { did: plain.content.recipient_did }
           : undefined,
+        sender_check: senderCheck,
         subject: plain.subject,
         body: plain.body,
         attachments: [],
@@ -378,6 +386,11 @@ async function decryptIncoming(
   throw lastError;
 }
 
+/** The core client's error for a 404 (`API returned 404: ...`). */
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("API returned 404");
+}
+
 function prefixReSubject(subject: string): string {
   const trimmed = subject.trim();
   if (!trimmed) return "Re: ";
@@ -394,7 +407,7 @@ function prefixReSubject(subject: string): string {
  * is required) — we validate at the boundary rather than widening the
  * tool-response type.
  */
-type SendableRecipient = { did: string; encryption_public_key?: string; devices?: DeviceKey[] };
+type SendableRecipient = { aid: string; did: string; encryption_public_key?: string; devices?: DeviceKey[] };
 
 async function sendViaClient(
   client: NexusInboxApiClientType,
@@ -422,6 +435,8 @@ async function sendViaClient(
     .then((me) => me.devices)
     .catch(() => undefined);
   const response = await client.sendTextMessage({
+    senderAid: credential.aid,
+    recipientAid: args.recipient.aid,
     senderDid: credential.did,
     recipientDid: args.recipient.did,
     recipientEncryptionPublicKey: encryptionPublicKey,

@@ -1,3 +1,4 @@
+import { sentAtNow, signEnvelopeV2 } from "@nexusinbox/core/envelope-v2";
 import {
   AuthSessionResponse,
   AuthVerifyRequest,
@@ -55,6 +56,14 @@ import {
 export type ApiClientOptions = {
   baseUrl?: string;
   bearerToken?: string;
+};
+
+/** What signs an outgoing message (docs/40 §14.2). */
+export type SendSigning = {
+  /** The sending device's Ed25519 private key. */
+  key: CryptoKey;
+  senderAid: string;
+  recipientAid: string;
 };
 
 export class ApiError extends Error {
@@ -438,7 +447,11 @@ export class NexusInboxApiClient {
     encryptedContent: string;
     encryptedKey: string;
     nonce: string;
-    signature: string;
+    /**
+     * The sending device's key and both agents: the whole envelope is
+     * signed here, with signature v2 (docs/40 §14.2).
+     */
+    signing: SendSigning;
     threadId?: string | null;
     attachments?: OutboundAttachmentRef[];
     /**
@@ -467,11 +480,34 @@ export class NexusInboxApiClient {
     senderEncryptedKeys?: KeyWrap[];
   }) {
     const attachments = params.attachments ?? [];
+    const contentType = params.contentType ?? "text/plain";
     const metadata: Record<string, unknown> = {
       subject_encrypted: params.subjectEncrypted,
-      content_type: params.contentType ?? "text/plain",
+      content_type: contentType,
       has_attachments: attachments.length > 0,
     };
+    const sentAt = sentAtNow();
+    const signature = await signEnvelopeV2(params.signing.key, {
+      sender_aid: params.signing.senderAid,
+      sender_did: params.senderDid,
+      recipient_aid: params.signing.recipientAid,
+      recipient_did: params.recipientDid,
+      sent_at: sentAt,
+      content_type: contentType,
+      thread_id: params.threadId || null,
+      subject_encrypted: params.subjectEncrypted,
+      encrypted_content: params.encryptedContent,
+      encrypted_key: params.encryptedKey,
+      nonce: params.nonce,
+      sender_encrypted_key: params.senderEncryptedKey || null,
+      encrypted_keys: params.encryptedKeys ?? [],
+      sender_encrypted_keys: params.senderEncryptedKeys ?? [],
+      attachments: attachments.map((a) => ({
+        id: a.attachment_id,
+        metadata_encrypted: a.metadata_encrypted,
+        metadata_nonce: a.metadata_nonce,
+      })),
+    });
     if (params.threadId) {
       metadata.thread_id = params.threadId;
     }
@@ -482,7 +518,12 @@ export class NexusInboxApiClient {
       encrypted_content: params.encryptedContent,
       encrypted_key: params.encryptedKey,
       nonce: params.nonce,
-      signature: params.signature,
+      signature_v2: {
+        signature,
+        sent_at: sentAt,
+        sender_aid: params.signing.senderAid,
+        recipient_aid: params.signing.recipientAid,
+      },
       metadata,
     };
     if (params.senderEncryptedKey) {

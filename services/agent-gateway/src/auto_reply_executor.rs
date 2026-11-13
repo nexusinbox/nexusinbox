@@ -26,6 +26,7 @@ use crate::a2a_rust::{
     A2AProtocolType, A2A_CONTENT_TYPE,
 };
 use crate::envelope_crypto::{decrypt_envelope_text, encrypt_envelope_text, generate_content_key};
+use crate::envelope_v2;
 use crate::policy_evaluator::{self, Action as EvalAction, EvaluationContext, ProtocolKey};
 
 pub const DEFAULT_INTERVAL_SECS: u64 = 30;
@@ -72,6 +73,8 @@ pub trait ExecutorBackend: Send + Sync {
     async fn resolve_recipient(&self, did: &str) -> Result<RecipientPubkey, ResolveError>;
     /// The signer daemon's DID (`get_public_key`), which replies are sent from.
     async fn fetch_our_did(&self) -> Result<String, String>;
+    /// This computer's agent (`get_public_key`), which signature v2 names.
+    async fn fetch_our_aid(&self) -> Result<String, String>;
     /// The daemon's own X25519 public key (`get_public_key`), if it has one.
     /// Replies carry a copy of the content key wrapped for it so this agent
     /// can read what it sent (docs/35 §5).
@@ -82,8 +85,14 @@ pub trait ExecutorBackend: Send + Sync {
         recipient_pub_b64: &str,
         content_key: &str,
     ) -> Result<String, String>;
-    /// The daemon's `sign_envelope`; returns the signature.
-    async fn daemon_sign_envelope(&self, params: &EnvelopeSigningParams) -> Result<String, String>;
+    /// The daemon's `sign_envelope_v2` (docs/40 §14.3); returns the signature.
+    async fn daemon_sign_envelope_v2(&self, fields: &envelope_v2::Fields)
+        -> Result<String, String>;
+    /// Whether a reply already went to the message signed `key` (docs/40
+    /// §14.5): the server may deliver the same message again under a new id.
+    async fn already_answered(&self, key: &str) -> bool;
+    /// Remember that a reply went to the message signed `key`.
+    async fn remember_answered(&self, key: &str);
     /// `POST /messages/{id}/auto-reply-claim`. `Ok(false)` on 409: another
     /// executor holds the row, or its reply already went out.
     async fn claim_auto_reply(&self, message_id: &str) -> Result<bool, String>;
@@ -99,7 +108,7 @@ pub trait ExecutorBackend: Send + Sync {
         reply_message_id: Option<&str>,
     ) -> Result<(), String>;
     /// `POST /messages/{id}/auto-reply-skip`: the reply was left to the
-    /// person because the sender's device list did not check out.
+    /// person because the sender did not check out (docs/40 §13.3, §14.5).
     async fn skip_auto_reply(&self, message_id: &str, reason: &str) -> Result<(), String>;
 }
 
@@ -181,6 +190,13 @@ pub struct MessageContent {
     /// (docs/38). Empty on older messages.
     pub encrypted_keys: Vec<KeyWrap>,
     pub sender_encrypted_keys: Vec<KeyWrap>,
+    /// Why the sender did not check out for an automatic reply (docs/40
+    /// §14.5): `unsigned`, `altered`, `not_listed`, `stale`, `root_changed`
+    /// or `signature`. None when it may be answered.
+    pub sender_block: Option<&'static str>,
+    /// The message's v2 signature, so a delivery of the same message under
+    /// another id is not answered twice.
+    pub replay_key: Option<String>,
 }
 
 /// A message's content key wrapped for one device (docs/38).
@@ -199,6 +215,8 @@ pub struct DeviceKey {
 
 #[derive(Debug, Clone)]
 pub struct RecipientPubkey {
+    /// The agent, which signature v2 names (docs/40 §14.2).
+    pub aid: String,
     pub did: String,
     pub encryption_public_key: String,
     /// Every device of the agent, newest first (docs/38). Empty when the
@@ -224,19 +242,6 @@ impl MessageContent {
         }
         out
     }
-}
-
-/// The six fields the daemon signs (its `SignEnvelopeParams`). They must be
-/// the values `POST /messages` carries: the API rebuilds the signed bytes
-/// from the request and verifies against them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct EnvelopeSigningParams {
-    pub sender_did: String,
-    pub recipient_did: String,
-    pub subject_encrypted: String,
-    pub encrypted_content: String,
-    pub encrypted_key: String,
-    pub nonce: String,
 }
 
 /// Why `POST /messages` failed, split by whether the reply may have gone out.
@@ -449,6 +454,24 @@ async fn dispatch_one<B: ExecutorBackend>(
         Err(e) => return failed(id, "claim", &e),
     }
 
+    // Only a sender this computer could check, recently, and once (docs/40
+    // §14.5). Otherwise keep the claim and leave the reply to the person.
+    if let Some(reason) = content.sender_block {
+        eprintln!("[auto-reply] {id}: not answering: the sender did not check out [stopped: {reason}]; left to the person");
+        if let Err(e) = backend.skip_auto_reply(id, reason).await {
+            eprintln!("[auto-reply] {id}: recording the skip failed: {e}");
+        }
+        return DispatchOutcome::Abandoned;
+    }
+    if let Some(key) = &content.replay_key {
+        if backend.already_answered(key).await {
+            eprintln!(
+                "[auto-reply] {id}: the same message was answered before; not answering again"
+            );
+            return DispatchOutcome::Abandoned;
+        }
+    }
+
     // 4. Seal and sign. Nothing has been sent, so a failure gives the claim back.
     let body = match seal_reply(backend, state, entry, reply_block).await {
         Ok(body) => body,
@@ -473,6 +496,9 @@ async fn dispatch_one<B: ExecutorBackend>(
     //    better than a duplicate one.
     match backend.post_reply(&body).await {
         Ok(resp) => {
+            if let Some(key) = &content.replay_key {
+                backend.remember_answered(key).await;
+            }
             let reply_message_id = resp.get("message_id").and_then(Value::as_str);
             match backend.mark_auto_reply_sent(id, reply_message_id).await {
                 Ok(()) => DispatchOutcome::Sent,
@@ -609,20 +635,42 @@ async fn seal_reply<B: ExecutorBackend>(
         }
     };
     let sender_encrypted_keys = device_wraps(backend, &own_devices, &content_key).await;
-    let signing = EnvelopeSigningParams {
+    let sender_aid = backend
+        .fetch_our_aid()
+        .await
+        .map_err(|e| format!("this agent's aid: {e}"))?;
+    // Same fallback as the web: a thread is named after its first message.
+    let thread_id = entry.thread_id.as_deref().unwrap_or(entry.id.as_str());
+    let as_wraps = |list: &[KeyWrap]| -> Vec<envelope_v2::Wrap> {
+        list.iter()
+            .map(|w| envelope_v2::Wrap {
+                did: w.did.clone(),
+                key: w.key.clone(),
+            })
+            .collect()
+    };
+    // Signature v2 covers the whole envelope, wraps included (docs/40 §14.2).
+    let signing = envelope_v2::Fields {
+        sender_aid,
         sender_did,
+        recipient_aid: recipient.aid,
         recipient_did: recipient.did,
+        sent_at: envelope_v2::sent_at_now(),
+        content_type: A2A_CONTENT_TYPE.to_string(),
+        thread_id: Some(thread_id.to_string()),
         subject_encrypted: subject.serialized,
         encrypted_content: body.serialized,
         encrypted_key: wrapped_key,
         nonce: body.nonce_b64url,
+        sender_encrypted_key: sender_wrapped_key,
+        encrypted_keys: as_wraps(&encrypted_keys),
+        sender_encrypted_keys: as_wraps(&sender_encrypted_keys),
+        attachments: Vec::new(),
     };
     let signature = backend
-        .daemon_sign_envelope(&signing)
+        .daemon_sign_envelope_v2(&signing)
         .await
-        .map_err(|e| format!("sign_envelope: {e}"))?;
-    // Same fallback as the web: a thread is named after its first message.
-    let thread_id = entry.thread_id.as_deref().unwrap_or(entry.id.as_str());
+        .map_err(|e| format!("sign_envelope_v2: {e}"))?;
     let mut body = serde_json::json!({
         "sender_did": signing.sender_did,
         "recipient_did": signing.recipient_did,
@@ -630,7 +678,7 @@ async fn seal_reply<B: ExecutorBackend>(
             "encrypted_content": signing.encrypted_content,
             "encrypted_key": signing.encrypted_key,
             "nonce": signing.nonce,
-            "signature": signature,
+            "signature_v2": signing.signature_json(&signature),
             "metadata": {
                 "subject_encrypted": signing.subject_encrypted,
                 "content_type": A2A_CONTENT_TYPE,
@@ -639,9 +687,8 @@ async fn seal_reply<B: ExecutorBackend>(
             }
         }
     });
-    // Not covered by the signature (docs/35 §5).
-    if let Some(key) = sender_wrapped_key {
-        body["envelope"]["sender_encrypted_key"] = Value::String(key);
+    if let Some(key) = &signing.sender_encrypted_key {
+        body["envelope"]["sender_encrypted_key"] = Value::String(key.clone());
     }
     if !encrypted_keys.is_empty() {
         body["envelope"]["encrypted_keys"] = serde_json::json!(encrypted_keys);
@@ -784,7 +831,9 @@ mod tests {
         // Every call in order, e.g. "content:msg-1", "claim:msg-1", "post".
         calls: Mutex<Vec<String>>,
         sent: Mutex<Vec<Value>>,
-        signed: Mutex<Vec<EnvelopeSigningParams>>,
+        signed: Mutex<Vec<envelope_v2::Fields>>,
+        // Replay keys a reply already went to.
+        answered: Mutex<Vec<String>>,
         // Content keys handed to wrap_content_key, to open the sent reply.
         wrapped: Mutex<Vec<String>>,
         marked: Mutex<Vec<(String, Option<String>)>>,
@@ -866,8 +915,21 @@ mod tests {
             }
         }
 
+        async fn fetch_our_aid(&self) -> Result<String, String> {
+            Ok("aid:ai:viewer".into())
+        }
+
         async fn fetch_our_encryption_key(&self) -> Result<Option<String>, String> {
             Ok(self.our_encryption_key.clone())
+        }
+
+        async fn already_answered(&self, key: &str) -> bool {
+            self.answered.lock().unwrap().iter().any(|k| k == key)
+        }
+
+        async fn remember_answered(&self, key: &str) {
+            self.log(format!("answered:{key}"));
+            self.answered.lock().unwrap().push(key.into());
         }
 
         async fn daemon_unwrap_content_key(&self, _ek: &str) -> Result<String, String> {
@@ -885,9 +947,9 @@ mod tests {
             Ok(format!("x25519v1:fake:wrapped-for:{recipient_pub}"))
         }
 
-        async fn daemon_sign_envelope(
+        async fn daemon_sign_envelope_v2(
             &self,
-            params: &EnvelopeSigningParams,
+            params: &envelope_v2::Fields,
         ) -> Result<String, String> {
             self.log("sign");
             self.signed.lock().unwrap().push(params.clone());
@@ -977,12 +1039,15 @@ mod tests {
                 content_type: Some(A2A_CONTENT_TYPE.into()),
                 encrypted_keys: Vec::new(),
                 sender_encrypted_keys: Vec::new(),
+                sender_block: None,
+                replay_key: Some("sig-msg-1".into()),
             },
         );
         MockBackend {
             pending: vec![pending_row("msg-1")],
             content_by_id: map,
             pubkey: RecipientPubkey {
+                aid: "aid:ai:sender".into(),
                 did: "did:key:zSender".into(),
                 encryption_public_key: "fake-pub-key".into(),
                 devices: Vec::new(),
@@ -1002,6 +1067,7 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             sent: Mutex::new(Vec::new()),
             signed: Mutex::new(Vec::new()),
+            answered: Mutex::new(Vec::new()),
             wrapped: Mutex::new(Vec::new()),
             marked: Mutex::new(Vec::new()),
         }
@@ -1449,27 +1515,22 @@ mod tests {
             Some(params.encrypted_key.as_str())
         );
         assert_eq!(envelope["nonce"].as_str(), Some(params.nonce.as_str()));
-        assert_eq!(envelope["signature"].as_str(), Some("FAKE_SIGNATURE"));
-        // The daemon gets exactly its six fields.
-        let mut keys: Vec<String> = serde_json::to_value(params)
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-        keys.sort();
+        // Signature v2 covers exactly what is sent (docs/40 §14.2).
         assert_eq!(
-            keys,
-            [
-                "encrypted_content",
-                "encrypted_key",
-                "nonce",
-                "recipient_did",
-                "sender_did",
-                "subject_encrypted"
-            ]
+            envelope["signature_v2"],
+            params.signature_json("FAKE_SIGNATURE")
         );
+        assert!(envelope.get("signature").is_none());
+        let sent_fields = crate::envelope_v2::outgoing_fields(
+            envelope,
+            (&params.sender_aid, &params.sender_did),
+            (&params.recipient_aid, &params.recipient_did),
+            params.sent_at.clone(),
+        )
+        .unwrap();
+        assert_eq!(&sent_fields, params);
+        assert_eq!(params.sender_aid, "aid:ai:viewer");
+        assert_eq!(params.recipient_aid, "aid:ai:sender");
     }
 
     #[tokio::test]
@@ -1505,6 +1566,8 @@ mod tests {
                 wrap("did:key:zWeb", "x25519v1:web"),
             ],
             sender_encrypted_keys: vec![wrap("did:key:zMine", "x25519v1:mine")],
+            sender_block: None,
+            replay_key: None,
         };
         assert_eq!(
             content.wraps_for(Some("did:key:zPc")),
@@ -1537,7 +1600,9 @@ mod tests {
     async fn empty_our_did_is_resolved_again() {
         // The daemon is down, then answers with an empty DID, then works.
         // The DID used to be read once at startup and kept empty for good.
-        let backend = make_backend();
+        let mut backend = make_backend();
+        // Each tick sees the row as a new message, not a delivery again.
+        backend.content_by_id.get_mut("msg-1").unwrap().replay_key = None;
         *backend.our_did_answers.lock().unwrap() = VecDeque::from([
             Err("cannot connect to signer daemon".to_string()),
             Ok(String::new()),
@@ -1560,6 +1625,33 @@ mod tests {
         run_one_tick(&backend, &mut state, now()).await;
         assert_eq!(backend.count("our_did"), 3);
         assert_eq!(backend.sent_count(), 2);
+    }
+
+    /// docs/40 §14.5: only a sender this computer checked, and only once.
+    #[tokio::test]
+    async fn an_unchecked_sender_or_a_redelivery_is_left_to_the_person() {
+        let mut backend = make_backend();
+        backend.content_by_id.get_mut("msg-1").unwrap().sender_block = Some("altered");
+        let mut state = ExecutorState::default();
+        let report = run_one_tick(&backend, &mut state, now()).await;
+        assert_eq!(report.sent, 0);
+        assert_eq!(backend.count("skip:msg-1:altered"), 1);
+        assert_eq!(backend.count("release:msg-1"), 0, "the claim is kept");
+        assert_eq!(backend.count("sign"), 0);
+
+        // Answered once; the same signed message again is not answered.
+        let backend = make_backend();
+        let mut state = ExecutorState::default();
+        assert_eq!(run_one_tick(&backend, &mut state, now()).await.sent, 1);
+        assert_eq!(backend.count("answered:sig-msg-1"), 1);
+        let again = run_one_tick(&backend, &mut state, now()).await;
+        assert_eq!(again.sent, 0);
+        assert_eq!(backend.sent_count(), 1);
+        assert_eq!(
+            backend.count("skip:"),
+            0,
+            "a redelivery is not recorded as a skip"
+        );
     }
 
     #[tokio::test]

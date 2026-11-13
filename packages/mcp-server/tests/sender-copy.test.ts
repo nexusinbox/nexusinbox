@@ -22,6 +22,8 @@ describe("sender copy of the content key", () => {
     const recipient = await createX25519KeyPair();
 
     const envelope = await buildEncryptedTextEnvelope({
+      senderAid: "aid:ai:sender",
+      recipientAid: "aid:ai:recipient",
       senderDid: "did:key:zSender",
       recipientDid: "did:key:zRecipient",
       recipientEncryptionPublicKey: await exportRawPublicKeyBase64Url(recipient.publicKey),
@@ -57,6 +59,8 @@ describe("sender copy of the content key", () => {
     const signing = await createEd25519KeyPair();
     const recipient = await createX25519KeyPair();
     const envelope = await buildA2AEnvelope({
+      senderAid: "aid:ai:sender",
+      recipientAid: "aid:ai:recipient",
       senderDid: "did:key:zSender",
       recipientDid: "did:key:zRecipient",
       recipientEncryptionPublicKey: await exportRawPublicKeyBase64Url(recipient.publicKey),
