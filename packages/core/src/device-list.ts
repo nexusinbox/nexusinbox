@@ -228,15 +228,15 @@ export type WrapTarget = { did: string; encryption_public_key: string };
  *    (an AID asked for, or the agent a DID asked for was seen under before);
  *  - rollback: it is older than one seen before;
  *  - removed: there was a list before and now there is none;
+ *  - no_list: the agent has no list yet (since stage 5, docs/40 §15.2: not
+ *    sent to until it makes one, which it does when it opens NexusInbox);
  *  - no_device: none of the listed devices is still active.
  */
-export type StopReason = "root_changed" | "signature" | "rollback" | "removed" | "no_device";
+export type StopReason = "root_changed" | "signature" | "rollback" | "removed" | "no_list" | "no_device";
 
 export type WrapDecision =
   /** Checked: wrap for `targets`; `single` is the one `encrypted_key` goes to. */
   | { kind: "listed"; list: DeviceListPayload; targets: WrapTarget[]; single: WrapTarget }
-  /** The agent has no list yet (and none was seen): wrap as the server says. */
-  | { kind: "unlisted"; targets: WrapTarget[]; single: WrapTarget }
   | { kind: "stop"; reason: StopReason; root?: string };
 
 /** The root (`kid`) a list says it is signed by, unchecked. */
@@ -274,15 +274,7 @@ export async function decideWrapTargets(input: {
     : [{ did: served.did, encryption_public_key: served.encryption_public_key }];
 
   const ref = served.device_list;
-  if (!ref) {
-    if (pin) return { kind: "stop", reason: "removed" };
-    const targets = active.filter((d) => d.encryption_public_key);
-    return {
-      kind: "unlisted",
-      targets,
-      single: { did: served.did, encryption_public_key: served.encryption_public_key },
-    };
-  }
+  if (!ref) return { kind: "stop", reason: pin ? "removed" : "no_list" };
 
   const root = deviceListRoot(ref.jws);
   const list = root ? await verifyDeviceList(ref.jws, { aid: served.aid, root }) : null;

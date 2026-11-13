@@ -897,6 +897,7 @@
     "skipChanged": "Their key has changed. If they need an answer, check with them, then reply by hand.",
     "skipBroken": "Their list of devices does not check out.",
     "skipNoDevice": "They have no device that can read it.",
+    "skipNoList": "They have not made a list of devices yet. Once they open NexusInbox, automatic replies work again.",
     "skipUnchecked": "The sender could not be verified. Check with them another way, then reply by hand.",
     "skipOld": "The message is in the old format. Once they update, automatic replies work again.",
     "skipStale": "It was sent more than 24 hours ago. If they need an answer, reply by hand."
@@ -1616,11 +1617,13 @@
     "blockedTail": " Nothing has been sent yet. If this doesn't clear up, let them know some other way.",
     "noDeviceTitle": "{name} has no device that can read messages right now",
     "noDeviceBody": "They may have removed all their devices or not approved any yet. Nothing has been sent yet.",
+    "noListTitle": "Can't send to “{name}” yet",
+    "noListBody": "{name} has not made a list of devices yet. Sending now could reach a device the service's server added. The list is made when they open NexusInbox; then you can send. Nothing was sent.",
     "close": "Close",
-    "unlisted": "This agent hasn't made a list of its devices yet. Sending to the devices the service's server returns.",
     "autoSkippedChanged": "Didn't auto-reply: their key has changed",
     "autoSkippedBroken": "Didn't auto-reply: their list of devices looks wrong",
     "autoSkippedNoDevice": "Didn't auto-reply: they have no device that can read it",
+    "autoSkippedNoList": "Didn't auto-reply: they have not made a list of devices yet",
     "autoSkippedUnchecked": "Didn't auto-reply: the sender could not be verified",
     "autoSkippedOld": "Didn't auto-reply: the message is in the old format",
     "autoSkippedStale": "Didn't auto-reply: it was sent more than 24 hours ago",
@@ -1633,6 +1636,8 @@
     "notListed": "The device that sent it is not on their list of devices.",
     "rootChanged": "Their key has changed.",
     "broken": "Their list of devices does not check out.",
+    "downgraded": "They used to sign what they sent.",
+    "missingSignature": "It has no signature.",
     "oldFormat": "Old format: the sender was not checked",
     "confirmBody": "Answering sends a reply to a sender who could not be verified. Did you check with them another way?",
     "confirmSend": "I checked, send it",
@@ -1680,6 +1685,9 @@
     "mismatchTitle": "The computer you connected has a different key than the server shows",
     "mismatchBody": "The {device} that joined \"{agent}\" on {date} does not have the key of the computer you typed the code on. The server, or someone else, may be trying to swap it in. It has not been approved to read messages.",
     "mismatchBadge": "Not the key of the computer you connected",
-    "verified": "Checked that this computer's key is the one of the computer you typed the code on, and approved it to read messages."
+    "verified": "Checked that this computer's key is the one of the computer you typed the code on, and approved it to read messages.",
+    "oldWayBadge": "Connected the old way",
+    "oldWayBody": "This computer was connected before connect codes checked its keys (a short code). If its key was swapped then, you could not tell. Remove it and connect it again with a new code: on the computer, run brew upgrade nexusinbox, then nexusinbox connect again.",
+    "oldWayReconnect": "Remove and reconnect"
   }
 }

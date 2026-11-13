@@ -1,5 +1,5 @@
 {
-  "description": "Which devices a sender wraps a message key for, given the recipient as the server resolved it and what the sender remembers (docs/40 §12.3). Shared by the TS senders (core decideWrapTargets) and, from stage 3, the Rust gateway. Lists are signed with Ed25519 seeds of all-0x01 (root) and all-0x02 (other).",
+  "description": "Which devices a sender wraps a message key for, given the recipient as the server resolved it and what the sender remembers (docs/40 §12.3). Shared by the TS senders (core decideWrapTargets) and, from stage 3, the Rust gateway. Lists are signed with Ed25519 seeds of all-0x01 (root) and all-0x02 (other). Since stage 5 (docs/40 §15.2) an agent without a list is not sent to (no_list).",
   "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
   "other_root": "did:key:z6Mko9hTggMwjSTEaJaPUfE6tqcy2xvU6BnNq3e3o8qVBiyH",
   "cases": [
@@ -552,7 +552,7 @@
       }
     },
     {
-      "name": "no list yet and none seen",
+      "name": "no list yet and none seen: stop until they make one (stage 5)",
       "served": {
         "aid": "aid:ai:01VECTORAGENT0000000000000",
         "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
@@ -572,21 +572,8 @@
       "requested": "aid:ai:01VECTORAGENT0000000000000",
       "pin": null,
       "expect": {
-        "kind": "unlisted",
-        "targets": [
-          {
-            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
-            "encryption_public_key": "ENC_PC1"
-          },
-          {
-            "did": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-            "encryption_public_key": "ENC_ROOT"
-          }
-        ],
-        "single": {
-          "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
-          "encryption_public_key": "ENC_PC1"
-        }
+        "kind": "stop",
+        "reason": "no_list"
       }
     },
     {

@@ -11,7 +11,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -95,22 +95,6 @@ fn derive_did_key(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
     format!("did:key:z{}", bs58::encode(&multicodec).into_string())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn sign_envelope(
-    signing_key: &SigningKey,
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    let payload = format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    );
-    URL_SAFE_NO_PAD.encode(signing_key.sign(payload.as_bytes()).to_bytes())
-}
-
 struct UserAgent {
     auth: String,
     did: String,
@@ -190,15 +174,6 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
     let mut nonce_bytes = [0u8; 24];
     nonce_bytes[0] = nonce_marker;
     let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
-    let signature = sign_envelope(
-        &sender.signing_key,
-        &sender.did,
-        recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
     json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
@@ -206,7 +181,6 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -359,6 +333,7 @@ async fn a_message_carries_a_wrap_per_device_and_returns_them() {
         { "did": alice.did, "key": wrap(3) },
         { "did": alice_pc, "key": wrap(4) },
     ]);
+    common::sign_body_v2(&app, &alice.auth, &alice.signing_key, &mut body).await;
     let (status, sent) = request(&app, "POST", "/messages", &alice.auth, body).await;
     assert_eq!(status, StatusCode::ACCEPTED, "{sent}");
     let id = sent["message_id"].as_str().unwrap();
@@ -397,11 +372,13 @@ async fn a_wrap_for_another_agents_device_is_refused() {
         { "did": bob.did, "key": wrap(1) },
         { "did": carol.did, "key": wrap(2) },
     ]);
+    common::sign_body_v2(&app, &alice.auth, &alice.signing_key, &mut body).await;
     let (status, _) = request(&app, "POST", "/messages", &alice.auth, body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
     let mut body = build_send_body(&alice, &bob.did, 3);
     body["envelope"]["sender_encrypted_keys"] = json!([{ "did": bob.did, "key": wrap(1) }]);
+    common::sign_body_v2(&app, &alice.auth, &alice.signing_key, &mut body).await;
     let (status, _) = request(&app, "POST", "/messages", &alice.auth, body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }

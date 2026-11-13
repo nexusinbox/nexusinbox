@@ -10,7 +10,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -179,7 +179,13 @@ async fn seed_agent(pool: &PgPool, owner: &Person, seed_byte: u8) -> Agent {
     Agent { did, signing_key }
 }
 
-fn send_body(sender: &Agent, recipient_did: &str, nonce_marker: u8) -> Value {
+async fn send_body(
+    app: &axum::Router,
+    auth: &str,
+    sender: &Agent,
+    recipient_did: &str,
+    nonce_marker: u8,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-identity");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ct-identity");
     let encrypted_key = format!(
@@ -192,19 +198,13 @@ fn send_body(sender: &Agent, recipient_did: &str, nonce_marker: u8) -> Value {
     let mut nonce_bytes = [0u8; 24];
     nonce_bytes[0] = nonce_marker;
     let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
-    let payload = format!(
-        "{}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}",
-        sender.did
-    );
-    let signature = URL_SAFE_NO_PAD.encode(sender.signing_key.sign(payload.as_bytes()).to_bytes());
-    json!({
+    let mut body = json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
         "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -213,7 +213,9 @@ fn send_body(sender: &Agent, recipient_did: &str, nonce_marker: u8) -> Value {
             }
         },
         "priority": "normal",
-    })
+    });
+    common::sign_body_v2(app, auth, &sender.signing_key, &mut body).await;
+    body
 }
 
 async fn call(
@@ -368,7 +370,16 @@ async fn blocked_person_cannot_send_from_a_browser_session() {
         "POST",
         "/messages",
         Some(&blocked.session),
-        Some(send_body(&blocked_agent, &recipient_agent.did, 0x33)),
+        Some(
+            send_body(
+                &app,
+                &blocked.session,
+                &blocked_agent,
+                &recipient_agent.did,
+                0x33,
+            )
+            .await,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
@@ -406,7 +417,7 @@ async fn daily_send_limit_is_shared_across_a_persons_agents() {
             "POST",
             "/messages",
             Some(&sender.session),
-            Some(send_body(agent, &recipient_agent.did, nonce)),
+            Some(send_body(&app, &sender.session, agent, &recipient_agent.did, nonce).await),
         )
         .await;
         assert_eq!(status, expected, "{body}");
@@ -417,7 +428,16 @@ async fn daily_send_limit_is_shared_across_a_persons_agents() {
         "POST",
         "/messages",
         Some(&recipient.session),
-        Some(send_body(&recipient_agent, &first_agent.did, 0x47)),
+        Some(
+            send_body(
+                &app,
+                &recipient.session,
+                &recipient_agent,
+                &first_agent.did,
+                0x47,
+            )
+            .await,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::ACCEPTED, "{body}");

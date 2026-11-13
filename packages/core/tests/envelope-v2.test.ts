@@ -62,7 +62,8 @@ describe("checking the sender (docs/40 §14.5)", () => {
         readerAids: c.reader_aids,
         sender: c.sender,
         pin: c.pin,
-        now,
+        signedBefore: c.signed_before ?? false,
+        now: c.now ? Date.parse(c.now) : now,
       });
       expect(result.state).toBe(c.expected.state);
       expect(pinAfterCheck(c.pin, result)).toEqual(c.expected.pin_after);
@@ -83,5 +84,7 @@ describe("checking the sender (docs/40 §14.5)", () => {
     expect(senderCheckWarns("not_listed")).toBe(true);
     expect(senderCheckWarns("root_changed")).toBe(true);
     expect(senderCheckWarns("broken")).toBe(true);
+    expect(senderCheckWarns("downgraded")).toBe(true);
+    expect(senderCheckWarns("missing_signature")).toBe(true);
   });
 });

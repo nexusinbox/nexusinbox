@@ -155,7 +155,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
       <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{t("agentStatus.title")}</h3>
 
       <Row label={t("agentStatus.devices")}>
-        <AgentDevices agent={agent} now={now} />
+        <AgentDevices agent={agent} now={now} onReconnect={() => setConnectStage("pairing")} />
         {computer.kind === "silent" ? (
           <div
             data-testid="agent-status-silent"

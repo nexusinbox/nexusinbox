@@ -12,6 +12,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use http_body_util::BodyExt;
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -49,6 +50,8 @@ async fn ipfs_send_receive_delete_roundtrip_against_kubo() {
     let user_id = uuid::Uuid::new_v4();
     let token = common::issue_test_jwt(&user_id.to_string(), "0xlive-ipfs", "orb", 60 * 60);
     let auth = format!("Bearer {token}");
+    // The agent's signing key: sends carry envelope signature v2 (docs/40 §15.2).
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x5a; 32]);
 
     // Register an agent.
     let create_agent = app
@@ -59,7 +62,14 @@ async fn ipfs_send_receive_delete_roundtrip_against_kubo() {
                 .uri("/agents")
                 .header("authorization", &auth)
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"label": "ipfs-live"}).to_string()))
+                .body(Body::from(
+                    json!({
+                        "label": "ipfs-live",
+                        "public_key": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
+                        "encryption_key": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU",
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -71,14 +81,13 @@ async fn ipfs_send_receive_delete_roundtrip_against_kubo() {
     let agent_did = created["did"].as_str().unwrap().to_string();
 
     // Send a message; the adapter PUTs to /api/v0/add and stores the CID.
-    let envelope = json!({
+    let mut envelope = json!({
         "sender_did": agent_did,
         "recipient_did": agent_did,
         "envelope": {
             "encrypted_content": "aXBmcy1jaXBoZXI=",
-            "encrypted_key": "aXBmcy1rZXk=",
+            "encrypted_key": "x25519v1:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE:AgICAgICAgICAgICAgICAg:AwMDAwMDAwMDAwMD:Y2lwaGVydGV4dC12YWxpZC1wYXlsb2Fk",
             "nonce": "aXBmcy1ub25jZQ==",
-            "signature": "aXBmcy1zaWc=",
             "metadata": {
                 "subject_encrypted": "aXBmcy1zdWJq",
                 "content_type": "text/plain",
@@ -86,6 +95,7 @@ async fn ipfs_send_receive_delete_roundtrip_against_kubo() {
             }
         }
     });
+    common::sign_body_v2(&app, &auth, &signing_key, &mut envelope).await;
     let send = app
         .clone()
         .oneshot(

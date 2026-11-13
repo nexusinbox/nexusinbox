@@ -4,7 +4,7 @@
 // cards, AI drafts inline, and a composer at the bottom.
 
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { A2AProtocolType } from "@nexusinbox/core/a2a";
 import { parseProtocolBody, type A2AProtocolBlock } from "../protocol/parseProtocolBody";
@@ -63,8 +63,8 @@ import {
   type Conversation,
 } from "../../../lib/inbox/conversations";
 import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-message";
-import { deviceWraps, isSendStop, isUnlisted, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
-import { SendStopNotice, UnlistedHint } from "./SendStopNotice";
+import { deviceWraps, isSendStop, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
+import { SendStopNotice } from "./SendStopNotice";
 import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
@@ -113,6 +113,7 @@ const LOADING: Rendered = { state: "loading", text: "", subject: "", protocol: n
 function autoSkippedKey(reason: string): string {
   if (reason === "root_changed") return "sendStop.autoSkippedChanged";
   if (reason === "no_device") return "sendStop.autoSkippedNoDevice";
+  if (reason === "no_list") return "sendStop.autoSkippedNoList";
   if (reason === "altered" || reason === "not_listed") return "sendStop.autoSkippedUnchecked";
   if (reason === "unsigned") return "sendStop.autoSkippedOld";
   if (reason === "stale") return "sendStop.autoSkippedStale";
@@ -124,6 +125,8 @@ function unverifiedReasonKey(check: ReceivedCheck | undefined): string {
   if (check === "not_listed") return "senderCheck.notListed";
   if (check === "root_changed") return "senderCheck.rootChanged";
   if (check === "broken") return "senderCheck.broken";
+  if (check === "downgraded") return "senderCheck.downgraded";
+  if (check === "missing_signature") return "senderCheck.missingSignature";
   return "senderCheck.altered";
 }
 
@@ -873,13 +876,6 @@ function Composer({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
   const [sendStop, setSendStop] = useState<SendStop | null>(null);
-  // Whether they have a device list yet (docs/40 Q8).
-  const resolvedQuery = useQuery({
-    queryKey: ["recipient-resolve", counterpart],
-    queryFn: () => defaultApiClient.resolveRecipient(counterpart),
-    staleTime: 60_000,
-    retry: false,
-  });
   // undefined: still checking; null: no signing key here.
   const [senderDid, setSenderDid] = useState<string | null | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1017,7 +1013,6 @@ function Composer({
           </svg>
         </button>
       </div>
-      {resolvedQuery.data && isUnlisted(resolvedQuery.data) ? <UnlistedHint /> : null}
       <div className="dm-composer-foot">
         {error ? (
           <span className="dm-error" role="alert">

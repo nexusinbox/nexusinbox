@@ -2196,6 +2196,21 @@ async fn recipient_exists_in_db(pool: &PgPool, recipient_did: &str) -> Result<bo
     Ok(row.get::<bool, _>("exists"))
 }
 
+/// A computer or client that still signs with v1 (docs/40 §15.2): v2 is
+/// required since stage 5. Said in both languages: the gateway passes it
+/// to the AI, which tells the person.
+const CLIENT_OUTDATED_MESSAGE: &str = "This computer's NexusInbox is out of date. Update it with `brew upgrade nexusinbox`, then send again. / このパソコンの NexusInbox が古いため送れません。brew upgrade nexusinbox で更新してから、もう一度送ってください。";
+
+fn client_outdated_error() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::UPGRADE_REQUIRED,
+        Json(ErrorResponse {
+            error: "client_outdated".to_string(),
+            message: CLIENT_OUTDATED_MESSAGE.to_string(),
+        }),
+    )
+}
+
 /// The parts of an envelope a v2 signature covers, as the server received them.
 struct SignedEnvelope<'a> {
     sender_did: &'a str,
@@ -4061,19 +4076,6 @@ fn revoke_session_jti_in_memory(state: &AppState, jwt_id: &str, exp: i64) {
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     revoked.insert(jwt_id.to_string(), exp);
-}
-
-fn build_envelope_signing_payload(
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    )
 }
 
 fn verify_envelope_signature(signing_key: &str, signature: &str, signing_payload: &str) -> bool {
@@ -6839,10 +6841,12 @@ async fn create_agent_draft(
     )?;
     let encrypted_key = bounded_field(&payload.encrypted_key, "encrypted_key", 512)?;
     let nonce = bounded_field(&payload.nonce, "nonce", 256)?;
-    let signature = match (&payload.signature, &payload.signature_v2) {
-        (_, Some(_)) => None,
-        (Some(signature), None) => Some(bounded_field(signature, "signature", 512)?),
-        (None, None) => return Err(validation_error("signature or signature_v2 is required")),
+    // Signature v2 only (docs/40 §15.2).
+    let Some(signature_v2) = payload.signature_v2.as_ref() else {
+        if payload.signature.is_some() {
+            return Err(client_outdated_error());
+        }
+        return Err(validation_error("signature_v2 is required"));
     };
     let sender_encrypted_key = payload
         .sender_encrypted_key
@@ -6916,43 +6920,28 @@ async fn create_agent_draft(
         .map_err(|message| internal_server_error(&message))?
         .ok_or_else(|| forbidden_error("sender_did is not owned by the authenticated user"))?;
     enforce_agent_bound_aid(&ctx, &signing_agent.aid)?;
-    if let Some(sig) = &payload.signature_v2 {
-        verify_signature_v2(
-            &state,
-            Some(&pool),
-            &signing_agent.aid,
-            &signing_agent.public_key,
-            sig,
-            &SignedEnvelope {
-                sender_did,
-                recipient_did,
-                content_type: content_type.as_deref(),
-                thread_id: payload.thread_id,
-                subject_encrypted,
-                encrypted_content,
-                encrypted_key,
-                nonce,
-                sender_encrypted_key,
-                encrypted_keys: &encrypted_keys,
-                sender_encrypted_keys: &sender_encrypted_keys,
-                attachments: &[],
-            },
-        )
-        .await?;
-    } else {
-        let signing_payload = build_envelope_signing_payload(
+    verify_signature_v2(
+        &state,
+        Some(&pool),
+        &signing_agent.aid,
+        &signing_agent.public_key,
+        signature_v2,
+        &SignedEnvelope {
             sender_did,
             recipient_did,
+            content_type: content_type.as_deref(),
+            thread_id: payload.thread_id,
             subject_encrypted,
             encrypted_content,
             encrypted_key,
             nonce,
-        );
-        let signature = signature.unwrap_or_default();
-        if !verify_envelope_signature(&signing_agent.public_key, signature, &signing_payload) {
-            return Err(unauthorized_error("invalid envelope signature"));
-        }
-    }
+            sender_encrypted_key,
+            encrypted_keys: &encrypted_keys,
+            sender_encrypted_keys: &sender_encrypted_keys,
+            attachments: &[],
+        },
+    )
+    .await?;
     let signature_v2 = payload
         .signature_v2
         .as_ref()
@@ -7019,7 +7008,8 @@ async fn create_agent_draft(
     .bind(encrypted_content)
     .bind(encrypted_key)
     .bind(nonce)
-    .bind(signature)
+    // v1 signatures are no longer taken (docs/40 §15.2).
+    .bind(None::<String>)
     .bind(&content_type)
     .bind(&wraps)
     .bind(short_label(payload.via.as_deref()))
@@ -11811,7 +11801,14 @@ async fn send_message_as(
         .as_ref()
         .and_then(|e| e.signature.clone())
         .unwrap_or_default();
-    let signature_v2 = envelope.as_ref().and_then(|e| e.signature_v2.clone());
+    // Signature v2 only (docs/40 §15.2): a v1 signature means an older
+    // client, which is told to update.
+    let Some(signature_v2) = envelope.as_ref().and_then(|e| e.signature_v2.clone()) else {
+        if !signature.trim().is_empty() {
+            return Err(client_outdated_error());
+        }
+        return Err(validation_error("envelope.signature_v2 is required"));
+    };
 
     let _ = envelope.as_ref().and_then(|e| e.encrypted_content.as_ref());
     let _ = envelope.as_ref().and_then(|e| e.encrypted_key.as_ref());
@@ -11845,10 +11842,9 @@ async fn send_message_as(
         || encrypted_content.trim().is_empty()
         || encrypted_key.trim().is_empty()
         || nonce.trim().is_empty()
-        || (signature.trim().is_empty() && signature_v2.is_none())
     {
         return Err(validation_error(
-            "sender_did, recipient_did, envelope.{encrypted_content,encrypted_key,nonce,signature or signature_v2} and envelope.metadata.subject_encrypted are required",
+            "sender_did, recipient_did, envelope.{encrypted_content,encrypted_key,nonce,signature_v2} and envelope.metadata.subject_encrypted are required",
         ));
     }
     // Validate DID format
@@ -11959,9 +11955,9 @@ async fn send_message_as(
         return Err(unauthorized_error("sender_did does not match signing key"));
     }
 
-    // Signature v2 covers the whole envelope (docs/40 §14.2); without it,
-    // the v1 signature from older senders.
-    let stored_signature_v2 = if let Some(sig) = signature_v2 {
+    // Signature v2 covers the whole envelope (docs/40 §14.2).
+    let stored_signature_v2 = {
+        let sig = signature_v2;
         let sender_list_version = verify_signature_v2(
             &state,
             maybe_pool.as_ref(),
@@ -11988,19 +11984,6 @@ async fn send_message_as(
             signature: sig,
             sender_list_version,
         })
-    } else {
-        let signing_payload = build_envelope_signing_payload(
-            &sender_did,
-            &recipient_did,
-            &subject_encrypted,
-            &encrypted_content,
-            &encrypted_key,
-            &nonce,
-        );
-        if !verify_envelope_signature(&signing_agent.public_key, &signature, &signing_payload) {
-            return Err(unauthorized_error("invalid envelope signature"));
-        }
-        None
     };
 
     // Per-device wraps must name devices of the recipient agent and of the
@@ -15882,6 +15865,8 @@ const AUTO_REPLY_SKIP_REASONS: &[&str] = &[
     "rollback",
     "removed",
     "no_device",
+    // The other agent has no device list yet (docs/40 §15.2).
+    "no_list",
     // The sender could not be checked (docs/40 §14.5).
     "unsigned",
     "altered",
@@ -17425,32 +17410,6 @@ mod internal_tests {
             audit_user_agent(&headers).chars().count(),
             AUDIT_USER_AGENT_MAX_CHARS
         );
-    }
-
-    /// Shared vector (tests/vectors/envelope_signing.json): the API verifies
-    /// exactly the bytes the signer daemon and the web sign (docs/29 §2.4).
-    #[test]
-    fn envelope_signature_matches_shared_vector() {
-        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tests/vectors/envelope_signing.json"
-        )))
-        .unwrap();
-        let field = |name: &str| vector["fields"][name].as_str().unwrap().to_string();
-        let payload = build_envelope_signing_payload(
-            &field("sender_did"),
-            &field("recipient_did"),
-            &field("subject_encrypted"),
-            &field("encrypted_content"),
-            &field("encrypted_key"),
-            &field("nonce"),
-        );
-        assert_eq!(payload, vector["payload"].as_str().unwrap());
-        assert!(verify_envelope_signature(
-            vector["public_key_b64url"].as_str().unwrap(),
-            vector["signature_b64url"].as_str().unwrap(),
-            &payload,
-        ));
     }
 
     #[test]

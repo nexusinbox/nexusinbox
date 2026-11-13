@@ -25,14 +25,13 @@ import {
 } from "../../lib/crypto/keywrap";
 import {
   isSendStop,
-  isUnlisted,
   planSend,
   receivedWrap,
   sendSigning,
   wrapContentKeyForDevices,
   type SendStop,
 } from "../../lib/crypto/device-wraps";
-import { SendStopNotice, UnlistedHint } from "../_components/messages/SendStopNotice";
+import { SendStopNotice } from "../_components/messages/SendStopNotice";
 import {
   encryptAttachment,
   generateAttachmentKey,
@@ -211,8 +210,6 @@ function ComposePageInner() {
   const [status, setStatus] = useState<StatusState>(null);
   // A send stopped by the recipient's device list (docs/40 §12.5).
   const [sendStop, setSendStop] = useState<{ stop: SendStop; name: string | null } | null>(null);
-  // The recipient has no device list yet (docs/40 Q8).
-  const [recipientUnlisted, setRecipientUnlisted] = useState(false);
   const [hasSenderPrivateKey, setHasSenderPrivateKey] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -387,7 +384,6 @@ function ComposePageInner() {
     const input = recipientDid.trim();
     if (!input || (!isAidIdentifier(input) && !input.startsWith("did:key:"))) {
       setRecipientMode(null);
-      setRecipientUnlisted(false);
       return;
     }
     let cancelled = false;
@@ -397,7 +393,6 @@ function ComposePageInner() {
         .then((resolved) => {
           if (cancelled) return;
           setRecipientMode(resolved.key_holder ?? "unknown");
-          setRecipientUnlisted(isUnlisted(resolved));
         })
         .catch(() => {
           // 404 / malformed input — clear the hint rather than
@@ -405,7 +400,6 @@ function ComposePageInner() {
           // validation. Unknown recipients shouldn't flash a warning.
           if (!cancelled) {
             setRecipientMode(null);
-            setRecipientUnlisted(false);
           }
         });
     }, 350);
@@ -938,7 +932,6 @@ function ComposePageInner() {
               <p className="field-help">
                 {t("compose.toHelp")}
               </p>
-              {recipientUnlisted ? <UnlistedHint /> : null}
               {recipientMode === "signer_daemon" ? (
                 <p
                   className="field-help"

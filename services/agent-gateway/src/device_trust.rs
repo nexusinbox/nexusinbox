@@ -65,6 +65,8 @@ pub enum StopReason {
     Rollback,
     /// There was a list before and now there is none.
     Removed,
+    /// The agent has no list yet: not sent to until it makes one (docs/40 §15.2).
+    NoList,
     /// None of the listed devices is still active.
     NoDevice,
 }
@@ -77,6 +79,7 @@ impl StopReason {
             StopReason::Signature => "signature",
             StopReason::Rollback => "rollback",
             StopReason::Removed => "removed",
+            StopReason::NoList => "no_list",
             StopReason::NoDevice => "no_device",
         }
     }
@@ -101,11 +104,6 @@ pub enum Decision {
     /// Checked: wrap for `targets`; `single` is the one `encrypted_key` goes to.
     Listed {
         list: DeviceList,
-        targets: Vec<Target>,
-        single: Target,
-    },
-    /// The agent has no list yet (and none was seen): wrap as the server says.
-    Unlisted {
         targets: Vec<Target>,
         single: Target,
     },
@@ -250,16 +248,11 @@ pub fn decide(
     };
 
     let Some(list_ref) = served.device_list else {
-        if pin.is_some() {
-            return stop(StopReason::Removed);
-        }
-        return Decision::Unlisted {
-            targets: active
-                .into_iter()
-                .filter(|d| !d.encryption_public_key.is_empty())
-                .collect(),
-            single: served_single,
-        };
+        return stop(if pin.is_some() {
+            StopReason::Removed
+        } else {
+            StopReason::NoList
+        });
     };
 
     let Some(list) = list_root(&list_ref.jws)
@@ -344,6 +337,10 @@ pub struct Peers {
     /// for `nexusinbox trust` to show and accept.
     #[serde(default)]
     pub changed: BTreeMap<String, String>,
+    /// Agents seen signing with v2: a message from them without a signature
+    /// is a warning (docs/40 §15.2).
+    #[serde(default)]
+    pub signed: std::collections::BTreeSet<String>,
 }
 
 pub struct PeerStore {
@@ -442,9 +439,6 @@ mod tests {
                     v["root"] = serde_json::json!(root);
                 }
                 v
-            }
-            Decision::Unlisted { targets, single } => {
-                serde_json::json!({ "kind": "unlisted", "targets": targets, "single": single })
             }
             Decision::Listed {
                 targets, single, ..

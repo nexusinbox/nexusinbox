@@ -90,6 +90,7 @@ const PRESETS: { prefix: string; labelKey: string }[] = [
 function skipReasonKey(reason: string): string {
   if (reason === "root_changed") return "audit.skipChanged";
   if (reason === "no_device") return "audit.skipNoDevice";
+  if (reason === "no_list") return "audit.skipNoList";
   if (reason === "altered" || reason === "not_listed") return "audit.skipUnchecked";
   if (reason === "unsigned") return "audit.skipOld";
   if (reason === "stale") return "audit.skipStale";

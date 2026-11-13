@@ -20,7 +20,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -102,22 +102,6 @@ fn derive_did_key(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
     multicodec.push(0x01);
     multicodec.extend_from_slice(&verifying_key.to_bytes());
     format!("did:key:z{}", bs58::encode(&multicodec).into_string())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn sign_envelope(
-    signing_key: &SigningKey,
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    let payload = format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    );
-    URL_SAFE_NO_PAD.encode(signing_key.sign(payload.as_bytes()).to_bytes())
 }
 
 struct UserAgent {
@@ -250,7 +234,12 @@ async fn seed_additional_agent(
     }
 }
 
-fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) -> Value {
+async fn build_send_body(
+    app: &axum::Router,
+    sender: &UserAgent,
+    recipient_did: &str,
+    nonce_marker: u8,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-xuser");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ct-xuser");
     let encrypted_key = format!(
@@ -263,23 +252,13 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
     let mut nonce_bytes = [0u8; 24];
     nonce_bytes[0] = nonce_marker;
     let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
-    let signature = sign_envelope(
-        &sender.signing_key,
-        &sender.did,
-        recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
-    json!({
+    let mut body = json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
         "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -288,7 +267,9 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
             }
         },
         "priority": "normal",
-    })
+    });
+    common::sign_body_v2(app, &sender.auth, &sender.signing_key, &mut body).await;
+    body
 }
 
 async fn body_json(response: axum::response::Response) -> Value {
@@ -312,7 +293,7 @@ async fn cross_user_send_lands_in_recipient_inbox_and_sender_sent() {
     let bob = seed_user_with_agent(&pool, "0xbob-xuser", "bob", 0x77).await;
 
     // Alice -> Bob
-    let send_body = build_send_body(&alice, &bob.did, 0x01);
+    let send_body = build_send_body(&app, &alice, &bob.did, 0x01).await;
     let response = app
         .clone()
         .oneshot(
@@ -452,7 +433,7 @@ async fn cross_user_delete_sender_row_does_not_garbage_collect_shared_payload() 
     let alice = seed_user_with_agent(&pool, "0xalice-delshared", "alice", 0x21).await;
     let bob = seed_user_with_agent(&pool, "0xbob-delshared", "bob", 0x22).await;
 
-    let send_body = build_send_body(&alice, &bob.did, 0x30);
+    let send_body = build_send_body(&app, &alice, &bob.did, 0x30).await;
     let sent = app
         .clone()
         .oneshot(
@@ -594,7 +575,7 @@ async fn cross_user_reply_preserves_thread_id_on_both_sides() {
     let bob = seed_user_with_agent(&pool, "0xbob-reply", "bob", 0x22).await;
 
     // Alice -> Bob (opens a thread server-side when thread_id is null).
-    let first = build_send_body(&alice, &bob.did, 0x10);
+    let first = build_send_body(&app, &alice, &bob.did, 0x10).await;
     let first_resp = app
         .clone()
         .oneshot(
@@ -641,23 +622,13 @@ async fn cross_user_reply_preserves_thread_id_on_both_sides() {
         let mut n = [0u8; 24];
         n[0] = 0x20;
         let nonce = URL_SAFE_NO_PAD.encode(n);
-        let signature = sign_envelope(
-            &bob.signing_key,
-            &bob.did,
-            &alice.did,
-            &subject,
-            &content,
-            &key,
-            &nonce,
-        );
-        json!({
+        let mut body = json!({
             "sender_did": bob.did,
             "recipient_did": alice.did,
             "envelope": {
                 "encrypted_content": content,
                 "encrypted_key": key,
                 "nonce": nonce,
-                "signature": signature,
                 "metadata": {
                     "subject_encrypted": subject,
                     "thread_id": thread_id,
@@ -666,7 +637,9 @@ async fn cross_user_reply_preserves_thread_id_on_both_sides() {
                 }
             },
             "priority": "normal",
-        })
+        });
+        common::sign_body_v2(&app, &bob.auth, &bob.signing_key, &mut body).await;
+        body
     };
 
     let reply_resp = app
@@ -756,7 +729,7 @@ async fn same_user_send_appears_in_sent_view() {
     .await;
 
     // Agent A → Agent B (same human owns both).
-    let send_body = build_send_body(&agent_a, &agent_b.did, 0x05);
+    let send_body = build_send_body(&app, &agent_a, &agent_b.did, 0x05).await;
     let response = app
         .clone()
         .oneshot(

@@ -21,6 +21,9 @@ pub const PREFIX: &str = "nexusinbox-envelope-v2\n";
 const MAX_CLOCK_AHEAD_MS: i64 = 10 * 60 * 1000;
 /// Automatic replies only answer messages sent within this time.
 pub const AUTO_REPLY_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
+/// From 2027-02-11T00:00:00Z every message without a v2 signature is a
+/// warning (docs/40 §15.2): messages sent before stage 4 are gone by then.
+pub const UNSIGNED_CUTOFF_MS: i64 = 1_802_304_000_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wrap {
@@ -234,6 +237,10 @@ pub fn outgoing_fields(
 pub enum SenderState {
     Verified,
     Unsigned,
+    /// No signature from a sender seen signing before (docs/40 §15.2).
+    Downgraded,
+    /// No signature after UNSIGNED_CUTOFF_MS.
+    MissingSignature,
     NoList,
     Altered,
     NotListed,
@@ -246,6 +253,8 @@ impl SenderState {
         match self {
             SenderState::Verified => "verified",
             SenderState::Unsigned => "unsigned",
+            SenderState::Downgraded => "downgraded",
+            SenderState::MissingSignature => "missing_signature",
             SenderState::NoList => "no_list",
             SenderState::Altered => "altered",
             SenderState::NotListed => "not_listed",
@@ -351,16 +360,24 @@ fn parse_ms(at: &str) -> Option<i64> {
 /// Check who sent a delivered message (core `checkSender`). `reader_aids`
 /// are the agents this computer reads for; `sender` the sender's agent
 /// as resolved by `signature_v2.sender_aid`; `pin` what is remembered of
-/// it; `now_ms` the clock.
+/// it; `signed_before` whether the sender's agent was seen signing with v2;
+/// `now_ms` the clock.
 pub fn check_sender(
     content: &Value,
     reader_aids: &[&str],
     sender: Option<SenderAgent<'_>>,
     pin: Option<&Pin>,
+    signed_before: bool,
     now_ms: i64,
 ) -> SenderCheck {
     let Some(sig) = content.get("signature_v2").filter(|v| v.is_object()) else {
-        return SenderCheck::only(SenderState::Unsigned);
+        return SenderCheck::only(if signed_before {
+            SenderState::Downgraded
+        } else if now_ms >= UNSIGNED_CUTOFF_MS {
+            SenderState::MissingSignature
+        } else {
+            SenderState::Unsigned
+        });
     };
     let Some(fields) = delivered_fields(content, sig) else {
         return SenderCheck::only(SenderState::Altered);
@@ -469,7 +486,9 @@ pub fn auto_reply_block(
             _ => Some("stale"),
         },
         SenderState::Unsigned | SenderState::NoList => Some("unsigned"),
-        SenderState::Altered => Some("altered"),
+        SenderState::Altered | SenderState::Downgraded | SenderState::MissingSignature => {
+            Some("altered")
+        }
         SenderState::NotListed => Some("not_listed"),
         SenderState::RootChanged => Some("root_changed"),
         SenderState::Broken => Some("signature"),
@@ -607,7 +626,16 @@ mod tests {
                 device_list: list_ref.as_ref(),
             });
             let pin: Option<Pin> = serde_json::from_value(c["pin"].clone()).unwrap();
-            let check = check_sender(&c["content"], &readers, sender, pin.as_ref(), now);
+            let case_now = c["now"].as_str().and_then(parse_ms).unwrap_or(now);
+            let signed_before = c["signed_before"].as_bool().unwrap_or(false);
+            let check = check_sender(
+                &c["content"],
+                &readers,
+                sender,
+                pin.as_ref(),
+                signed_before,
+                case_now,
+            );
             assert_eq!(
                 check.state.code(),
                 c["expected"]["state"].as_str().unwrap(),
@@ -625,6 +653,8 @@ mod tests {
                 "altered" => SenderState::Altered,
                 "not_listed" => SenderState::NotListed,
                 "root_changed" => SenderState::RootChanged,
+                "downgraded" => SenderState::Downgraded,
+                "missing_signature" => SenderState::MissingSignature,
                 _ => SenderState::Broken,
             };
             assert_eq!(

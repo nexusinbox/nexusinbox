@@ -136,7 +136,7 @@ export async function draftDeviceWraps(
   const plan = await planSend(served, draft.recipient_did, draft.sender_did, { acceptRoot });
   // The draft's own wrap went to `recipient_did`: it must be one of the
   // devices the recipient's list names (docs/40 §13.6).
-  if (!plan.unlisted && !plan.recipientDevices.some((d) => d.did === draft.recipient_did)) {
+  if (!plan.recipientDevices.some((d) => d.did === draft.recipient_did)) {
     throw new SendStop("signature", served.aid);
   }
   // A v2 draft was wrapped for every device and signed by the computer

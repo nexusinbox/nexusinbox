@@ -52,6 +52,26 @@ export function savePin(aid: string, pin: DevicePin): void {
   }
 }
 
+// Agents seen signing with v2 (docs/40 §15.2): a message from them without
+// a signature is a warning, as the server may have stripped it.
+const signerKey = (aid: string) => `nexusinbox.devicelist.signed.${aid}`;
+
+export function rememberSigner(aid: string): void {
+  try {
+    window.localStorage.setItem(signerKey(aid), "1");
+  } catch {
+    // Storage blocked: such messages keep the quiet old-format note.
+  }
+}
+
+export function knownSigner(aid: string): boolean {
+  try {
+    return window.localStorage.getItem(signerKey(aid)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 // A DID belongs to one agent for good. Remember which, so a server that
 // moves a DID to another agent is noticed (docs/40 §12.3).
 const didAidKey = (did: string) => `nexusinbox.devicelist.didaid.${did}`;

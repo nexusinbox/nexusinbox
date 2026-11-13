@@ -4,7 +4,7 @@
 //!     sender's device list as it was when it was sent;
 //!   - a signature over anything else than what arrived, or naming other
 //!     agents, is refused;
-//!   - v1 still works for older senders;
+//!   - v1 is refused with an update notice (stage 5, §15.2);
 //!   - a v2 draft is sent with the wraps it was signed with.
 //!
 //! Usage:
@@ -588,7 +588,7 @@ async fn a_v2_signature_over_anything_else_is_refused() {
 
 #[tokio::test]
 #[serial]
-async fn v1_still_works_and_carries_no_v2_signature() {
+async fn v1_is_refused_with_an_update_notice() {
     let (app, pool) = setup!();
     let me = seed_user_with_agent(&pool, "0xv2-me-3", "secretary", 0x66).await;
     let friend = seed_user_with_agent(&pool, "0xv2-friend-3", "friend", 0x67).await;
@@ -602,15 +602,18 @@ async fn v1_still_works_and_carries_no_v2_signature() {
         &m.encrypted_key,
         &m.nonce,
     );
+    // docs/40 §15.2: an older computer is told to update.
     let mut body = send_body(&me, &friend.did, &m, Value::Null);
     body["envelope"]["signature"] = json!(signature);
     let (status, body) = call(&app, "POST", "/messages", &me.auth, Some(body)).await;
-    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
-    let content = received_content(&app, &pool, &me).await;
-    assert!(content.get("signature_v2").is_none(), "{content}");
-    assert!(content.get("sender_device_list").is_none(), "{content}");
+    assert_eq!(status, StatusCode::UPGRADE_REQUIRED, "{body}");
+    assert_eq!(body["error"], "client_outdated");
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("brew upgrade nexusinbox"));
 
-    // Neither signature: refused.
+    // Neither signature: refused as incomplete.
     let (status, _) = call(
         &app,
         "POST",
@@ -625,6 +628,34 @@ async fn v1_still_works_and_carries_no_v2_signature() {
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // A v1 draft from an older computer is refused the same way.
+    let agent = seed_agent_token(&pool, &me).await;
+    let key_id = register_review_key(&app, &me.auth).await;
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/agent-drafts",
+        &agent,
+        Some(json!({
+            "sender_did": me.did,
+            "recipient_did": friend.did,
+            "subject_encrypted": m.subject_encrypted,
+            "encrypted_content": m.encrypted_content,
+            "encrypted_key": m.encrypted_key,
+            "nonce": m.nonce,
+            "signature": signature,
+            "content_type": "text/plain",
+            "review_wraps": [{ "review_key_id": key_id, "wrapped_key": wrapped_key(2) }],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UPGRADE_REQUIRED, "{body}");
+    let delivered: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_index")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(delivered, 0);
 }
 
 #[tokio::test]

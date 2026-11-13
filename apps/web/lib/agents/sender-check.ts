@@ -14,7 +14,16 @@ import type { DevicePin } from "@nexusinbox/core/device-list";
 import { ApiError, defaultApiClient } from "../api/client";
 import type { Agent, MessageContentResponse, RecipientResolutionResponse } from "../api/types";
 import { loadAddressBook } from "../contacts/address-book";
-import { contactForAid, contactsOpened, loadPin, savePin } from "./peer-pins";
+import {
+  contactForAid,
+  contactsOpened,
+  knownAidFor,
+  knownSigner,
+  loadPin,
+  rememberDidAid,
+  rememberSigner,
+  savePin,
+} from "./peer-pins";
 
 /** `unchecked`: the sender's agent could not be looked up just now. */
 export type ReceivedCheck = SenderCheckState | "unchecked";
@@ -46,7 +55,19 @@ export async function checkReceived(
 ): Promise<ReceivedCheck> {
   const sig = content.signature_v2;
   const readerAids = ownAgents.map((a) => a.aid);
-  if (!sig) return "unsigned";
+  if (!sig) {
+    // A warning when the sender's agent was seen signing, or after the
+    // cutoff (docs/40 §15.2); otherwise the old-format note.
+    const aid = content.sender_did ? knownAidFor(content.sender_did) : null;
+    const check = await checkSender({
+      content: content as DeliveredContent,
+      readerAids,
+      sender: null,
+      pin: null,
+      signedBefore: !!aid && knownSigner(aid),
+    });
+    return check.state;
+  }
   let sender: RecipientResolutionResponse | null;
   try {
     sender = await resolveAgent(sig.sender_aid);
@@ -63,7 +84,12 @@ export async function checkReceived(
     readerAids,
     sender: sender ? { ...sender, encryption_public_key: sender.encryption_public_key ?? "" } : null,
     pin,
+    signedBefore: knownSigner(sig.sender_aid),
   });
+  if (check.state === "verified") {
+    rememberSigner(sig.sender_aid);
+    if (content.sender_did) rememberDidAid(content.sender_did, sig.sender_aid);
+  }
   const next = pinAfterCheck(pin, check);
   if (next && check.state !== "root_changed" && (next.root !== local?.root || next.version !== local?.version)) {
     savePin(sig.sender_aid, next);

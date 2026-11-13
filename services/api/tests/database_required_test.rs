@@ -136,7 +136,12 @@ async fn send_message_returns_500_when_database_required_but_url_missing() {
         "encrypted_content": "ZW5jcnlwdGVk",
         "encrypted_key": "x25519:ZmFrZWtleQ",
         "nonce": "nonce-demo",
-        "signature": "c2lnbmF0dXJl",
+        "signature_v2": {
+          "signature": "c2lnbmF0dXJl",
+          "sent_at": "2026-01-01T00:00:00.000Z",
+          "sender_aid": "aid:ai:demo001",
+          "recipient_aid": "aid:ai:demo002"
+        },
         "metadata": {
           "subject_encrypted": "c3ViamVjdA",
           "content_type": "text/plain",

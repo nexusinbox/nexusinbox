@@ -14,7 +14,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -270,24 +270,6 @@ fn derive_did_key(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
     format!("did:key:z{}", bs58::encode(&multicodec).into_string())
 }
 
-/// Sign the canonical send_message envelope (\n-joined) the server will
-/// verify against the sender agent's public key.
-#[allow(clippy::too_many_arguments)]
-fn sign_envelope(
-    signing_key: &SigningKey,
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    let payload = format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    );
-    URL_SAFE_NO_PAD.encode(signing_key.sign(payload.as_bytes()).to_bytes())
-}
-
 #[derive(Clone)]
 struct SendFixture {
     user_id: Uuid,
@@ -350,18 +332,48 @@ async fn seed_send_fixture(pool: &PgPool) -> SendFixture {
 
     // Recipient agent (under same user for simplicity; send_message only
     // requires the recipient DID to exist in the agents table of SOME user).
+    // A v2 signature names the recipient's aid (docs/40 §14.2), so the
+    // recipient gets a real did:key and an identity, like the sender: the
+    // send then gets as far as the attachment checks these tests are about.
+    let recipient_key = SigningKey::from_bytes(&{
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0x43;
+        bytes
+    });
+    let recipient_did = derive_did_key(&recipient_key.verifying_key());
+    let recipient_public_key_b64 = URL_SAFE_NO_PAD.encode(recipient_key.verifying_key().to_bytes());
     let recipient_agent_id = Uuid::new_v4();
-    let recipient_did = format!("did:key:z{}", Uuid::new_v4().simple());
+    let recipient_aid = format!("aid:ai:recv{}", Uuid::new_v4().simple());
     sqlx::query(
         "INSERT INTO agents (id, user_id, did, label, public_key, encryption_key, is_active) \
-         VALUES ($1, $2, $3, 'recipient', 'RECIPIENT_PUB', 'RECIPIENT_ENC', true)",
+         VALUES ($1, $2, $3, 'recipient', $4, $5, true)",
     )
     .bind(recipient_agent_id)
     .bind(user_id)
     .bind(&recipient_did)
+    .bind(&recipient_public_key_b64)
+    .bind("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU")
     .execute(pool)
     .await
     .expect("seed recipient agent");
+    sqlx::query("INSERT INTO agent_identities (aid, agent_id, user_id) VALUES ($1, $2, $3)")
+        .bind(&recipient_aid)
+        .bind(recipient_agent_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .expect("seed recipient agent_identity");
+    sqlx::query(
+        "INSERT INTO agent_identity_keys (aid, did, signing_public_key, encryption_public_key, status) \
+         VALUES ($1, $2, $3, $4, 'active')",
+    )
+    .bind(&recipient_aid)
+    .bind(&recipient_did)
+    .bind(&recipient_public_key_b64)
+    .bind("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU")
+    .execute(pool)
+    .await
+    .expect("seed recipient identity_key");
 
     // An attachment ready to be attached (status='uploaded').
     let valid_attachment_id = Uuid::new_v4();
@@ -399,7 +411,11 @@ async fn seed_send_fixture(pool: &PgPool) -> SendFixture {
 /// Build a `/messages` request body with the given attachment_refs. Envelope
 /// fields are opaque-ish strings (the server only validates structure and
 /// signature, not the crypto content).
-fn build_send_body(fixture: &SendFixture, attachments: Vec<Value>) -> Value {
+async fn build_send_body(
+    app: &axum::Router,
+    fixture: &SendFixture,
+    attachments: Vec<Value>,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ciphertext-opaque");
     let encrypted_key = format!(
@@ -410,24 +426,13 @@ fn build_send_body(fixture: &SendFixture, attachments: Vec<Value>) -> Value {
         URL_SAFE_NO_PAD.encode([0u8; 48]),
     );
     let nonce = URL_SAFE_NO_PAD.encode([0u8; 24]);
-    let signature = sign_envelope(
-        &fixture.signing_key,
-        &fixture.sender_did,
-        &fixture.recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
-
-    json!({
+    let mut body = json!({
         "sender_did": fixture.sender_did,
         "recipient_did": fixture.recipient_did,
         "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -437,7 +442,9 @@ fn build_send_body(fixture: &SendFixture, attachments: Vec<Value>) -> Value {
         },
         "priority": "normal",
         "attachments": attachments,
-    })
+    });
+    common::sign_body_v2(app, &fixture.auth, &fixture.signing_key, &mut body).await;
+    body
 }
 
 #[tokio::test]
@@ -481,6 +488,7 @@ async fn send_message_with_invalid_attachment_id_leaves_db_untouched() {
     // on it before getting to the valid one. Either order should have the
     // same end-state; this variant is the riskier one for partial writes.
     let body = build_send_body(
+        &app,
         &fixture,
         vec![
             json!({
@@ -494,7 +502,8 @@ async fn send_message_with_invalid_attachment_id_leaves_db_untouched() {
                 "metadata_nonce": "meta-nonce-opaque",
             }),
         ],
-    );
+    )
+    .await;
 
     let response = app
         .clone()
@@ -579,13 +588,15 @@ async fn send_message_with_empty_attachment_metadata_leaves_db_untouched() {
     let fixture = seed_send_fixture(&pool).await;
 
     let body = build_send_body(
+        &app,
         &fixture,
         vec![json!({
             "attachment_id": fixture.valid_attachment_id.to_string(),
             "metadata_encrypted": "", // <-- empty, prevalidate rejects
             "metadata_nonce": "meta-nonce-opaque",
         })],
-    );
+    )
+    .await;
 
     let response = app
         .clone()
@@ -671,6 +682,7 @@ async fn failed_send_does_not_leave_orphaned_localfs_payload() {
     let fixture = seed_send_fixture(&pool).await;
     let bogus_attachment_id = Uuid::new_v4();
     let body = build_send_body(
+        &app,
         &fixture,
         vec![
             json!({
@@ -684,7 +696,8 @@ async fn failed_send_does_not_leave_orphaned_localfs_payload() {
                 "metadata_nonce": "meta-nonce-opaque",
             }),
         ],
-    );
+    )
+    .await;
 
     let response = app
         .clone()
@@ -874,7 +887,11 @@ async fn seed_cross_user_send_fixture(pool: &PgPool) -> CrossUserSendFixture {
     }
 }
 
-fn build_cross_user_send_body(fixture: &CrossUserSendFixture, attachments: Vec<Value>) -> Value {
+async fn build_cross_user_send_body(
+    app: &axum::Router,
+    fixture: &CrossUserSendFixture,
+    attachments: Vec<Value>,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-x");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ciphertext-x");
     let encrypted_key = format!(
@@ -885,23 +902,13 @@ fn build_cross_user_send_body(fixture: &CrossUserSendFixture, attachments: Vec<V
         URL_SAFE_NO_PAD.encode([0u8; 48]),
     );
     let nonce = URL_SAFE_NO_PAD.encode([0x11u8; 24]);
-    let signature = sign_envelope(
-        &fixture.signing_key,
-        &fixture.sender_did,
-        &fixture.recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
-    json!({
+    let mut body = json!({
         "sender_did": fixture.sender_did,
         "recipient_did": fixture.recipient_did,
         "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -911,7 +918,9 @@ fn build_cross_user_send_body(fixture: &CrossUserSendFixture, attachments: Vec<V
         },
         "priority": "normal",
         "attachments": attachments,
-    })
+    });
+    common::sign_body_v2(app, &fixture.sender_auth, &fixture.signing_key, &mut body).await;
+    body
 }
 
 #[tokio::test]
@@ -942,13 +951,15 @@ async fn cross_user_send_writes_per_owner_message_attachments_rows() {
     let fx = seed_cross_user_send_fixture(&pool).await;
 
     let body = build_cross_user_send_body(
+        &app,
         &fx,
         vec![json!({
             "attachment_id": fx.valid_attachment_id.to_string(),
             "metadata_encrypted": "meta-ct-opaque",
             "metadata_nonce": "meta-nonce-opaque",
         })],
-    );
+    )
+    .await;
     let response = app
         .clone()
         .oneshot(
@@ -1171,13 +1182,15 @@ async fn deleting_both_message_copies_retires_attachment_upload() {
     .await;
 
     let body = build_cross_user_send_body(
+        &app,
         &fx,
         vec![json!({
             "attachment_id": fx.valid_attachment_id.to_string(),
             "metadata_encrypted": "meta-ct-opaque",
             "metadata_nonce": "meta-nonce-opaque",
         })],
-    );
+    )
+    .await;
     let response = app
         .clone()
         .oneshot(
@@ -1325,13 +1338,15 @@ async fn send_refuses_an_upload_made_for_another_agent() {
         ..fx.clone()
     };
     let body = build_cross_user_send_body(
+        &app,
         &from_second,
         vec![json!({
             "attachment_id": fx.valid_attachment_id.to_string(),
             "metadata_encrypted": "meta-ct-opaque",
             "metadata_nonce": "meta-nonce-opaque",
         })],
-    );
+    )
+    .await;
     let response = app
         .clone()
         .oneshot(

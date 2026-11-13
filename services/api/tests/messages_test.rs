@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::fs;
@@ -30,23 +30,10 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body).unwrap()
 }
 
-fn sign_envelope(
-    signing_private_key: &str,
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    let payload = format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    );
+fn key_from_b64(signing_private_key: &str) -> SigningKey {
     let private_key_bytes = URL_SAFE_NO_PAD.decode(signing_private_key).unwrap();
     let private_key_array: [u8; 32] = private_key_bytes.as_slice().try_into().unwrap();
-    let signing_key = SigningKey::from_bytes(&private_key_array);
-    let signature = signing_key.sign(payload.as_bytes());
-    URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    SigningKey::from_bytes(&private_key_array)
 }
 
 fn public_key_b64url_from_private(signing_private_key: &str) -> String {
@@ -141,24 +128,14 @@ async fn post_message_accepts_aid_recipient_and_resolves_to_current_did() {
     let encrypted_content = "base64-content-aid";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce-aid";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_aid,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -167,6 +144,13 @@ async fn post_message_accepts_aid_recipient_and_resolves_to_current_did() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -304,24 +288,14 @@ async fn post_message_then_get_and_patch_status() {
     let encrypted_content = "base64-content";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -330,6 +304,13 @@ async fn post_message_then_get_and_patch_status() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -422,15 +403,6 @@ async fn sender_key_wrap_round_trips_and_is_checked() {
     let recipient_did = create_recipient_agent(&app).await;
     let sender_wrap = wrapped_key_for("sender-copy");
     let send = |sender_key: Value, nonce: &str| {
-        let signature = sign_envelope(
-            &signing_key,
-            &sender_did,
-            &recipient_did,
-            "base64-subject",
-            "base64-content",
-            VALID_WRAPPED_KEY,
-            nonce,
-        );
         json!({
           "sender_did": sender_did,
           "recipient_did": recipient_did,
@@ -439,7 +411,6 @@ async fn sender_key_wrap_round_trips_and_is_checked() {
             "encrypted_key": VALID_WRAPPED_KEY,
             "sender_encrypted_key": sender_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": { "subject_encrypted": "base64-subject", "has_attachments": false }
           }
         })
@@ -457,12 +428,15 @@ async fn sender_key_wrap_round_trips_and_is_checked() {
     };
 
     // Not a wrapped key: refused.
-    let bad = post(send(json!("not-a-wrapped-key"), "nonce-bad"))
-        .await
-        .unwrap();
+    let key = key_from_b64(&signing_key);
+    let mut bad_body = send(json!("not-a-wrapped-key"), "nonce-bad");
+    common::sign_body_v2(&app, &auth_header(), &key, &mut bad_body).await;
+    let bad = post(bad_body).await.unwrap();
     assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
-    let ok = post(send(json!(sender_wrap), "nonce-ok")).await.unwrap();
+    let mut ok_body = send(json!(sender_wrap), "nonce-ok");
+    common::sign_body_v2(&app, &auth_header(), &key, &mut ok_body).await;
+    let ok = post(ok_body).await.unwrap();
     assert_eq!(ok.status(), StatusCode::ACCEPTED);
     let message_id = response_json(ok).await["message_id"]
         .as_str()
@@ -494,24 +468,14 @@ async fn message_content_returns_error_without_fallback_when_storage_file_missin
     let encrypted_content = "base64-content";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -520,6 +484,13 @@ async fn message_content_returns_error_without_fallback_when_storage_file_missin
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -572,23 +543,13 @@ async fn messages_rejects_oversized_payload() {
     let recipient_did = create_recipient_agent(&app).await;
     let subject_encrypted = "base64-subject";
     let big_content = "a".repeat(70 * 1024);
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        &big_content,
-        VALID_WRAPPED_KEY,
-        "base64-nonce",
-    );
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": big_content,
         "encrypted_key": VALID_WRAPPED_KEY,
         "nonce": "base64-nonce",
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -597,6 +558,13 @@ async fn messages_rejects_oversized_payload() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -623,24 +591,14 @@ async fn send_message_rejects_replayed_nonce() {
     let encrypted_content = "content-replay";
     let encrypted_key = wrapped_key_for("replay");
     let nonce = "nonce-replay";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -649,6 +607,13 @@ async fn send_message_rejects_replayed_nonce() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let first = app
         .clone()
@@ -783,23 +748,13 @@ async fn messages_list_supports_filters_and_pagination() {
         let encrypted_content = format!("content-{i}");
         let encrypted_key = wrapped_key_for(&format!("list-{i}"));
         let nonce = format!("nonce-{i}");
-        let signature = sign_envelope(
-            &signing_key,
-            &sender_did,
-            &recipient_did,
-            &subject_encrypted,
-            &encrypted_content,
-            &encrypted_key,
-            &nonce,
-        );
-        let send_payload = json!({
+        let mut send_payload = json!({
           "sender_did": sender_did,
           "recipient_did": recipient_did,
           "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
               "subject_encrypted": subject_encrypted,
               "thread_id": null,
@@ -808,6 +763,13 @@ async fn messages_list_supports_filters_and_pagination() {
             }
           }
         });
+        common::sign_body_v2(
+            &app,
+            &auth_header(),
+            &key_from_b64(&signing_key),
+            &mut send_payload,
+        )
+        .await;
 
         let response = app
             .clone()
@@ -871,24 +833,14 @@ async fn google_drive_mock_backend_persists_and_reads_content() {
     let encrypted_content = "gdrive-content";
     let encrypted_key = wrapped_key_for("gdrive");
     let nonce = "gdrive-nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -897,6 +849,13 @@ async fn google_drive_mock_backend_persists_and_reads_content() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -956,24 +915,14 @@ async fn gdrive_backend_requires_oauth_configuration() {
     let encrypted_content = "alias-content";
     let encrypted_key = wrapped_key_for("alias");
     let nonce = "alias-nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -982,6 +931,13 @@ async fn gdrive_backend_requires_oauth_configuration() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -1014,23 +970,13 @@ async fn send_message_returns_not_found_when_recipient_missing() {
     let encrypted_content = "content";
     let encrypted_key = wrapped_key_for("missing");
     let nonce = "nonce-missing";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1039,6 +985,13 @@ async fn send_message_returns_not_found_when_recipient_missing() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1068,23 +1021,13 @@ async fn send_message_returns_not_found_when_recipient_blocked_by_policy() {
     let encrypted_content = "content";
     let encrypted_key = wrapped_key_for("blocked");
     let nonce = "nonce-blocked";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1093,6 +1036,13 @@ async fn send_message_returns_not_found_when_recipient_blocked_by_policy() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1122,23 +1072,13 @@ async fn send_message_marks_low_trust_sender_as_pending_approval() {
     let encrypted_content = "content";
     let encrypted_key = wrapped_key_for("low-trust");
     let nonce = "nonce-low-trust";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1147,6 +1087,13 @@ async fn send_message_marks_low_trust_sender_as_pending_approval() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1170,14 +1117,13 @@ async fn send_message_marks_low_trust_sender_as_pending_approval() {
 async fn send_message_rejects_unowned_sender_did() {
     let app = common::test_app();
     let recipient_did = create_recipient_agent(&app).await;
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": "did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2",
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": "content",
         "encrypted_key": VALID_WRAPPED_KEY,
         "nonce": "nonce",
-        "signature": "sig",
         "metadata": {
           "subject_encrypted": "subject",
           "thread_id": null,
@@ -1186,6 +1132,15 @@ async fn send_message_rejects_unowned_sender_did() {
         }
       }
     });
+    // The DID is not this user's, so there is no key of its own: any key
+    // gives a well-formed v2 body, refused for ownership before the check.
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(VALID_SIGNING_PRIVATE_KEY_B64URL),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1206,16 +1161,15 @@ async fn send_message_rejects_unowned_sender_did() {
 #[tokio::test]
 async fn send_message_rejects_invalid_signature() {
     let app = common::test_app();
-    let (sender_did, _signing_key) = create_test_agent(&app).await;
+    let (sender_did, signing_key) = create_test_agent(&app).await;
     let recipient_did = create_recipient_agent(&app).await;
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": "content",
         "encrypted_key": VALID_WRAPPED_KEY,
         "nonce": "nonce",
-        "signature": "invalid-signature",
         "metadata": {
           "subject_encrypted": "subject",
           "thread_id": null,
@@ -1224,6 +1178,14 @@ async fn send_message_rejects_invalid_signature() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
+    send_payload["envelope"]["signature_v2"]["signature"] = json!("invalid-signature");
 
     let response = app
         .oneshot(
@@ -1250,24 +1212,14 @@ async fn send_message_rejects_non_x25519_wrapped_key_format() {
     let encrypted_content = "content";
     let encrypted_key = "ckb64:legacy";
     let nonce = "nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1276,6 +1228,13 @@ async fn send_message_rejects_non_x25519_wrapped_key_format() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1302,24 +1261,14 @@ async fn delete_message_removes_index_and_content() {
     let encrypted_content = "base64-content";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        &encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1328,6 +1277,13 @@ async fn delete_message_removes_index_and_content() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -1412,24 +1368,14 @@ async fn send_message_rejects_malformed_x25519_wrapped_key_format() {
     // iv part is intentionally too short (11 bytes decoded) to trigger strict format rejection.
     let encrypted_key = "x25519v1:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE:AgICAgICAgICAgICAgICAg:AwMDAwMDAwMDAw:Y2lwaGVydGV4dC12YWxpZC1wYXlsb2Fk";
     let nonce = "nonce";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1438,6 +1384,13 @@ async fn send_message_rejects_malformed_x25519_wrapped_key_format() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let response = app
         .oneshot(
@@ -1478,24 +1431,14 @@ async fn post_message_roundtrips_a2a_content_type_through_byos() {
     let encrypted_content = "base64-content-a2a";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce-a2a";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1504,6 +1447,13 @@ async fn post_message_roundtrips_a2a_content_type_through_byos() {
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -1559,24 +1509,14 @@ async fn post_message_omits_content_type_from_response_when_sender_omitted_it() 
     let encrypted_content = "base64-content-plain";
     let encrypted_key = VALID_WRAPPED_KEY;
     let nonce = "base64-nonce-plain";
-    let signature = sign_envelope(
-        &signing_key,
-        &sender_did,
-        &recipient_did,
-        subject_encrypted,
-        encrypted_content,
-        encrypted_key,
-        nonce,
-    );
 
-    let send_payload = json!({
+    let mut send_payload = json!({
       "sender_did": sender_did,
       "recipient_did": recipient_did,
       "envelope": {
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
         "metadata": {
           "subject_encrypted": subject_encrypted,
           "thread_id": null,
@@ -1584,6 +1524,13 @@ async fn post_message_omits_content_type_from_response_when_sender_omitted_it() 
         }
       }
     });
+    common::sign_body_v2(
+        &app,
+        &auth_header(),
+        &key_from_b64(&signing_key),
+        &mut send_payload,
+    )
+    .await;
 
     let send_response = app
         .clone()
@@ -1601,6 +1548,21 @@ async fn post_message_omits_content_type_from_response_when_sender_omitted_it() 
     assert_eq!(send_response.status(), StatusCode::ACCEPTED);
     let send_json = response_json(send_response).await;
     let message_id = send_json["message_id"].as_str().unwrap().to_string();
+
+    // A v2 send must carry content_type (docs/40 §15.2), so a blob without
+    // it can only be an old one: strip the field from the stored blob.
+    let storage_path = std::env::temp_dir()
+        .join("nexusinbox-localfs")
+        .join("localfs")
+        .join(TEST_USER_ID)
+        .join(format!("{message_id}.json"));
+    let mut stored: Value = serde_json::from_slice(&fs::read(&storage_path).unwrap()).unwrap();
+    assert!(stored
+        .as_object_mut()
+        .unwrap()
+        .remove("content_type")
+        .is_some());
+    fs::write(&storage_path, stored.to_string()).unwrap();
 
     let content_response = app
         .oneshot(

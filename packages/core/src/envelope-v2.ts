@@ -33,6 +33,12 @@ export const ENVELOPE_V2_PREFIX = "nexusinbox-envelope-v2\n";
 export const MAX_CLOCK_AHEAD_MS = 10 * 60 * 1000;
 /** Automatic replies only answer messages sent within this time. */
 export const AUTO_REPLY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/**
+ * From this time every message without a v2 signature is a warning (docs/40
+ * §15.2): 90 days after stage 4 went out, messages sent before it are gone
+ * from storage. Read from the reader's clock, not the server's.
+ */
+export const UNSIGNED_CUTOFF = Date.parse("2027-02-11T00:00:00Z");
 
 export type KeyWrapV2 = { did: string; key: string };
 export type AttachmentRefV2 = { id: string; metadata_encrypted: string; metadata_nonce: string };
@@ -172,7 +178,9 @@ export async function verifyEnvelopeV2Signature(f: EnvelopeV2Fields, signature: 
 
 /**
  *  - verified: signed by a device on the sender's list, under the root remembered;
- *  - unsigned: no v2 signature (an older sender);
+ *  - unsigned: no v2 signature, from a sender never seen signing (an older sender);
+ *  - downgraded: no v2 signature, from a sender seen signing before (docs/40 §15.2);
+ *  - missing_signature: no v2 signature, after UNSIGNED_CUTOFF;
  *  - no_list: signed, but the sender's agent has no device list yet;
  *  - altered: the signature does not match what was delivered, or names other agents;
  *  - not_listed: the signing device is not on the sender's list;
@@ -182,6 +190,8 @@ export async function verifyEnvelopeV2Signature(f: EnvelopeV2Fields, signature: 
 export type SenderCheckState =
   | "verified"
   | "unsigned"
+  | "downgraded"
+  | "missing_signature"
   | "no_list"
   | "altered"
   | "not_listed"
@@ -239,18 +249,24 @@ export function deliveredFields(content: DeliveredContent, sig: SignatureV2): En
  * reader acts for (the recipient, or the sender for its own copy);
  * `sender` is the sender's agent as `GET /recipients/resolve` returns it
  * for `content.signature_v2.sender_aid`, or null when the server has none;
- * `pin` what the reader remembers of the sender.
+ * `pin` what the reader remembers of the sender; `signedBefore` whether a
+ * message from the sender's agent (by the DID it was sent from) verified
+ * before, so a message without a signature is a warning (docs/40 §15.2).
  */
 export async function checkSender(input: {
   content: DeliveredContent;
   readerAids: string[];
   sender: ServedAgent | null;
   pin: DevicePin | null;
+  signedBefore?: boolean;
   now?: number;
 }): Promise<SenderCheck> {
   const { content, sender, pin } = input;
   const sig = content.signature_v2;
-  if (!sig) return { state: "unsigned" };
+  if (!sig) {
+    if (input.signedBefore) return { state: "downgraded" };
+    return { state: (input.now ?? Date.now()) >= UNSIGNED_CUTOFF ? "missing_signature" : "unsigned" };
+  }
 
   const ownCopy = input.readerAids.includes(sig.sender_aid);
   if (!ownCopy && !input.readerAids.includes(sig.recipient_aid)) return { state: "altered" };
@@ -309,6 +325,8 @@ export function autoReplyBlock(
     case "no_list":
       return "unsigned";
     case "altered":
+    case "downgraded":
+    case "missing_signature":
       return "altered";
     case "not_listed":
       return "not_listed";

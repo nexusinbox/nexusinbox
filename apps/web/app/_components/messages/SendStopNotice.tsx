@@ -35,6 +35,11 @@ export function SendStopNotice({
   } else if (stop.reason === "no_device") {
     title = t("sendStop.noDeviceTitle", { name: who });
     body = t("sendStop.noDeviceBody");
+  } else if (stop.reason === "no_list") {
+    // docs/40 §15.2: wait until they make a list (they do when they open
+    // NexusInbox). What was typed stays.
+    title = t("sendStop.noListTitle", { name: who });
+    body = t("sendStop.noListBody", { name: who });
   } else {
     title = t("sendStop.blockedTitle", { name: who });
     body = `${t(`sendStop.${stop.reason}`)}${t("sendStop.blockedTail")}`;
@@ -99,15 +104,5 @@ export function SendStopNotice({
         )}
       </div>
     </div>
-  );
-}
-
-/** The quiet line for a recipient that has no device list yet (Q8). */
-export function UnlistedHint() {
-  const { t } = useTranslation();
-  return (
-    <p className="field-help" data-testid="send-unlisted" style={{ margin: "4px 0 0", fontSize: 12 }}>
-      {t("sendStop.unlisted")}
-    </p>
   );
 }

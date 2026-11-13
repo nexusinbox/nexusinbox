@@ -774,7 +774,8 @@ async fn a_sender_that_did_not_check_out_is_a_skip_reason() {
     let agent = seed_agent(&pool, &owner, "a", true).await;
     let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
     // docs/40 §14.5: the sender's signature or list did not check out.
-    for reason in ["unsigned", "altered", "not_listed", "stale"] {
+    // docs/40 §15.2: the other agent has no device list yet.
+    for reason in ["unsigned", "altered", "not_listed", "stale", "no_list"] {
         let row = seed_pending_row(&pool, &owner, "did:key:zfriend", &agent).await;
         assert_eq!(
             post_skip(&app, row, &token, reason).await,

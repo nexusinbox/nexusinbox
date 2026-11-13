@@ -154,9 +154,10 @@ describe("planSend (docs/40 §12)", () => {
     expect(plan.recipientDevices.map((d) => d.did)).toEqual([peer.did]);
   });
 
-  it("sends as the server says to an agent with no list yet", async () => {
+  it("stops for an agent with no list yet (docs/40 §15.2)", async () => {
     const peer = await agent(PEER);
-    const plan = await planSend({ ...peer.served, device_list: null }, PEER, null);
-    expect(plan.unlisted).toBe(true);
+    await expect(planSend({ ...peer.served, device_list: null }, PEER, null)).rejects.toMatchObject({
+      reason: "no_list",
+    });
   });
 });

@@ -78,8 +78,6 @@ export type SendPlan = {
   senderDevices: DeviceKey[];
   /** The sender's own key from its checked list, for `sender_encrypted_key`. */
   senderKey?: string;
-  /** The recipient has no device list yet: wrapped as the server says. */
-  unlisted: boolean;
 };
 
 async function openContacts(): Promise<void> {
@@ -119,7 +117,6 @@ async function decide(
   const decision = await decideWrapTargets({ served, requested, knownAid, pin, acceptRoot });
   if (decision.kind === "stop") return decision;
   if (requested.startsWith("did:")) rememberDidAid(requested, served.aid);
-  if (decision.kind !== "listed") return decision;
   const root = decision.list.root;
   // The contact remembers another root than this browser does.
   if (contactRoot && contactRoot !== root && acceptRoot !== root) {
@@ -183,18 +180,8 @@ export async function planSend(
     recipient: decision.single,
     recipientAid: served.aid,
     recipientDevices: decision.targets,
-    unlisted: decision.kind === "unlisted",
     ...(await ownSide(senderIdentifier)),
   };
-}
-
-/**
- * The agent has no device list and none was ever seen for it: senders
- * wrap as the server says (docs/40 Q8). A list seen before and now gone
- * stops the send instead.
- */
-export function isUnlisted(served: Pick<RecipientResolutionResponse, "aid" | "device_list">): boolean {
-  return !served.device_list && !loadPin(served.aid) && !contactForAid(served.aid)?.root;
 }
 
 /**

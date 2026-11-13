@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::util::ServiceExt;
@@ -26,14 +26,10 @@ fn pubkey_of(priv_b64url: &str) -> String {
     URL_SAFE_NO_PAD.encode(SigningKey::from_bytes(&arr).verifying_key().to_bytes())
 }
 
-fn sign_envelope(priv_b64url: &str, payload: &str) -> String {
+fn signing_key_of(priv_b64url: &str) -> SigningKey {
     let bytes = URL_SAFE_NO_PAD.decode(priv_b64url).unwrap();
     let arr: [u8; 32] = bytes.as_slice().try_into().unwrap();
-    URL_SAFE_NO_PAD.encode(
-        SigningKey::from_bytes(&arr)
-            .sign(payload.as_bytes())
-            .to_bytes(),
-    )
+    SigningKey::from_bytes(&arr)
 }
 
 async fn body_json(response: axum::response::Response) -> Value {
@@ -85,17 +81,13 @@ async fn send(
 ) -> Value {
     let subject = "subj";
     let content = "body";
-    let signing_payload =
-        format!("{sender_did}\n{recipient_did}\n{subject}\n{content}\n{WRAPPED_KEY}\n{nonce}");
-    let signature = sign_envelope(SENDER_PRIV, &signing_payload);
-    let payload = json!({
+    let mut payload = json!({
         "sender_did": sender_did,
         "recipient_did": recipient_did,
         "envelope": {
             "encrypted_content": content,
             "encrypted_key": WRAPPED_KEY,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject,
                 "thread_id": null,
@@ -104,6 +96,13 @@ async fn send(
             }
         }
     });
+    common::sign_body_v2(
+        app,
+        &auth(sub, wid, level),
+        &signing_key_of(SENDER_PRIV),
+        &mut payload,
+    )
+    .await;
     let response = app
         .clone()
         .oneshot(

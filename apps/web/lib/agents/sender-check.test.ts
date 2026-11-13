@@ -82,4 +82,26 @@ describe("checkReceived", () => {
     resolveRecipient.mockResolvedValue(c.sender);
     expect(await checkReceived(c.content, me)).toBe("verified");
   });
+
+  it("warns about a message without a signature from a sender seen signing (docs/40 §15.2)", async () => {
+    const c = find("verified: first time");
+    resolveRecipient.mockResolvedValue(c.sender);
+    const me = [{ aid: c.reader_aids[0], did: "did:key:zMe" }];
+    const stripped = { ...c.content, signature_v2: null };
+    // Never seen signing: only the old-format note.
+    expect(await checkReceived(stripped, me)).toBe("unsigned");
+    expect(await checkReceived(c.content, me)).toBe("verified");
+    const state = await checkReceived(stripped, me);
+    expect(state).toBe("downgraded");
+    expect(receivedWarns(state)).toBe(true);
+    expect(receivedOldFormat(state)).toBe(false);
+  });
+
+  it("warns about every message without a signature from 2027-02-11", async () => {
+    const c = find("unsigned");
+    vi.setSystemTime(Date.parse("2027-02-11T00:00:00Z"));
+    const state = await checkReceived(c.content, [{ aid: c.reader_aids[0], did: "did:key:zMe" }]);
+    expect(state).toBe("missing_signature");
+    expect(receivedWarns(state)).toBe(true);
+  });
 });

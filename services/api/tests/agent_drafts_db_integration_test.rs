@@ -10,7 +10,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -92,22 +92,6 @@ fn derive_did_key(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
     multicodec.push(0x01);
     multicodec.extend_from_slice(&verifying_key.to_bytes());
     format!("did:key:z{}", bs58::encode(&multicodec).into_string())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn sign_envelope(
-    signing_key: &SigningKey,
-    sender_did: &str,
-    recipient_did: &str,
-    subject_encrypted: &str,
-    encrypted_content: &str,
-    encrypted_key: &str,
-    nonce: &str,
-) -> String {
-    let payload = format!(
-        "{sender_did}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}"
-    );
-    URL_SAFE_NO_PAD.encode(signing_key.sign(payload.as_bytes()).to_bytes())
 }
 
 struct UserAgent {
@@ -261,20 +245,31 @@ fn wrapped_key(marker: u8) -> String {
 }
 
 /// A signed draft body from `sender` to `recipient_did`, wrapped to `review_key_id`.
-fn draft_body(sender: &UserAgent, recipient_did: &str, review_key_id: &str) -> Value {
+/// Signed with envelope signature v2 (docs/40 §15.2): the same fields as a
+/// `POST /messages` body, with `signature_v2` at the top level.
+async fn draft_body(
+    app: &axum::Router,
+    sender: &UserAgent,
+    recipient_did: &str,
+    review_key_id: &str,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-draft");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ct-draft");
     let encrypted_key = wrapped_key(1);
     let nonce = URL_SAFE_NO_PAD.encode([7u8; 24]);
-    let signature = sign_envelope(
-        &sender.signing_key,
-        &sender.did,
-        recipient_did,
-        &subject_encrypted,
-        &encrypted_content,
-        &encrypted_key,
-        &nonce,
-    );
+    let mut message = json!({
+        "sender_did": sender.did,
+        "recipient_did": recipient_did,
+        "envelope": {
+            "encrypted_content": encrypted_content,
+            "encrypted_key": encrypted_key,
+            "nonce": nonce,
+            "encrypted_keys": [],
+            "sender_encrypted_keys": [],
+            "metadata": { "subject_encrypted": subject_encrypted, "content_type": "text/plain" }
+        }
+    });
+    common::sign_body_v2(app, &sender.auth, &sender.signing_key, &mut message).await;
     json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
@@ -282,7 +277,9 @@ fn draft_body(sender: &UserAgent, recipient_did: &str, review_key_id: &str) -> V
         "encrypted_content": encrypted_content,
         "encrypted_key": encrypted_key,
         "nonce": nonce,
-        "signature": signature,
+        "signature_v2": message["envelope"]["signature_v2"],
+        "encrypted_keys": [],
+        "sender_encrypted_keys": [],
         "content_type": "text/plain",
         "review_wraps": [{ "review_key_id": review_key_id, "wrapped_key": wrapped_key(2) }],
         "via": "Muse",
@@ -356,7 +353,7 @@ async fn approved_draft_is_sent_and_removed() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&me, &friend.did, &key_id)),
+        Some(draft_body(&app, &me, &friend.did, &key_id).await),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
@@ -447,7 +444,7 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
         "POST",
         "/agent-drafts",
         &me.auth,
-        Some(draft_body(&me, &friend.did, &key_id)),
+        Some(draft_body(&app, &me, &friend.did, &key_id).await),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -457,7 +454,7 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&me, &friend.did, &key_id)),
+        Some(draft_body(&app, &me, &friend.did, &key_id).await),
     )
     .await;
     let draft_id = created["id"].as_str().unwrap().to_string();
@@ -531,7 +528,7 @@ async fn drafts_are_checked_when_they_are_made() {
     let friends_key = register_review_key(&app, &friend.auth).await;
 
     // A tampered body no longer matches the signature.
-    let mut bad = draft_body(&me, &friend.did, &key_id);
+    let mut bad = draft_body(&app, &me, &friend.did, &key_id).await;
     bad["encrypted_content"] = json!(URL_SAFE_NO_PAD.encode(b"something-else"));
     let (status, _) = call(&app, "POST", "/agent-drafts", &agent, Some(bad)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -542,11 +539,11 @@ async fn drafts_are_checked_when_they_are_made() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&me, &friend.did, &friends_key)),
+        Some(draft_body(&app, &me, &friend.did, &friends_key).await),
     )
     .await;
     assert!(status.is_client_error(), "{status}");
-    let mut none = draft_body(&me, &friend.did, &key_id);
+    let mut none = draft_body(&app, &me, &friend.did, &key_id).await;
     none["review_wraps"] = json!([]);
     let (status, _) = call(&app, "POST", "/agent-drafts", &agent, Some(none)).await;
     assert!(status.is_client_error(), "{status}");
@@ -557,7 +554,7 @@ async fn drafts_are_checked_when_they_are_made() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&friend, &me.did, &key_id)),
+        Some(draft_body(&app, &friend, &me.did, &key_id).await),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -576,7 +573,7 @@ async fn expired_drafts_cannot_be_sent_and_are_cleaned_up() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&me, &friend.did, &key_id)),
+        Some(draft_body(&app, &me, &friend.did, &key_id).await),
     )
     .await;
     let draft_id = created["id"].as_str().unwrap().to_string();

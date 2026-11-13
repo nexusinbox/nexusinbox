@@ -797,6 +797,9 @@ impl CheckError {
                 Removed => format!(
                     "Not sent: {aid} had a signed device list and now has none. Ask the person to look at it in the NexusInbox app. [stopped: removed]"
                 ),
+                NoList => format!(
+                    "Not sent: {aid} has no signed device list yet. It is made when they open NexusInbox. Ask the person to try again later. [stopped: no_list]"
+                ),
                 NoDevice => format!(
                     "Not sent: none of the devices {aid} approved can read messages now. [stopped: no_device]"
                 ),
@@ -868,8 +871,7 @@ async fn check_recipient(
         }
         device_trust::Decision::Listed {
             targets, single, ..
-        }
-        | device_trust::Decision::Unlisted { targets, single } => (targets.clone(), single.clone()),
+        } => (targets.clone(), single.clone()),
     };
     if requested.starts_with("did:") {
         peers.dids.insert(requested.to_string(), aid.clone());
@@ -910,8 +912,21 @@ async fn check_message_sender(
         .pointer("/signature_v2/sender_aid")
         .and_then(|v| v.as_str())
     else {
+        // No signature: a warning when the sender's agent was seen signing
+        // (docs/40 §15.2), found by the DID it was sent from.
+        let peers = state.peers.load()?;
+        let signed_before = content
+            .get("sender_did")
+            .and_then(|v| v.as_str())
+            .and_then(|did| peers.dids.get(did))
+            .is_some_and(|aid| peers.signed.contains(aid));
         return Ok(envelope_v2::check_sender(
-            content, &readers, None, None, now,
+            content,
+            &readers,
+            None,
+            None,
+            signed_before,
+            now,
         ));
     };
     let resolved = match resolve_recipient_identifier(state, token, sender_aid).await {
@@ -940,9 +955,22 @@ async fn check_message_sender(
             device_list: r.device_list.as_ref(),
         }),
         pin.as_ref(),
+        peers.signed.contains(sender_aid),
         now,
     );
     let mut changed = false;
+    // Seen signing: from now on a message from it without a signature is a
+    // warning (docs/40 §15.2).
+    if check.state == envelope_v2::SenderState::Verified {
+        if let Some(did) = content.get("sender_did").and_then(|v| v.as_str()) {
+            changed |= peers
+                .dids
+                .insert(did.to_string(), sender_aid.to_string())
+                .as_deref()
+                != Some(sender_aid);
+        }
+        changed |= peers.signed.insert(sender_aid.to_string());
+    }
     if let Some(root) = &check.changed_root {
         changed = peers
             .changed
@@ -3114,6 +3142,26 @@ mod tests {
             "aid:ai:proposer",
             &[(&proposer, proposer_enc)],
         );
+        // This agent's own list (docs/40 §15.2: no list, no copies).
+        let own_root = SigningKey::from_bytes(&[8u8; 32]);
+        let own_list = test_device_list(
+            &own_root,
+            "aid:ai:viewer",
+            &[
+                (DAEMON_DID, DAEMON_ENCRYPTION_KEY),
+                ("did:key:zViewerBrowser", "YnJvd3Nlci1rZXk"),
+            ],
+        );
+        let own_resolved = json!({
+            "input": DAEMON_DID, "aid": "aid:ai:viewer", "did": DAEMON_DID,
+            "signing_public_key": "sig", "encryption_public_key": DAEMON_ENCRYPTION_KEY,
+            "devices": [
+                { "did": DAEMON_DID, "encryption_public_key": DAEMON_ENCRYPTION_KEY },
+                { "did": "did:key:zViewerBrowser", "encryption_public_key": "YnJvd3Nlci1rZXk" },
+            ],
+            "device_list": { "version": 1, "jws": own_list },
+        })
+        .to_string();
         let proposal = json!({
             "v": 1,
             "body": "Sync?",
@@ -3204,12 +3252,9 @@ mod tests {
             }
             ("GET", p) if p == by_aid || p == by_did => (200, proposer_resolved.clone()),
             // This agent's own devices: the daemon and a browser (docs/38).
-            ("GET", "/recipients/resolve?identifier=did%3Akey%3Az6MkDaemonViewer") => (
-                200,
-                format!(
-                    r#"{{"input":"{DAEMON_DID}","aid":"aid:ai:viewer","did":"{DAEMON_DID}","signing_public_key":"sig","encryption_public_key":"{DAEMON_ENCRYPTION_KEY}","devices":[{{"did":"{DAEMON_DID}","encryption_public_key":"{DAEMON_ENCRYPTION_KEY}"}},{{"did":"did:key:zViewerBrowser","encryption_public_key":"YnJvd3Nlci1rZXk"}}]}}"#
-                ),
-            ),
+            ("GET", "/recipients/resolve?identifier=did%3Akey%3Az6MkDaemonViewer") => {
+                (200, own_resolved.clone())
+            }
             ("POST", "/messages") => (200, format!(r#"{{"message_id":"{REPLY_ID}","status":"sent"}}"#)),
             ("PATCH", p) if p == format!("/messages/{MSG_A}/auto-reply-sent") => {
                 (200, r#"{"auto_reply_sent_at":"2026-11-07T00:00:00+00"}"#.into())
@@ -3522,6 +3567,12 @@ mod tests {
             content("text/plain"),
             content("application/vnd.nexusinbox.a2a+json"),
         );
+        // The same sender, without a signature (docs/40 §15.2).
+        let stripped = {
+            let mut v: serde_json::Value = serde_json::from_str(&good).unwrap();
+            v.as_object_mut().unwrap().remove("signature_v2");
+            v.to_string()
+        };
         let resolved = json!({
             "aid": "aid:ai:sender", "did": sender, "encryption_public_key": "ZW5j",
             "devices": [{ "did": sender, "encryption_public_key": "ZW5j" }],
@@ -3531,6 +3582,7 @@ mod tests {
         let (api_url, _) = spawn_api_mock(move |method, path, _| match (method, path) {
             ("GET", p) if p.ends_with("0001/content") => (200, good.clone()),
             ("GET", p) if p.ends_with("0002/content") => (200, altered.clone()),
+            ("GET", p) if p.ends_with("0004/content") => (200, stripped.clone()),
             ("GET", p) if p.ends_with("0003/content") => (200, r#"{"sender_did":"did:key:zOld","recipient_did":"x","subject_encrypted":"s","encrypted_content":"c","encrypted_key":"k","nonce":"n"}"#.into()),
             ("GET", p) if p.starts_with("/recipients/resolve") => (200, resolved.clone()),
             _ => (500, r#"{"message":"unexpected route"}"#.into()),
@@ -3567,6 +3619,11 @@ mod tests {
         let old = read("0003").await;
         assert_eq!(old["state"], "unsigned");
         assert_eq!(old["warn"], false);
+        // Seen signing above: the same sender without a signature warns.
+        let downgraded = read("0004").await;
+        assert_eq!(downgraded["state"], "downgraded");
+        assert_eq!(downgraded["warn"], true);
+        assert!(state.peers.load().unwrap().signed.contains("aid:ai:sender"));
         // The sender's root is remembered from the first check.
         let pins = state.peers.load().unwrap().pins;
         assert_eq!(pins["aid:ai:sender"].root, sender);

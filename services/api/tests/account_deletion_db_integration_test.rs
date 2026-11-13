@@ -10,7 +10,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -202,7 +202,13 @@ async fn seed_user_with_agent(pool: &PgPool, wid: &str, seed_byte: u8) -> UserAg
     }
 }
 
-fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) -> Value {
+async fn build_send_body(
+    app: &axum::Router,
+    auth: &str,
+    sender: &UserAgent,
+    recipient_did: &str,
+    nonce_marker: u8,
+) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-retention");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ct-retention");
     let encrypted_key = format!(
@@ -215,19 +221,13 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
     let mut nonce_bytes = [0u8; 24];
     nonce_bytes[0] = nonce_marker;
     let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
-    let payload = format!(
-        "{}\n{recipient_did}\n{subject_encrypted}\n{encrypted_content}\n{encrypted_key}\n{nonce}",
-        sender.did
-    );
-    let signature = URL_SAFE_NO_PAD.encode(sender.signing_key.sign(payload.as_bytes()).to_bytes());
-    json!({
+    let mut body = json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
         "envelope": {
             "encrypted_content": encrypted_content,
             "encrypted_key": encrypted_key,
             "nonce": nonce,
-            "signature": signature,
             "metadata": {
                 "subject_encrypted": subject_encrypted,
                 "thread_id": null,
@@ -236,7 +236,9 @@ fn build_send_body(sender: &UserAgent, recipient_did: &str, nonce_marker: u8) ->
             }
         },
         "priority": "normal",
-    })
+    });
+    common::sign_body_v2(app, auth, &sender.signing_key, &mut body).await;
+    body
 }
 
 /// Sends one cross-user message (two index rows, one blob) and returns the
@@ -251,7 +253,9 @@ async fn send(app: &axum::Router, from: &UserAgent, to: &UserAgent, nonce_marker
                 .header("authorization", &from.auth)
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    build_send_body(from, &to.did, nonce_marker).to_string(),
+                    build_send_body(app, &from.auth, from, &to.did, nonce_marker)
+                        .await
+                        .to_string(),
                 ))
                 .unwrap(),
         )

@@ -17,6 +17,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use http_body_util::BodyExt;
 use reqwest::Client;
 use serde_json::json;
@@ -106,6 +107,8 @@ async fn s3_send_receive_delete_roundtrip_against_minio() {
     let user_id = uuid::Uuid::new_v4();
     let token = common::issue_test_jwt(&user_id.to_string(), "0xlive-s3", "orb", 60 * 60);
     let auth = format!("Bearer {token}");
+    // The agent's signing key: sends carry envelope signature v2 (docs/40 §15.2).
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x5b; 32]);
 
     // Register an agent so we have a recipient DID to send to.
     let create_agent = app
@@ -116,7 +119,14 @@ async fn s3_send_receive_delete_roundtrip_against_minio() {
                 .uri("/agents")
                 .header("authorization", &auth)
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"label": "s3-live"}).to_string()))
+                .body(Body::from(
+                    json!({
+                        "label": "s3-live",
+                        "public_key": URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes()),
+                        "encryption_key": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU",
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -129,14 +139,13 @@ async fn s3_send_receive_delete_roundtrip_against_minio() {
 
     // Send a message to the agent DID. The same user sends to their own agent
     // which keeps the test hermetic — the Rust API accepts loopback sends.
-    let envelope = json!({
+    let mut envelope = json!({
         "sender_did": agent_did,
         "recipient_did": agent_did,
         "envelope": {
             "encrypted_content": "Y2lwaGVydGV4dA==",
-            "encrypted_key": "a2V5",
+            "encrypted_key": "x25519v1:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE:AgICAgICAgICAgICAgICAg:AwMDAwMDAwMDAwMD:Y2lwaGVydGV4dC12YWxpZC1wYXlsb2Fk",
             "nonce": "bm9uY2U=",
-            "signature": "c2ln",
             "metadata": {
                 "subject_encrypted": "c3Viag==",
                 "content_type": "text/plain",
@@ -144,6 +153,7 @@ async fn s3_send_receive_delete_roundtrip_against_minio() {
             }
         }
     });
+    common::sign_body_v2(&app, &auth, &signing_key, &mut envelope).await;
     let send = app
         .clone()
         .oneshot(

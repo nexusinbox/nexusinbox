@@ -23,6 +23,8 @@ export type Peers = {
   pins: Record<string, DevicePin>;
   dids: Record<string, string>;
   changed: Record<string, string>;
+  /** Agents seen signing with v2 (docs/40 §15.2). */
+  signed: string[];
 };
 
 export class SendStoppedError extends Error {
@@ -34,7 +36,9 @@ export class SendStoppedError extends Error {
     super(
       reason === "root_changed"
         ? `Not sent: the device list of ${aid} is now signed by another key (${root}). Their key may have been replaced; ask the person to confirm with them. [stopped: root_changed]`
-        : `Not sent: the device list of ${aid} does not check out. Ask the person to look at it in the NexusInbox app. [stopped: ${reason}]`,
+        : reason === "no_list"
+          ? `Not sent: ${aid} has no signed device list yet. It is made when they open NexusInbox. Ask the person to try again later. [stopped: no_list]`
+          : `Not sent: the device list of ${aid} does not check out. Ask the person to look at it in the NexusInbox app. [stopped: ${reason}]`,
     );
     this.name = "SendStoppedError";
   }
@@ -43,9 +47,9 @@ export class SendStoppedError extends Error {
 async function load(file: string): Promise<Peers> {
   try {
     const value = JSON.parse(await fs.readFile(file, "utf8")) as Partial<Peers>;
-    return { pins: value.pins ?? {}, dids: value.dids ?? {}, changed: value.changed ?? {} };
+    return { pins: value.pins ?? {}, dids: value.dids ?? {}, changed: value.changed ?? {}, signed: value.signed ?? [] };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { pins: {}, dids: {}, changed: {} };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { pins: {}, dids: {}, changed: {}, signed: [] };
     throw error;
   }
 }
@@ -88,7 +92,13 @@ export async function checkMessageSender(
   const delivered = content as DeliveredContent;
   const senderAid = content.signature_v2?.sender_aid;
   if (!senderAid) {
-    return senderCheckResult((await checkSender({ content: delivered, readerAids: [readerAid], sender: null, pin: null })).state);
+    // No signature: a warning when the sender's agent was seen signing (docs/40 §15.2).
+    const peers = await load(peersFile);
+    const aid = content.sender_did ? peers.dids[content.sender_did] : undefined;
+    const signedBefore = !!aid && peers.signed.includes(aid);
+    return senderCheckResult(
+      (await checkSender({ content: delivered, readerAids: [readerAid], sender: null, pin: null, signedBefore })).state,
+    );
   }
   let sender: RecipientResolution | null;
   try {
@@ -103,7 +113,13 @@ export async function checkMessageSender(
     readerAids: [readerAid],
     sender: sender ? { ...sender, encryption_public_key: sender.encryption_public_key ?? "" } : null,
     pin,
+    signedBefore: peers.signed.includes(senderAid),
   });
+  if (check.state === "verified" && (!peers.signed.includes(senderAid) || (content.sender_did && peers.dids[content.sender_did] !== senderAid))) {
+    if (!peers.signed.includes(senderAid)) peers.signed.push(senderAid);
+    if (content.sender_did) peers.dids[content.sender_did] = senderAid;
+    await save(peersFile, peers).catch(() => undefined);
+  }
   if (check.state === "root_changed" && sender?.device_list) {
     const root = JSON.parse(Buffer.from(sender.device_list.jws.split(".")[0], "base64url").toString()).kid;
     if (typeof root === "string") peers.changed[senderAid] = root;

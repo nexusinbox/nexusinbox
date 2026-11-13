@@ -63,7 +63,25 @@ export function useDeviceList(agent: Agent): { status: ListStatus | null; rootHe
   return { status, rootHere };
 }
 
-export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
+/**
+ * A computer connected before the connect code carried a secret (docs/40
+ * §13.5): its keys were never checked against the code, and it learnt the
+ * agent's root from the server. It is asked to reconnect (§15.2).
+ */
+export function connectedTheOldWay(d: AgentDevice): boolean {
+  return d.kind === "computer" && !!d.credential_id && !d.pairing_mac;
+}
+
+export function AgentDevices({
+  agent,
+  now,
+  onReconnect,
+}: {
+  agent: Agent;
+  now: number;
+  /** After removing a computer connected the old way: show a new connect code. */
+  onReconnect?: () => void;
+}) {
   const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
   const revoke = useRevokeAgentCredentialMutation();
@@ -124,7 +142,7 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
     }
   };
 
-  const remove = async (d: AgentDevice) => {
+  const remove = async (d: AgentDevice, then?: () => void) => {
     if (!d.credential_id) return;
     if (!window.confirm(t("agentStatus.deviceRemoveConfirm", { name: deviceName(t, d) }))) return;
     setFailed(null);
@@ -138,6 +156,7 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
         await storeDeviceList(fresh, keep).catch(() => undefined);
         await refreshed();
       }
+      then?.();
     } catch {
       setFailed("remove");
     }
@@ -228,6 +247,9 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
               ) : approval ? (
                 approvalBadge(approval)
               ) : null}
+              {connectedTheOldWay(d) ? (
+                <Pill color="var(--warn)" background="var(--warn-soft)" text={t("pairing.oldWayBadge")} />
+              ) : null}
               <p className="item-sub" style={{ margin: "2px 0 0" }}>
                 {[
                   d.kind === "browser"
@@ -239,6 +261,32 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
                   .filter(Boolean)
                   .join(" · ")}
               </p>
+              {connectedTheOldWay(d) ? (
+                <div data-testid="agent-device-old-way" style={{ marginTop: 6 }}>
+                  <p
+                    className="item-sub"
+                    style={{
+                      margin: 0,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: "var(--warn-soft)",
+                      color: "var(--text)",
+                    }}
+                  >
+                    {t("pairing.oldWayBody")}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginTop: 6, color: "var(--danger)", borderColor: "var(--danger)" }}
+                    onClick={() => void remove(d, onReconnect)}
+                    disabled={revoke.isPending}
+                    data-testid="agent-device-reconnect"
+                  >
+                    {t("pairing.oldWayReconnect")}
+                  </button>
+                </div>
+              ) : null}
             </div>
             {approval === "pending" && rootHere && !pairingMismatch(d) ? (
               <button
@@ -251,7 +299,7 @@ export function AgentDevices({ agent, now }: { agent: Agent; now: number }) {
                 {t("deviceList.approve")}
               </button>
             ) : null}
-            {d.credential_id ? (
+            {d.credential_id && !connectedTheOldWay(d) ? (
               <button
                 type="button"
                 className="btn"
