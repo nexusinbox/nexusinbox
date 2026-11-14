@@ -2,12 +2,15 @@
 // End-to-end check of drafts from a cloud AI (docs/33 §8, §9), against a
 // local API, the signer daemon and the gateway's remote MCP endpoint:
 //
-//   1. connect agent A with a pairing code (as a person does)
-//   2. start a gateway with --mcp-listen, and register a review key (this
-//      script stands in for the browser)
-//   3. B sends A a message; the official MCP client lists and reads it
+//   1. connect agent A with a long connect code (as a person does, docs/40
+//      §13.5); this script is A's browser: it made A's root key, checks the
+//      computer's MAC, signs A's device list and MACs the root back
+//   2. start a gateway with --mcp-listen
+//   3. B sends A a message (signature v2, wrapped for A's listed devices);
+//      the official MCP client lists and reads it
 //   4. the MCP client asks for a reply draft; nothing reaches B yet
-//   5. the "browser" opens the draft with its review key
+//   5. the "browser" opens the draft with A's root key: drafts are wrapped
+//      for the agent's listed devices (docs/40 §16.3)
 //   6. the person approves it; B receives it and can decrypt it
 //   7. OAuth (docs/33 §10): an app with the official SDK's OAuth client
 //      finds the API from the endpoint's 401, registers, gets the person's
@@ -19,16 +22,14 @@
 //      disconnects the app and takes the computer off the relay
 //
 // Needs the same local API as scripts/e2e_isolated_auto_reply.mjs (dev
-// bearer, CSRF on, migrations up to 0028) with
-// AGENT_INBOX_MCP_ALLOW_LOCAL_RESOURCES=true, and a built gateway.
+// bearer, CSRF on, all migrations) with
+// AGENT_INBOX_MCP_ALLOW_LOCAL_RESOURCES=true, a built gateway and signer,
+// and packages/core built (pnpm --filter @nexusinbox/core build).
 //
 // Usage: API=http://localhost:8081 node scripts/e2e_remote_mcp_drafts.mjs
 //   KEEP=1 leaves the stack and the MCP endpoint running.
 //   RELAY=1 also needs AGENT_INBOX_RELAY_TICKET_KEY on the API, a built
 //   relay, and pebble + pebble-challtestsrv v2.10.1 in ~/go/bin.
-//   BROWSER_REVIEW=1 USER_ID=<signed-in user> lets a real browser do steps 5
-//   and 6: the script waits for the browser to set itself up for review,
-//   then waits for the person to press "この内容で送る".
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -48,6 +49,10 @@ const RELAY_BIN =
   process.env.RELAY_BIN ?? path.join(REPO, "services/mcp-relay/target/debug/nexusinbox-relay");
 const RELAY_PORT = Number(process.env.RELAY_PORT ?? 8799);
 const SDK = path.join(REPO, "packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm");
+const CORE = path.join(REPO, "packages/core/dist");
+const core = await import(pathToFileURL(path.join(CORE, "index.js")).href);
+const deviceList = await import(pathToFileURL(path.join(CORE, "device-list.js")).href);
+const pairing = await import(pathToFileURL(path.join(CORE, "pairing.js")).href);
 
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(API).hostname)) {
   console.error(`refusing to run against ${API}: local API only`);
@@ -161,11 +166,18 @@ function unwrapContentKey(wrapped, encPrivateKey) {
 async function api(method, p, { auth, body } = {}) {
   const headers = { "Content-Type": "application/json", Origin: "http://localhost:3100" };
   if (auth) headers.Authorization = auth;
-  const res = await fetch(`${API}${p}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  // The local API limits requests per IP: wait out the window.
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${API}${p}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (res.status !== 429 || attempt === 6) break;
+    await res.text();
+    await sleep(10_000);
+  }
   const text = await res.text();
   let data;
   try {
@@ -215,28 +227,52 @@ async function poll(what, fn, seconds = 300) {
   return null;
 }
 
-function sendFrom(sender, recipient, subjectText, bodyText) {
-  const contentKey = b64url(crypto.randomBytes(32));
-  const body = encryptText(bodyText, contentKey);
-  const subject = encryptText(subjectText, contentKey);
-  const wrapped = wrapContentKey(contentKey, recipient.encPubB64);
-  const signingPayload = [sender.did, recipient.did, subject.serialized, body.serialized, wrapped, body.iv].join("\n");
-  const signature = b64url(crypto.sign(null, Buffer.from(signingPayload, "utf8"), sender.sign.privateKey));
-  return {
-    sender_did: sender.did,
-    recipient_did: recipient.did,
-    envelope: {
-      encrypted_content: body.serialized,
-      encrypted_key: wrapped,
-      nonce: body.iv,
-      signature,
-      metadata: { subject_encrypted: subject.serialized, content_type: "text/plain", thread_id: null, has_attachments: false },
-    },
-  };
+/** An agent's Ed25519 key as WebCrypto wants it, for core's signing. */
+function webSigningKey(keys) {
+  return crypto.webcrypto.subtle.importKey(
+    "pkcs8",
+    keys.sign.privateKey.export({ type: "pkcs8", format: "der" }),
+    { name: "Ed25519" },
+    false,
+    ["sign"],
+  );
+}
+
+/** Sign (with the root key) and store an agent's device list (docs/40 §4.2). */
+async function putDeviceList(human, agent, root, version, devices) {
+  const jws = await deviceList.signDeviceList(await webSigningKey(root), {
+    v: 1,
+    aid: agent.aid,
+    root: root.did,
+    version,
+    issued_at: new Date().toISOString(),
+    devices,
+  });
+  expectStatus(await api("PUT", `/agents/${agent.id}/device-list`, { auth: human, body: { jws } }), [200], "device list");
+}
+
+/**
+ * A message from `sender` to `recipient`, signed with v2 and wrapped for
+ * every listed device of both agents (docs/38, docs/40 §14).
+ */
+async function sendFrom(sender, recipient, subjectText, bodyText) {
+  const envelope = await core.buildEncryptedTextEnvelope({
+    senderAid: sender.aid,
+    recipientAid: recipient.aid,
+    senderDid: sender.did,
+    recipientDid: recipient.did,
+    recipientEncryptionPublicKey: recipient.encPubB64,
+    senderSigningPrivateKey: await webSigningKey(sender),
+    senderEncryptionPublicKey: sender.encPubB64,
+    recipientDevices: recipient.devices,
+    senderDevices: sender.devices,
+    subject: subjectText,
+    body: bodyText,
+  });
+  return { sender_did: sender.did, recipient_did: recipient.did, envelope };
 }
 
 async function main() {
-  const browser = !!process.env.BROWSER_REVIEW;
   const userId = process.env.USER_ID ?? crypto.randomUUID();
   const human = `Bearer dev-user-${userId}`;
 
@@ -254,11 +290,17 @@ async function main() {
   const agentA = expectStatus(
     await api("POST", "/agents", { auth: human, body: { label: "e2e-A-secretary", public_key: placeholder.signPubB64, encryption_key: placeholder.encPubB64 } }),
     [200, 201], "create agent A");
-  expectStatus(
+  const agentB = expectStatus(
     await api("POST", "/agents", { auth: human, body: { label: "e2e-B-friend", public_key: B.signPubB64, encryption_key: B.encPubB64 } }),
     [200, 201], "create agent B");
+  // Agents without a device list are not sent to (docs/40 §15.2). The
+  // browser each was created in signs its own.
+  B.aid = agentB.aid;
+  B.devices = [{ did: B.did, encryption_public_key: B.encPubB64 }];
+  await putDeviceList(human, agentB, B, 1, [{ did: B.did, enc: B.encPubB64, kind: "browser" }]);
+  await putDeviceList(human, agentA, placeholder, 1, [{ did: placeholder.did, enc: placeholder.encPubB64, kind: "browser" }]);
 
-  step("connect A with a pairing code");
+  step("connect A with a long connect code (docs/40 §13.5)");
   const cred = expectStatus(
     await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"], pairing: true } }),
     [201], "create pairing credential");
@@ -274,8 +316,9 @@ async function main() {
     AGENT_INBOX_MCP_RELAY: "off",
   };
   const agentDir = path.join(WORK, ".nexusinbox", "e2e-a-secretary");
+  const secret = pairing.generatePairingSecret();
   try {
-    const out = execFileSync("sh", [STACK, "connect", cred.pairing_code, API], {
+    const out = execFileSync("sh", [STACK, "connect", pairing.longPairingCode(cred.pairing_code, secret), API], {
       cwd: REPO,
       env: stackEnv,
       input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
@@ -287,11 +330,31 @@ async function main() {
     if (fs.existsSync(path.join(agentDir, "agent.env"))) stackDir = agentDir;
     fail("connect failed", `${e.stdout ?? ""}${e.stderr ?? e}`);
   }
-  const resolved = expectStatus(
-    await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
-    [200], "resolve A");
-  const A = { did: resolved.did, encPubB64: resolved.encryption_public_key };
-  console.log(`  A ${A.did}`);
+  step("A's browser checks the computer's MAC, signs it into the list, and MACs the root back");
+  const listedA = expectStatus(await api("GET", "/agents", { auth: human }), [200], "list agents").agents.find(
+    (a) => a.aid === agentA.aid,
+  );
+  const computer = listedA.devices.find((d) => d.kind === "computer");
+  const mac = await pairing.pairingDeviceMac(secret, cred.credential_id, computer.did, computer.encryption_public_key);
+  if (!computer.pairing_mac || !pairing.macEqual(mac, computer.pairing_mac)) fail("the computer's keys do not match the code", computer);
+  await putDeviceList(human, agentA, placeholder, 2, [
+    { did: placeholder.did, enc: placeholder.encPubB64, kind: "browser" },
+    { did: computer.did, enc: computer.encryption_public_key, kind: "computer" },
+  ]);
+  const rootMac = await pairing.pairingRootMac(secret, cred.credential_id, agentA.aid, placeholder.did);
+  expectStatus(
+    await api("PUT", `/agent-credentials/${cred.credential_id}/pairing-root`, { auth: human, body: { mac: rootMac } }),
+    [200, 204], "pairing root");
+  const A = {
+    aid: agentA.aid,
+    did: computer.did,
+    encPubB64: computer.encryption_public_key,
+    devices: [
+      { did: placeholder.did, encryption_public_key: placeholder.encPubB64 },
+      { did: computer.did, encryption_public_key: computer.encryption_public_key },
+    ],
+  };
+  console.log(`  A ${A.did} (root ${placeholder.did})`);
 
   step("start a gateway with the remote MCP endpoint");
   const tokenFile = path.join(WORK, "mcp-token");
@@ -321,33 +384,9 @@ async function main() {
     return { error: r.isError ? r.content?.[0]?.text : null, value: r.structuredContent };
   };
 
-  step("without a review browser, drafting is refused");
-  if ((expectStatus(await api("GET", "/review-keys", { auth: human }), [200], "review keys")).review_keys.length) {
-    fail("this user already has review keys; use a fresh user");
-  }
-  const sent = expectStatus(await api("POST", "/messages", { auth: human, body: sendFrom(B, A, "Lunch on Friday?", "Are you free for lunch on Friday at noon?") }), [202], "B → A");
-  const early = await call("create_draft", { reply_to_message_id: sent.message_id, body: "Yes" });
-  if (!early.error?.includes("No browser is set up")) fail("expected a refusal without review keys", early);
-  console.log(`  refused: ${early.error.slice(0, 60)}…`);
-
-  let review = null;
-  let reviewKey = null;
-  if (browser) {
-    step("waiting for the browser: 確認が必要 → このブラウザを確認に使う");
-    reviewKey = await poll("review keys", async () => {
-      const r = await api("GET", "/review-keys", { auth: human });
-      return r.status === 200 ? { status: 200, data: r.data.review_keys[0] ?? null } : r;
-    });
-    if (!reviewKey) fail("the browser did not set itself up within 5 minutes");
-    console.log(`  browser key: ${reviewKey.label}`);
-  } else {
-    step("the 'browser' registers a review key");
-    review = crypto.generateKeyPairSync("x25519");
-    const reviewPub = b64url(review.publicKey.export({ type: "spki", format: "der" }).subarray(-32));
-    reviewKey = expectStatus(
-      await api("POST", "/review-keys", { auth: human, body: { public_key: reviewPub, label: "e2e browser" } }),
-      [201], "register review key");
-  }
+  const sent = expectStatus(
+    await api("POST", "/messages", { auth: human, body: await sendFrom(B, A, "Lunch on Friday?", "Are you free for lunch on Friday at noon?") }),
+    [202], "B → A");
 
   step("the MCP client lists and reads the message");
   const inbox = await call("list_inbox", {});
@@ -368,31 +407,22 @@ async function main() {
   const drafts = expectStatus(await api("GET", "/agent-drafts", { auth: human }), [200], "list drafts");
   const d = drafts.drafts.find((x) => x.id === draft.value.draft_id);
   if (!d || d.via !== "e2e-muse" || d.recipient_label == null) fail("draft listing", d);
-  let got = null;
-  if (browser) {
-    step("waiting for the person: 確認が必要 → 開いて確認 → この内容で送る");
-    got = await poll("list B", async () => {
-      const r = await api("GET", `/messages?agent_did=${encodeURIComponent(B.did)}`, { auth: human });
-      return r.status === 200
-        ? { status: 200, data: r.data.messages.find((m) => m.sender_did === A.did && m.folder !== "sent") ?? null }
-        : r;
-    });
-    if (!got) fail("the draft was not approved within 5 minutes");
-  } else {
-    step("the 'browser' opens the draft with its review key");
-    const wrap = d.review_wraps.find((w) => w.review_key_id === reviewKey.id);
-    const reviewCk = unwrapContentKey(wrap.wrapped_key, review.privateKey);
-    const draftSubject = decryptText(d.subject_encrypted, reviewCk);
-    const draftBody = decryptText(d.encrypted_content, reviewCk);
-    if (draftSubject !== "Re: Lunch on Friday?" || draftBody !== replyText) fail("draft contents", { draftSubject, draftBody });
-    console.log(`  opened: "${draftSubject}" / "${draftBody}" (via ${d.via})`);
+  step("the 'browser' opens the draft with A's root key (a listed device)");
+  if (!d.signed_v2) fail("the draft is not signed with v2", d);
+  const wrap = d.sender_encrypted_keys.find((w) => w.did === placeholder.did);
+  if (!wrap) fail("the draft is not wrapped for A's listed browser", d.sender_encrypted_keys);
+  if ((d.review_wraps ?? []).length) fail("the draft still carries review wraps", d.review_wraps);
+  const draftCk = unwrapContentKey(wrap.key, placeholder.enc.privateKey);
+  const draftSubject = decryptText(d.subject_encrypted, draftCk);
+  const draftBody = decryptText(d.encrypted_content, draftCk);
+  if (draftSubject !== "Re: Lunch on Friday?" || draftBody !== replyText) fail("draft contents", { draftSubject, draftBody });
+  console.log(`  opened: "${draftSubject}" / "${draftBody}" (via ${d.via})`);
 
-    step("the person approves; B receives and decrypts it");
-    expectStatus(await api("POST", `/agent-drafts/${d.id}/send`, { auth: human }), [202], "approve");
-    const after = expectStatus(await api("GET", `/messages?agent_did=${encodeURIComponent(B.did)}`, { auth: human }), [200], "list B");
-    got = after.messages.find((m) => m.sender_did === A.did && m.folder !== "sent");
-    if (!got) fail("B did not receive the approved draft");
-  }
+  step("the person approves; B receives and decrypts it");
+  expectStatus(await api("POST", `/agent-drafts/${d.id}/send`, { auth: human }), [202], "approve");
+  const after = expectStatus(await api("GET", `/messages?agent_did=${encodeURIComponent(B.did)}`, { auth: human }), [200], "list B");
+  const got = after.messages.find((m) => m.sender_did === A.did && m.folder !== "sent");
+  if (!got) fail("B did not receive the approved draft");
   const content = expectStatus(await api("GET", `/messages/${got.id}/content`, { auth: human }), [200], "content");
   const ck = unwrapContentKey(content.encrypted_key, B.enc.privateKey);
   const gotBody = decryptText(content.encrypted_content, ck);
@@ -444,7 +474,16 @@ async function main() {
       codeVerifier: () => store.verifier,
     };
   };
-  const oauthConnect = async (provider, scopeOverride, url = oauthUrl, fetchFn = undefined) => {
+  // The SDK's own requests (discovery, registration, tokens) wait out the
+  // local API's per-IP limit too.
+  const patientFetch = async (input, init) => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(input, init);
+      if (res.status !== 429 || attempt === 6) return res;
+      await sleep(10_000);
+    }
+  };
+  const oauthConnect = async (provider, scopeOverride, url = oauthUrl, fetchFn = patientFetch) => {
     const transport = new StreamableHTTPClientTransport(new URL(url), { authProvider: provider, fetch: fetchFn });
     const client = new Client({ name: "e2e-oauth-muse", version: "0" });
     try {

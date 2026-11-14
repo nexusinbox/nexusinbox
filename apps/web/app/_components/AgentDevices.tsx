@@ -12,7 +12,7 @@
 // browser may sign, and any of them removes another (World ID again).
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { elapsed, parseServerTime } from "../../lib/agents/agent-status";
 import {
   approvalOf,
@@ -20,6 +20,7 @@ import {
   checkDeviceList,
   listSignerDids,
   listSignerHere,
+  onlyRootDevice,
   storeDeviceList,
   type Approval,
   type ListStatus,
@@ -190,6 +191,18 @@ export function AgentDevices({
       setBusy(false);
     }
   };
+
+  // A new agent has no list until Messages makes one; make it here too,
+  // so 「ほかのブラウザを足す」 shows from the start. Nothing to ask: the
+  // only device is this browser (docs/40 stage 1).
+  const quietTried = useRef(false);
+  useEffect(() => {
+    if (quietTried.current || status?.kind !== "none" || !rootHere || !onlyRootDevice(agent)) return;
+    quietTried.current = true;
+    void storeDeviceList(agent, new Set([agent.did]))
+      .then(() => refreshed())
+      .catch(() => undefined);
+  }, [status, rootHere, agent]);
 
   const runAutoRepliesHere = async () => {
     if (!local) return;
