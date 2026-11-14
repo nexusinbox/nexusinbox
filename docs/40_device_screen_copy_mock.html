@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>エージェント画面「状態」の文章（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; --danger-soft: #fdecef; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .col h2 { font-size: 15px; margin: 0 0 8px; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .row { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; padding-top: 0; }
+  .k { color: var(--muted); font-size: 14px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .box { border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+  .blue { background: var(--soft); }
+  .yellow { background: var(--warn-soft); }
+  .dev { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .p-here { color: var(--primary); background: var(--soft); }
+  .p-ok { color: var(--ok); background: var(--ok-soft); }
+  .p-warn { color: var(--warn); background: var(--warn-soft); }
+  .btn { display: inline-block; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; margin-top: 6px; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  code { background: #f1f3f6; border-radius: 4px; padding: 0 4px; font-size: 12px; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
+  .x { text-decoration: line-through; color: var(--muted); }
+  .notes { margin-top: 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>エージェント画面「状態」の文章（案）</h1>
+  <p class="lead">例: 「second secretary」。端末はこのブラウザと、古い手順でつないだパソコン (止まっている)。受け取り先の端末がまだ決まっていない。左がいま、右が案。<span class="new">新</span> が変わるところ。</p>
+  <div class="cols">
+    <div class="col">
+      <h2>いま</h2>
+      <div class="app">
+        <div class="row"><div class="k">読める端末</div><div>
+          <div class="box blue"><b>この一覧を認めてください</b><div class="muted">あなたが認めた端末にだけ、メッセージが届くようになります。知らない端末があれば、認める前に「外す」を押してください。</div><span class="btn primary">この 2 台を認める</span></div>
+          <div class="dev">🌐<div><b>ブラウザ</b><span class="pill p-here">この端末</span><span class="pill p-ok">署名できる</span><div class="muted">エージェントを作ったときの鍵 · 4月27日 から</div></div></div>
+          <div class="dev">💻<div><b>パソコン（second secretary）</b><span class="pill p-warn">止まっています</span><span class="pill p-warn">古い方法でつないだ</span><div class="muted">5月6日 につないだ · 3 時間前に確認</div>
+            <div class="box yellow" style="margin-top:6px">このパソコンは、鍵を確かめる前の方法（短い接続コード）でつなぎました。つないだときに鍵がすり替えられていても気づけません。外して、新しいコードでつなぎ直してください。パソコンで brew upgrade nexusinbox をしてから、もう一度 nexusinbox connect を実行します。</div>
+            <span class="btn danger">外してつなぎ直す</span></div></div>
+          <div class="muted">新しく届くメッセージは、ここにある端末すべてで読めます。外した端末には、それ以降のメッセージが届きません。</div>
+          <span class="btn">パソコンでも動かす</span>
+        </div></div>
+        <div class="row"><div class="k">クラウドの AI</div><div><b>● パソコンで動かすと使えます</b><div class="muted">クラウドの AI は、あなたのパソコンを通して受信箱を読みます。このブラウザだけのエージェントでは使えません。</div></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>案</h2>
+      <div class="app">
+        <div class="row"><div class="k">端末 <span class="new">新</span></div><div>
+          <div class="box yellow"><b>いまは、このエージェントにメッセージが届きません</b> <span class="new">新</span>
+            <div class="muted">受け取る端末がまだ決まっていないためです。まず下のパソコンを「外す」か「つなぎ直す」と、自動で決まって届くようになります。</div></div>
+          <div class="dev">🌐<div><b>このブラウザ</b><span class="pill p-here">いま使っている</span> <span class="new">新</span><div class="muted">4月27日 にエージェントを作ったブラウザ。端末の追加・削除ができます</div></div></div>
+          <div class="dev">💻<div><b>パソコン（second secretary）</b><span class="pill p-warn">止まっています</span><span class="pill p-warn">つなぎ直しが必要</span> <span class="new">新</span><div class="muted">5月6日 につないだ · 3 時間前まで動いていた</div>
+            <div class="box yellow" style="margin-top:6px">このパソコンは古い手順でつながっています。安全のため、一度外して、つなぎ直してください。 <span class="new">新</span>
+              <div class="muted" style="margin-top:4px">使い続ける: 「つなぎ直す」を押し、出てくるコマンドをパソコンで実行します。<br>もう使わない: 「外す」を押すだけです。</div></div>
+            <span class="btn primary">つなぎ直す</span> <span class="btn danger">外す</span> <span class="new">新</span></div></div>
+          <div class="muted">メッセージは、ここにある端末のすべてに届きます。外した端末には届きません。</div>
+          <div style="margin-top:10px;display:grid;gap:10px">
+            <div><span class="btn">スマホなどでも使えるようにする</span> <span class="new">新</span>
+              <div class="muted">スマホや別のパソコンのブラウザでも、読む・送る・承認ができるようになります。</div></div>
+            <div><span class="btn">ブラウザを閉じても動くようにする</span> <span class="new">新</span>
+              <div class="muted">あなたのパソコンで NexusInbox を動かします。ブラウザを閉じていても自動で返信でき、ChatGPT などのクラウドの AI からも使えます。</div></div>
+          </div>
+        </div></div>
+        <div class="row"><div class="k">クラウドの AI</div><div><b>● パソコンが止まっているため、いまは使えません</b> <span class="new">新</span><div class="muted">クラウドの AI は、あなたのパソコンを通して受信箱を読みます。パソコンで <code>nexusinbox start</code> を実行すると使えます。</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>「一覧を認める」「署名できる」「鍵」などの言葉をやめ、何が起きているか（届かない・届く）と、何を押せばよいかだけを書く</li>
+      <li>受け取る端末が決まっていないときは、まず「いま届かない」ことを伝える</li>
+      <li>古い手順のパソコンがあるときは「この 2 台を認める」を出さない（古いパソコンまで認めてしまうため）。「つなぎ直す」と「外す」を分ける</li>
+      <li>端末を増やすボタンは「何ができるようになるか」で名付け、下に一言の説明を添える。「ほかのブラウザを足す」→「スマホなどでも使えるようにする」、「パソコンでも動かす」→「ブラウザを閉じても動くようにする」</li>
+      <li>パソコンがあるのに「このブラウザだけのエージェント」と書かない</li>
+      <li>古い手順のパソコンが無いときの「まとめて認める」は「この 2 台にメッセージを届ける」のような言い方にする</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>この方向でよいか（推奨: この方向。エージェント画面のほかの文章、ほかの知らせ（「読める端末が増えました」など）も同じ言い方にそろえる）</li>
+      <li>「署名できる」の印は「端末の追加・削除ができます」に置き換えてよいか（推奨: 置き換える。印ではなく説明の一文にする）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

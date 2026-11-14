@@ -51,7 +51,7 @@ export function elsewhereText(
 }
 
 export function deviceName(t: (key: string, vars?: Record<string, string | number>) => string, d: AgentDevice): string {
-  if (d.kind === "browser") return d.label ?? t("agentStatus.deviceBrowser");
+  if (d.kind === "browser") return d.label ?? t("agentStatus.firstBrowser");
   if (d.kind === "computer") {
     return d.label ? t("agentStatus.deviceComputer", { name: d.label }) : t("agentStatus.deviceComputerUnnamed");
   }
@@ -286,13 +286,22 @@ export function AgentDevices({
       {(status?.kind === "none" && devices.length > 1) || status?.kind === "broken" ? (
         <div
           data-testid="device-list-approve"
-          style={{ borderRadius: 12, background: "var(--primary-soft)", padding: "10px 12px", marginBottom: 8 }}
+          style={{ borderRadius: 12, background: "var(--warn-soft)", padding: "10px 12px", marginBottom: 8 }}
         >
-          {rootHere ? (
+          {status?.kind === "none" ? (
+            <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceList.notReceivingTitle")}</p>
+          ) : null}
+          {devices.some(connectedTheOldWay) ? (
+            // Approving all would approve the computer connected the old way.
+            <p className="item-sub" style={{ margin: "2px 0 0" }}>
+              {t("deviceList.notReceivingOldWay")}
+            </p>
+          ) : rootHere ? (
             <>
-              <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceList.approveTitle")}</p>
               <p className="item-sub" style={{ margin: "2px 0 0" }}>
-                {t("deviceList.approveBody")}
+                {status?.kind === "none"
+                  ? t("deviceList.approveBody", { n: approvable.length })
+                  : t("deviceList.redoBody", { n: approvable.length })}
               </p>
               <button
                 type="button"
@@ -306,7 +315,7 @@ export function AgentDevices({
               </button>
             </>
           ) : (
-            <p className="item-sub" style={{ margin: 0 }}>
+            <p className="item-sub" style={{ margin: "2px 0 0" }}>
               {t("deviceList.otherBrowser")}
             </p>
           )}
@@ -326,11 +335,8 @@ export function AgentDevices({
               {d.kind === "computer" ? "💻" : "🌐"}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={STRONG}>{deviceName(t, d)}</span>
+              <span style={STRONG}>{d.did === local ? t("agentStatus.thisBrowser") : deviceName(t, d)}</span>
               {badge(state)}
-              {d.kind === "browser" && signers.includes(d.did) ? (
-                <Pill color="var(--ok)" background="var(--ok-soft)" text={t("deviceList.signer")} />
-              ) : null}
               {pairingMismatch(d) ? (
                 <Pill color="var(--danger)" background="var(--danger-soft)" text={t("pairing.mismatchBadge")} />
               ) : approval ? (
@@ -346,7 +352,12 @@ export function AgentDevices({
                     : d.kind === "browser"
                       ? t("deviceList.browserAdded", { date: date(d.activated_at) })
                       : t("agentStatus.deviceJoined", { date: date(d.activated_at) }),
-                  seen ? t("agentStatus.deviceSeen", { ago: seen }) : null,
+                  seen
+                    ? state === "silent"
+                      ? t("agentStatus.deviceStoppedSince", { ago: seen })
+                      : t("agentStatus.deviceSeen", { ago: seen })
+                    : null,
+                  d.kind === "browser" && signers.includes(d.did) ? t("deviceList.signer") : null,
                   approval === "pending" && !rootHere ? t("deviceList.pendingOther") : null,
                 ]
                   .filter(Boolean)
@@ -354,7 +365,7 @@ export function AgentDevices({
               </p>
               {connectedTheOldWay(d) ? (
                 <div data-testid="agent-device-old-way" style={{ marginTop: 6 }}>
-                  <p
+                  <div
                     className="item-sub"
                     style={{
                       margin: 0,
@@ -364,18 +375,30 @@ export function AgentDevices({
                       color: "var(--text)",
                     }}
                   >
-                    {t("pairing.oldWayBody")}
-                  </p>
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{ marginTop: 6, color: "var(--danger)", borderColor: "var(--danger)" }}
-                    onClick={() => void remove(d, onReconnect)}
-                    disabled={revoke.isPending}
-                    data-testid="agent-device-reconnect"
-                  >
-                    {t("pairing.oldWayReconnect")}
-                  </button>
+                    <p style={{ margin: 0 }}>{t("pairing.oldWayBody")}</p>
+                    <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>{t("pairing.oldWayHow")}</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => void remove(d, onReconnect)}
+                      disabled={revoke.isPending}
+                      data-testid="agent-device-reconnect"
+                    >
+                      {t("pairing.oldWayReconnect")}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                      onClick={() => void remove(d)}
+                      disabled={revoke.isPending}
+                      data-testid="agent-device-remove-old-way"
+                    >
+                      {t("agentStatus.deviceRemove")}
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -425,9 +448,14 @@ export function AgentDevices({
           {adding ? (
             <AddBrowserPanel onClose={() => setAdding(false)} onDone={() => void refreshed()} />
           ) : (
-            <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="add-browser">
-              {t("addBrowser.button")}
-            </button>
+            <div>
+              <button type="button" className="btn" onClick={() => setAdding(true)} data-testid="add-browser">
+                {t("addBrowser.button")}
+              </button>
+              <p className="item-sub" style={{ margin: "4px 0 0" }}>
+                {t("addBrowser.buttonSub")}
+              </p>
+            </div>
           )}
           {signers.length === 1 && !adding ? (
             <p

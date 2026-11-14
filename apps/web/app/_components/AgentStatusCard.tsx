@@ -27,10 +27,10 @@ import {
   useSetCloudAccessMutation,
 } from "../../lib/api/hooks";
 import type { CloudAccessStatus } from "../../lib/agents/agent-status";
-import type { Agent, AgentCredential } from "../../lib/api/types";
+import type { Agent, AgentCredential, AgentDevice } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
-import { AgentDevices } from "./AgentDevices";
+import { AgentDevices, connectedTheOldWay } from "./AgentDevices";
 import { acknowledgeDevicesAfterConnect } from "./NewDeviceNotice";
 import {
   AutoReplyPresetChoices,
@@ -193,6 +193,11 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
           >
             {computer.kind === "browser" ? t("agentStatus.connectButton") : t("agentStatus.connectAnother")}
           </button>
+        ) : null}
+        {connectStage === "idle" && computer.kind === "browser" ? (
+          <p className="item-sub" style={{ margin: "4px 0 0" }}>
+            {t("agentStatus.connectButtonSub")}
+          </p>
         ) : connectStage === "confirm" ? (
           <div style={{ marginTop: 8 }}>
             <p className="item-sub" style={{ margin: 0 }}>
@@ -307,7 +312,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
       </Row>
 
       <Row label={t("cloudAccess.label")}>
-        <CloudAccess status={cloud} agentId={agent.id} />
+        <CloudAccess status={cloud} agentId={agent.id} devices={agent.devices ?? []} />
       </Row>
 
       <Row label={t("agentStatus.recent")}>
@@ -343,7 +348,16 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
 const LIST: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 20, fontSize: 14 };
 
 /** The cloud-AI row (docs/33 §12): off, on, and the URL to give an AI app. */
-function CloudAccess({ status, agentId }: { status: CloudAccessStatus; agentId: string }) {
+function CloudAccess({
+  status,
+  agentId,
+  devices,
+}: {
+  status: CloudAccessStatus;
+  agentId: string;
+  /** The agent's devices: a computer among them, even one this page cannot reach, changes the wording. */
+  devices: AgentDevice[];
+}) {
   const { t } = useTranslation();
   const setCloudAccess = useSetCloudAccessMutation();
   const grantsQuery = useOAuthGrantsQuery();
@@ -378,11 +392,19 @@ function CloudAccess({ status, agentId }: { status: CloudAccessStatus; agentId: 
   const error = failed ? <ErrorLine>{t("cloudAccess.failed")}</ErrorLine> : null;
 
   if (status.kind === "unavailable") {
+    // A computer connected the old way is not counted as running the agent;
+    // say what to do about it rather than that there is none.
+    const computers = devices.filter((d) => d.kind === "computer");
+    const [title, text] = computers.some(connectedTheOldWay)
+      ? ["cloudAccess.computerOldWay", "cloudAccess.computerOldWaySub"]
+      : computers.length > 0
+        ? ["cloudAccess.computerStopped", "cloudAccess.computerStoppedSub"]
+        : ["cloudAccess.unavailable", "cloudAccess.unavailableSub"];
     return (
       <div data-testid="cloud-access-unavailable">
         <Dot tone="off" />
-        <span style={STRONG}>{t("cloudAccess.unavailable")}</span>
-        {sub(t("cloudAccess.unavailableSub"))}
+        <span style={STRONG}>{t(title)}</span>
+        {sub(t(text))}
       </div>
     );
   }
