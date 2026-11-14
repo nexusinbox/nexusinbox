@@ -41,3 +41,20 @@ export function readableElsewhere(
   if (browsers.length === 0) return null;
   return { browsers, computer: others.some((d) => d.kind === "computer") };
 }
+
+/**
+ * The browser that runs the agent's automatic replies (docs/40 §17.6): the
+ * one chosen, else the one the agent was created with, else another of its
+ * active browsers (the first was removed). Null when it has none.
+ */
+export function autoReplyBrowser(
+  agent: Pick<Agent, "did" | "devices" | "auto_reply_device">,
+): NonNullable<Agent["devices"]>[number] | null {
+  const browsers = (agent.devices ?? []).filter((d) => d.kind === "browser");
+  return (
+    browsers.find((d) => d.did === agent.auto_reply_device) ??
+    browsers.find((d) => d.did === agent.did) ??
+    browsers[0] ??
+    null
+  );
+}

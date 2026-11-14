@@ -27,7 +27,7 @@ import {
 } from "../../lib/agents/device-list";
 import { deviceState, saveSeenDevices, type DeviceState } from "../../lib/agents/devices";
 import { pairingMismatch } from "../../lib/agents/pairing";
-import { localDeviceDid } from "../../lib/agents/local-device";
+import { autoReplyBrowser, localDeviceDid } from "../../lib/agents/local-device";
 import { ApiError, defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useRevokeAgentCredentialMutation } from "../../lib/api/hooks";
 import type { Agent, AgentDevice } from "../../lib/api/types";
@@ -41,12 +41,13 @@ import { STRONG } from "./AgentSetup";
 export function elsewhereText(
   t: (key: string, vars?: Record<string, string | number>) => string,
   elsewhere: { browsers: AgentDevice[]; computer: boolean },
+  orComputerKey = "inbox.devicesOrComputer",
 ): string {
   // A browser without a name of its own is the one the agent was made in.
   const names = elsewhere.browsers
     .map((d) => (d.label ? t("inbox.deviceQuoted", { name: d.label }) : t("inbox.firstBrowser")))
     .join(t("inbox.deviceJoin"));
-  return elsewhere.computer ? t("inbox.devicesOrComputer", { names }) : names;
+  return elsewhere.computer ? t(orComputerKey, { names }) : names;
 }
 
 export function deviceName(t: (key: string, vars?: Record<string, string | number>) => string, d: AgentDevice): string {
@@ -130,8 +131,8 @@ export function AgentDevices({
     if (new URLSearchParams(window.location.search).get("addBrowser") === "1") setAdding(true);
   }, []);
   // Which browser runs the automatic replies (docs/40 §17.6).
-  const autoReplyDid = agent.auto_reply_device ?? agent.did;
-  const autoReplyBrowser = browsers.find((d) => d.did === autoReplyDid);
+  const runner = autoReplyBrowser(agent);
+  const autoReplyDid = runner?.did ?? agent.did;
 
   // Which listed keys this browser holds ("この端末").
   const [heldHere, setHeldHere] = useState<Set<string>>(new Set());
@@ -444,7 +445,7 @@ export function AgentDevices({
           <p style={{ margin: 0, fontWeight: 700 }}>{t("addBrowser.autoReplyTitle")}</p>
           <p className="item-sub" style={{ margin: "2px 0 0" }}>
             {t("addBrowser.autoReplyRunsOn", {
-              name: autoReplyBrowser ? deviceName(t, autoReplyBrowser) : t("agentStatus.deviceBrowser"),
+              name: runner ? deviceName(t, runner) : t("agentStatus.deviceBrowser"),
             })}
           </p>
           {local && local !== autoReplyDid ? (

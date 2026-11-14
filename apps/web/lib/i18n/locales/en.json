@@ -86,7 +86,7 @@
     "autoReplyLead": "Automatic replies: ",
     "onComputer": "{names} reply while NexusInbox runs on your computer. ",
     "inBrowser": "{names} reply only while this page is open in this browser.",
-    "inOtherBrowser": "{names} reply while the inbox is open in another browser of yours."
+    "inNamedBrowser": "{names} replies while the inbox is open in {browser}. "
   },
   "messages": {
     "partyName": "{person}'s {agent}",
@@ -131,7 +131,9 @@
     "send": "Send",
     "sendFailed": "Couldn't send. Please try again.",
     "composerOnComputer": "This agent runs on your computer. Reply from the AI tool on your computer or from a cloud AI.",
-    "composeMore": "Add a subject or attachment"
+    "composeMore": "Add a subject or attachment",
+    "composerElsewhere": "This browser cannot send for this agent. Reply from {where}.",
+    "devicesOrComputerTool": "{names} or the AI tool on your computer"
   },
   "inbox": {
     "title": "Messages",

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import type { Agent } from "../../lib/api/types";
-import { localDeviceDid } from "../../lib/agents/local-device";
+import { autoReplyBrowser, localDeviceDid } from "../../lib/agents/local-device";
 import { useTranslation } from "../../lib/i18n";
 import { BrowserAutoReply } from "./BrowserAutoReply";
 
@@ -36,16 +36,19 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
   if (agents.length === 0) return null;
 
   const autoReplying = agents.filter((a) => a.auto_reply);
-  // Run here: this browser is the one chosen (by default the one the agent
-  // was created with). Another browser of the person: neither here nor on
-  // a computer.
-  const runsHere = (a: Agent) => inBrowser?.get(a.did) === (a.auto_reply_device ?? a.did);
+  // Each agent's replies run in its auto-reply browser (docs/40 §17.6):
+  // here, in another browser of the person (named), or, with no browser
+  // among its devices, on a computer.
+  const runner = (a: Agent) => autoReplyBrowser(a);
+  const runsHere = (a: Agent) => !!inBrowser && inBrowser.get(a.did) === runner(a)?.did;
   const browserRun = inBrowser ? autoReplying.filter(runsHere) : [];
-  const otherBrowserRun = inBrowser
-    ? autoReplying.filter((a) => !runsHere(a) && inBrowser.has(a.did))
-    : [];
-  const computerRun = inBrowser ? autoReplying.filter((a) => !inBrowser.has(a.did)) : [];
+  const otherBrowserRun = inBrowser ? autoReplying.filter((a) => !runsHere(a) && runner(a)) : [];
+  const computerRun = inBrowser ? autoReplying.filter((a) => !runner(a)) : [];
   const names = (list: Agent[]) => list.map((a) => a.label).join("、");
+  const browserName = (a: Agent) => {
+    const d = runner(a);
+    return d?.label ? t("inbox.deviceQuoted", { name: d.label }) : t("inbox.firstBrowser");
+  };
 
   return (
     <section className="inbox-agent-bar">
@@ -68,9 +71,7 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
           {browserRun.length > 0
             ? t("inboxAgents.inBrowser", { names: names(browserRun) })
             : ""}
-          {otherBrowserRun.length > 0
-            ? t("inboxAgents.inOtherBrowser", { names: names(otherBrowserRun) })
-            : ""}
+          {otherBrowserRun.map((a) => t("inboxAgents.inNamedBrowser", { names: a.label, browser: browserName(a) })).join("")}
         </p>
       ) : null}
       {browserRun.map((a) => (

@@ -86,7 +86,7 @@
     "autoReplyLead": "自動返信: ",
     "onComputer": "{names} はパソコンの NexusInbox が動いている間に返信します。",
     "inBrowser": "{names} はこのブラウザでこの画面を開いている間だけ返信します。",
-    "inOtherBrowser": "{names} は、あなたの別のブラウザで受信箱を開いている間に返信します。"
+    "inNamedBrowser": "{names} は{browser}で受信箱を開いている間に返信します。"
   },
   "messages": {
     "partyName": "{person}さんの{agent}",
@@ -131,7 +131,9 @@
     "send": "送る",
     "sendFailed": "送れませんでした。もう一度お試しください。",
     "composerOnComputer": "このエージェントはパソコンで動いています。返事はパソコンの AI ツールかクラウドの AI から送ります。",
-    "composeMore": "件名や添付をつける"
+    "composeMore": "件名や添付をつける",
+    "composerElsewhere": "このブラウザからは送れません。{where}から返信できます。",
+    "devicesOrComputerTool": "{names}かパソコンの AI ツール"
   },
   "inbox": {
     "title": "メッセージ",

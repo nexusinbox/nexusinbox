@@ -1005,9 +1005,15 @@ function Composer({
   if (senderDid === undefined) return <div className="dm-composer" />;
 
   if (senderDid === null) {
+    // Another browser of the person can send for it (docs/40 §17.4).
+    const other = readableElsewhere(ownAgent, null);
     return (
       <div className="dm-composer note">
-        <p>{t("messages.composerOnComputer")}</p>
+        <p>
+          {other
+            ? t("messages.composerElsewhere", { where: elsewhereText(t, other, "messages.devicesOrComputerTool") })
+            : t("messages.composerOnComputer")}
+        </p>
       </div>
     );
   }
