@@ -9,6 +9,7 @@ import {
   useAuthSessionQuery,
   useMessagesQuery,
 } from "../../lib/api/hooks";
+import { forgetOldReviewKey } from "../../lib/crypto/review-key";
 import { useTranslation } from "../../lib/i18n";
 import { AuthLogoutButton } from "./AuthLogoutButton";
 import { AuthSessionStatus } from "./AuthSessionStatus";
@@ -195,6 +196,10 @@ export function AppShell({
   // 「新しい会話」 needs an agent to send from: shown once there is one.
   const agentsQuery = useAgentsQuery();
   const canCompose = (agentsQuery.data?.agents.length ?? 0) > 0;
+  // Older versions kept a separate review key here; nothing uses it now.
+  useEffect(() => {
+    void forgetOldReviewKey();
+  }, []);
   // 確認が必要 covers held messages and AI drafts (docs/33 §9).
   const draftsQuery = useAgentDraftsQuery();
   const pendingCount =

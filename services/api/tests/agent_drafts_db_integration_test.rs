@@ -1,5 +1,5 @@
 //! DB-mode integration tests for AI drafts that wait for the person's
-//! approval (docs/33 §8, §9): review keys, creating a draft with an agent
+//! approval (docs/33 §8, §9): creating a draft with an agent
 //! token, listing, approving (sending) and discarding with the session.
 //!
 //! Usage:
@@ -244,19 +244,16 @@ fn wrapped_key(marker: u8) -> String {
     )
 }
 
-/// A signed draft body from `sender` to `recipient_did`, wrapped to `review_key_id`.
+/// A signed draft body from `sender` to `recipient_did`, its content key
+/// wrapped to the sender's device (docs/40 §16.3).
 /// Signed with envelope signature v2 (docs/40 §15.2): the same fields as a
 /// `POST /messages` body, with `signature_v2` at the top level.
-async fn draft_body(
-    app: &axum::Router,
-    sender: &UserAgent,
-    recipient_did: &str,
-    review_key_id: &str,
-) -> Value {
+async fn draft_body(app: &axum::Router, sender: &UserAgent, recipient_did: &str) -> Value {
     let subject_encrypted = URL_SAFE_NO_PAD.encode(b"subject-ct-draft");
     let encrypted_content = URL_SAFE_NO_PAD.encode(b"body-ct-draft");
     let encrypted_key = wrapped_key(1);
     let nonce = URL_SAFE_NO_PAD.encode([7u8; 24]);
+    let device_wraps = json!([{ "did": sender.did, "key": wrapped_key(2) }]);
     let mut message = json!({
         "sender_did": sender.did,
         "recipient_did": recipient_did,
@@ -265,7 +262,7 @@ async fn draft_body(
             "encrypted_key": encrypted_key,
             "nonce": nonce,
             "encrypted_keys": [],
-            "sender_encrypted_keys": [],
+            "sender_encrypted_keys": device_wraps,
             "metadata": { "subject_encrypted": subject_encrypted, "content_type": "text/plain" }
         }
     });
@@ -279,24 +276,10 @@ async fn draft_body(
         "nonce": nonce,
         "signature_v2": message["envelope"]["signature_v2"],
         "encrypted_keys": [],
-        "sender_encrypted_keys": [],
+        "sender_encrypted_keys": device_wraps,
         "content_type": "text/plain",
-        "review_wraps": [{ "review_key_id": review_key_id, "wrapped_key": wrapped_key(2) }],
         "via": "Muse",
     })
-}
-
-async fn register_review_key(app: &axum::Router, auth: &str) -> String {
-    let (status, body) = call(
-        app,
-        "POST",
-        "/review-keys",
-        auth,
-        Some(json!({ "public_key": URL_SAFE_NO_PAD.encode([9u8; 32]), "label": "Safari" })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    body["id"].as_str().unwrap().to_string()
 }
 
 async fn audit_events(pool: &PgPool, user_id: Uuid) -> Vec<String> {
@@ -327,7 +310,6 @@ async fn approved_draft_is_sent_and_removed() {
     let me = seed_user_with_agent(&pool, "0xdraft-owner", "secretary", 0x51).await;
     let friend = seed_user_with_agent(&pool, "0xdraft-friend", "friend", 0x52).await;
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
     // Connecting a computer gives an agent new keys; agents.did keeps the
     // DID it was created with. Names must still be found.
     for ua in [&me, &friend] {
@@ -343,17 +325,16 @@ async fn approved_draft_is_sent_and_removed() {
     let dids = agents["agents"][0]["dids"].as_array().unwrap();
     assert!(dids.iter().any(|d| d == me.did.as_str()), "{agents}");
 
-    // The computer sees the review keys it must wrap to.
-    let (status, keys) = call(&app, "GET", "/review-keys", &agent, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(keys["review_keys"][0]["id"], key_id.as_str());
+    // The separate list of review browsers is gone (docs/40 §16.3).
+    let (status, _) = call(&app, "GET", "/review-keys", &agent, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, created) = call(
         &app,
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&app, &me, &friend.did, &key_id).await),
+        Some(draft_body(&app, &me, &friend.did).await),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
@@ -366,7 +347,8 @@ async fn approved_draft_is_sent_and_removed() {
     assert_eq!(draft["recipient_label"], "friend");
     assert_eq!(draft["sender_label"], "secretary");
     assert_eq!(draft["via"], "Muse");
-    assert_eq!(draft["review_wraps"][0]["review_key_id"], key_id.as_str());
+    assert_eq!(draft["sender_encrypted_keys"][0]["did"], me.did.as_str());
+    assert!(draft.get("review_wraps").is_none(), "{draft}");
     assert!(
         draft.get("encrypted_key").is_none(),
         "the recipient's wrap is not needed to review"
@@ -436,7 +418,6 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
     let me = seed_user_with_agent(&pool, "0xdraft-owner2", "secretary", 0x53).await;
     let friend = seed_user_with_agent(&pool, "0xdraft-friend2", "friend", 0x54).await;
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
 
     // A session cannot create a draft.
     let (status, _) = call(
@@ -444,7 +425,7 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
         "POST",
         "/agent-drafts",
         &me.auth,
-        Some(draft_body(&app, &me, &friend.did, &key_id).await),
+        Some(draft_body(&app, &me, &friend.did).await),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -454,12 +435,12 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&app, &me, &friend.did, &key_id).await),
+        Some(draft_body(&app, &me, &friend.did).await),
     )
     .await;
     let draft_id = created["id"].as_str().unwrap().to_string();
 
-    // The agent token can neither list nor approve nor register a key.
+    // The agent token can neither list nor approve.
     let (status, _) = call(&app, "GET", "/agent-drafts", &agent, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _) = call(
@@ -468,15 +449,6 @@ async fn only_the_computer_creates_and_only_the_person_approves() {
         &format!("/agent-drafts/{draft_id}/send"),
         &agent,
         None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, _) = call(
-        &app,
-        "POST",
-        "/review-keys",
-        &agent,
-        Some(json!({ "public_key": URL_SAFE_NO_PAD.encode([3u8; 32]) })),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -524,27 +496,16 @@ async fn drafts_are_checked_when_they_are_made() {
     let me = seed_user_with_agent(&pool, "0xdraft-owner3", "secretary", 0x55).await;
     let friend = seed_user_with_agent(&pool, "0xdraft-friend3", "friend", 0x56).await;
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
-    let friends_key = register_review_key(&app, &friend.auth).await;
 
     // A tampered body no longer matches the signature.
-    let mut bad = draft_body(&app, &me, &friend.did, &key_id).await;
+    let mut bad = draft_body(&app, &me, &friend.did).await;
     bad["encrypted_content"] = json!(URL_SAFE_NO_PAD.encode(b"something-else"));
     let (status, _) = call(&app, "POST", "/agent-drafts", &agent, Some(bad)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    // Someone else's review key, or none, is refused: nobody could review it.
-    let (status, _) = call(
-        &app,
-        "POST",
-        "/agent-drafts",
-        &agent,
-        Some(draft_body(&app, &me, &friend.did, &friends_key).await),
-    )
-    .await;
-    assert!(status.is_client_error(), "{status}");
-    let mut none = draft_body(&app, &me, &friend.did, &key_id).await;
-    none["review_wraps"] = json!([]);
+    // A draft that no device could read is refused.
+    let mut none = draft_body(&app, &me, &friend.did).await;
+    none["sender_encrypted_keys"] = json!([]);
     let (status, _) = call(&app, "POST", "/agent-drafts", &agent, Some(none)).await;
     assert!(status.is_client_error(), "{status}");
 
@@ -554,7 +515,7 @@ async fn drafts_are_checked_when_they_are_made() {
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&app, &friend, &me.did, &key_id).await),
+        Some(draft_body(&app, &friend, &me.did).await),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -567,13 +528,12 @@ async fn expired_drafts_cannot_be_sent_and_are_cleaned_up() {
     let me = seed_user_with_agent(&pool, "0xdraft-owner4", "secretary", 0x57).await;
     let friend = seed_user_with_agent(&pool, "0xdraft-friend4", "friend", 0x58).await;
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
     let (_, created) = call(
         &app,
         "POST",
         "/agent-drafts",
         &agent,
-        Some(draft_body(&app, &me, &friend.did, &key_id).await),
+        Some(draft_body(&app, &me, &friend.did).await),
     )
     .await;
     let draft_id = created["id"].as_str().unwrap().to_string();
@@ -600,34 +560,4 @@ async fn expired_drafts_cannot_be_sent_and_are_cleaned_up() {
     })
     .await;
     assert_eq!(summary.agent_drafts, 1);
-}
-
-#[tokio::test]
-#[serial]
-async fn review_keys_can_be_removed() {
-    let (app, pool) = setup!();
-    let me = seed_user_with_agent(&pool, "0xdraft-owner5", "secretary", 0x59).await;
-    let friend = seed_user_with_agent(&pool, "0xdraft-friend5", "friend", 0x5a).await;
-    let key_id = register_review_key(&app, &me.auth).await;
-
-    let (status, _) = call(
-        &app,
-        "DELETE",
-        &format!("/review-keys/{key_id}"),
-        &friend.auth,
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = call(
-        &app,
-        "DELETE",
-        &format!("/review-keys/{key_id}"),
-        &me.auth,
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let (_, keys) = call(&app, "GET", "/review-keys", &me.auth, None).await;
-    assert_eq!(keys["review_keys"].as_array().unwrap().len(), 0);
 }

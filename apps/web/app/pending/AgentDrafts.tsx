@@ -10,7 +10,6 @@ import {
   useAgentDraftsQuery,
   useAgentsQuery,
   useDeleteAgentDraftMutation,
-  useReviewKeysQuery,
   useSendAgentDraftMutation,
 } from "../../lib/api/hooks";
 import type { AgentDraft } from "../../lib/api/types";
@@ -30,25 +29,21 @@ import { isSendStop, type SendStop } from "../../lib/crypto/device-wraps";
 export function AgentDrafts() {
   const { t, locale } = useTranslation();
   const draftsQuery = useAgentDraftsQuery();
-  // Older computers wrapped drafts to browsers set up for review.
-  const keysQuery = useReviewKeysQuery();
   const sendDraft = useSendAgentDraftMutation();
   const deleteDraft = useDeleteAgentDraftMutation();
   const agentsQuery = useAgentsQuery();
 
   const drafts = useMemo(() => draftsQuery.data?.drafts ?? [], [draftsQuery.data]);
-  const keys = keysQuery.data?.review_keys;
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
   const [status, setStatus] = useState("");
   // A send stopped by the recipient's device list (docs/40 §12.5), by draft.
   const [sendStop, setSendStop] = useState<{ draftId: string; stop: SendStop } | null>(null);
 
   useEffect(() => {
-    if (keysQuery.isLoading) return;
     let cancelled = false;
     const missing = drafts.filter((d) => !(d.id in opened));
     if (missing.length === 0) return;
-    Promise.all(missing.map(async (d) => [d.id, await openDraftHere(d, keys)] as const)).then(
+    Promise.all(missing.map(async (d) => [d.id, await openDraftHere(d)] as const)).then(
       (pairs) => {
         if (cancelled) return;
         setOpened((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
@@ -57,7 +52,7 @@ export function AgentDrafts() {
     return () => {
       cancelled = true;
     };
-  }, [drafts, keys, keysQuery.isLoading, opened]);
+  }, [drafts, opened]);
 
   const handleSend = async (draft: AgentDraft, acceptRoot?: string) => {
     setStatus("");

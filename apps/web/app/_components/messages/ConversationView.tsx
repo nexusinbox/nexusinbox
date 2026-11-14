@@ -24,7 +24,6 @@ import {
   useAuditLogQuery,
   useContactsQuery,
   useDeleteAgentDraftMutation,
-  useReviewKeysQuery,
   useSendAgentDraftMutation,
   useSendMessageMutation,
   useUpdateMessageStatusMutation,
@@ -758,7 +757,6 @@ function ConversationDrafts({
 }) {
   const { t } = useTranslation();
   const draftsQuery = useAgentDraftsQuery();
-  const keysQuery = useReviewKeysQuery();
   const sendDraft = useSendAgentDraftMutation();
   const deleteDraft = useDeleteAgentDraftMutation();
   const [opened, setOpened] = useState<Record<string, OpenedDraft | null>>({});
@@ -775,14 +773,11 @@ function ConversationDrafts({
       ),
     [draftsQuery.data, ownAid, conversation.ownDids, conversation.counterpartDid],
   );
-  const keys = keysQuery.data?.review_keys;
-
   useEffect(() => {
-    if (keysQuery.isLoading) return;
     const missing = drafts.filter((d) => !(d.id in opened));
     if (missing.length === 0) return;
     let cancelled = false;
-    Promise.all(missing.map(async (d) => [d.id, await openDraftHere(d, keys)] as const)).then(
+    Promise.all(missing.map(async (d) => [d.id, await openDraftHere(d)] as const)).then(
       (pairs) => {
         if (!cancelled) setOpened((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
       },
@@ -790,7 +785,7 @@ function ConversationDrafts({
     return () => {
       cancelled = true;
     };
-  }, [drafts, keys, keysQuery.isLoading, opened]);
+  }, [drafts, opened]);
 
   if (drafts.length === 0) return null;
 

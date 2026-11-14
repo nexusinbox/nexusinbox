@@ -1,16 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { resolveRecipient, getRecipientPrivateKey } = vi.hoisted(() => ({
+const { resolveRecipient, getRecipientPrivateKey, secureDeleteKey } = vi.hoisted(() => ({
   resolveRecipient: vi.fn(),
   getRecipientPrivateKey: vi.fn(),
+  secureDeleteKey: vi.fn(async () => undefined),
 }));
 vi.mock("../api/client", () => ({ defaultApiClient: { resolveRecipient } }));
 vi.mock("./recipient-keyring", () => ({ getRecipientPrivateKey }));
+vi.mock("./keystore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./keystore")>()),
+  isKeystoreAvailable: () => true,
+  secureDeleteKey,
+}));
 
 import type { Agent, AgentDraft } from "../api/types";
 import { encryptEnvelopeText, generateContentKey } from "./envelope";
 import { unwrapContentKeyWithRecipientPrivateKey, wrapContentKeyForRecipient } from "./keywrap";
-import { openDraftHere, senderCopyForDraft } from "./review-key";
+import { forgetOldReviewKey, openDraftHere, senderCopyForDraft } from "./review-key";
 
 async function keyPair(): Promise<{ pair: CryptoKeyPair; pub: string }> {
   const pair = (await crypto.subtle.generateKey({ name: "X25519" }, true, [
@@ -79,7 +85,6 @@ describe("openDraftHere (docs/40 §16.3)", () => {
       ...draft0,
       subject_encrypted: subject.serialized,
       encrypted_content: body.serialized,
-      review_wraps: [],
       sender_encrypted_keys: [
         { did: "did:key:zComputer", key: "x25519v1:not:for:this:browser" },
         { did: "did:key:zBrowser", key: wrapped.wrappedKey },
@@ -88,13 +93,44 @@ describe("openDraftHere (docs/40 §16.3)", () => {
     getRecipientPrivateKey.mockImplementation(async (did: string) =>
       did === "did:key:zBrowser" ? device.pair.privateKey : null,
     );
-    await expect(openDraftHere(draft, [])).resolves.toMatchObject({
+    await expect(openDraftHere(draft)).resolves.toMatchObject({
       subject: "Next week",
       body: "How about Thursday?",
       contentKey,
     });
     // A browser that is not on the agent's list cannot open it.
     getRecipientPrivateKey.mockResolvedValue(null);
-    await expect(openDraftHere(draft, [])).resolves.toBeNull();
+    await expect(openDraftHere(draft)).resolves.toBeNull();
+  });
+});
+
+describe("forgetOldReviewKey (docs/40 §16.3)", () => {
+  function stubStorage(entries: Record<string, string>) {
+    const store = new Map(Object.entries(entries));
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        removeItem: (k: string) => void store.delete(k),
+      },
+    });
+    return store;
+  }
+
+  beforeEach(() => secureDeleteKey.mockClear());
+
+  it("removes the review key an older version kept here", async () => {
+    const store = stubStorage({ "nexusinbox.review-key.pub.v1": "pub", other: "x" });
+    await forgetOldReviewKey();
+    expect(store.has("nexusinbox.review-key.pub.v1")).toBe(false);
+    expect(store.get("other")).toBe("x");
+    expect(secureDeleteKey).toHaveBeenCalledWith("nexusinbox.review-key.v1");
+    vi.unstubAllGlobals();
+  });
+
+  it("does nothing when there is none", async () => {
+    stubStorage({});
+    await forgetOldReviewKey();
+    expect(secureDeleteKey).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

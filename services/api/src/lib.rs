@@ -6743,42 +6743,16 @@ async fn contact_keys_pool(state: &AppState) -> Result<PgPool, (StatusCode, Json
 //
 // A cloud-hosted AI cannot send. The person's computer builds the envelope
 // (encrypted for the recipient, signed by the agent) and wraps the same
-// content key to each browser the person set up for review. The server
-// stores what it cannot read; the person reads the draft in one of those
-// browsers and approves it, which sends it with their session.
+// content key to every device on the agent's list (docs/40 §16.3). The
+// server stores what it cannot read; the person reads the draft on one of
+// those devices and approves it, which sends it with their session.
 // ---------------------------------------------------------------------------
 
-const REVIEW_KEYS_MAX_PER_USER: i64 = 10;
 const AGENT_DRAFTS_MAX_PER_USER: i64 = 50;
 const AGENT_DRAFT_TTL_DAYS: i64 = 7;
 const AGENT_DRAFT_MAX_CONTENT_LEN: usize = 256 * 1024;
 const AGENT_DRAFT_MAX_FIELD_LEN: usize = 4096;
-const REVIEW_LABEL_MAX_LEN: usize = 64;
-
-#[derive(Deserialize)]
-struct CreateReviewKeyRequest {
-    public_key: String,
-    label: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ReviewKeyEntry {
-    id: Uuid,
-    public_key: String,
-    label: String,
-    created_at: String,
-}
-
-#[derive(Serialize)]
-struct ReviewKeysResponse {
-    review_keys: Vec<ReviewKeyEntry>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ReviewWrap {
-    review_key_id: Uuid,
-    wrapped_key: String,
-}
+const DRAFT_LABEL_MAX_LEN: usize = 64;
 
 #[derive(Deserialize)]
 struct CreateAgentDraftRequest {
@@ -6803,11 +6777,6 @@ struct CreateAgentDraftRequest {
     #[serde(default)]
     sender_encrypted_keys: Option<Vec<KeyWrap>>,
     content_type: Option<String>,
-    /// Browsers set up for review (computers before v0.7.0). Since v0.7.0 a
-    /// draft is read by the devices on the agent's list through
-    /// `sender_encrypted_keys` instead (docs/40 §16.3).
-    #[serde(default)]
-    review_wraps: Vec<ReviewWrap>,
     via: Option<String>,
 }
 
@@ -6830,7 +6799,6 @@ struct AgentDraftEntry {
     subject_encrypted: String,
     encrypted_content: String,
     content_type: Option<String>,
-    review_wraps: Vec<ReviewWrap>,
     via: Option<String>,
     /// Signed with signature v2 and its wraps (docs/40 §14.4): approving
     /// sends it as it is, without adding wraps.
@@ -6853,7 +6821,7 @@ fn short_label(raw: Option<&str>) -> Option<String> {
     let printable: String = raw?.chars().filter(|c| !c.is_control()).collect();
     let mut out = String::new();
     for c in printable.trim().chars() {
-        if out.len() + c.len_utf8() > REVIEW_LABEL_MAX_LEN {
+        if out.len() + c.len_utf8() > DRAFT_LABEL_MAX_LEN {
             break;
         }
         out.push(c);
@@ -6868,114 +6836,6 @@ async fn drafts_pool(state: &AppState) -> Result<PgPool, (StatusCode, Json<Error
         .await
         .map_err(|message| internal_server_error(&message))?
         .ok_or_else(database_required_but_unavailable_error)
-}
-
-/// POST /review-keys — set up this browser to read drafts. Session only.
-async fn create_review_key(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    JsonBody(payload): JsonBody<CreateReviewKeyRequest>,
-) -> Result<(StatusCode, Json<ReviewKeyEntry>), (StatusCode, Json<ErrorResponse>)> {
-    let user_id = authenticated_user_id(&state, &headers).await?;
-    let user_uuid = parse_user_uuid(&user_id)?;
-    let public_key = payload.public_key.trim().to_string();
-    if !is_valid_public_key_material(&public_key) {
-        return Err(validation_error(
-            "public_key must be a base64url X25519 public key",
-        ));
-    }
-    let label = short_label(payload.label.as_deref()).unwrap_or_else(|| "browser".into());
-    let pool = drafts_pool(&state).await?;
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_keys WHERE user_id = $1")
-        .bind(user_uuid)
-        .fetch_one(&pool)
-        .await
-        .map_err(|error| internal_error("failed to count review keys", error))?;
-    if count >= REVIEW_KEYS_MAX_PER_USER {
-        return Err(validation_error(
-            "too many browsers are set up for review; remove one first",
-        ));
-    }
-    let row = sqlx::query(
-        r#"
-        INSERT INTO review_keys (user_id, public_key, label)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (user_id, public_key) DO UPDATE SET label = EXCLUDED.label
-        RETURNING id, created_at::text AS created_at
-        "#,
-    )
-    .bind(user_uuid)
-    .bind(&public_key)
-    .bind(&label)
-    .fetch_one(&pool)
-    .await
-    .map_err(|error| internal_error("failed to save review key", error))?;
-    Ok((
-        StatusCode::CREATED,
-        Json(ReviewKeyEntry {
-            id: row.get("id"),
-            public_key,
-            label,
-            created_at: row.get("created_at"),
-        }),
-    ))
-}
-
-/// GET /review-keys — for the person, and for their computer so it can
-/// wrap a draft's content key to every review browser.
-async fn list_review_keys(
-    State(state): State<AppState>,
-    method: Method,
-    uri: Uri,
-    headers: HeaderMap,
-) -> Result<Json<ReviewKeysResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
-    if matches!(ctx, AuthContext::Agent { .. }) {
-        ctx.require_scope("messages.send")?;
-    }
-    let user_uuid = parse_user_uuid(ctx.user_id())?;
-    let pool = drafts_pool(&state).await?;
-    let rows = sqlx::query(
-        "SELECT id, public_key, label, created_at::text AS created_at \
-         FROM review_keys WHERE user_id = $1 ORDER BY created_at ASC",
-    )
-    .bind(user_uuid)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| internal_error("failed to list review keys", error))?;
-    Ok(Json(ReviewKeysResponse {
-        review_keys: rows
-            .into_iter()
-            .map(|row| ReviewKeyEntry {
-                id: row.get("id"),
-                public_key: row.get("public_key"),
-                label: row.get("label"),
-                created_at: row.get("created_at"),
-            })
-            .collect(),
-    }))
-}
-
-/// DELETE /review-keys/:id — stop using a browser for review. Session only.
-async fn delete_review_key(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = authenticated_user_id(&state, &headers).await?;
-    let user_uuid = parse_user_uuid(&user_id)?;
-    let pool = drafts_pool(&state).await?;
-    let deleted = sqlx::query("DELETE FROM review_keys WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(user_uuid)
-        .execute(&pool)
-        .await
-        .map_err(|error| internal_error("failed to delete review key", error))?
-        .rows_affected();
-    if deleted == 0 {
-        return Err(not_found_error("review key not found"));
-    }
-    Ok(StatusCode::NO_CONTENT)
 }
 
 fn bounded_field<'a>(
@@ -7067,43 +6927,12 @@ async fn create_agent_draft(
     };
 
     // Someone must be able to read it: the devices on the agent's list
-    // (docs/40 §16.3), or browsers set up for review (older computers).
-    if payload.review_wraps.is_empty() && sender_encrypted_keys.is_empty() {
+    // (docs/40 §16.3).
+    if sender_encrypted_keys.is_empty() {
         return Err(validation_error(
             "a draft needs sender_encrypted_keys for the agent's devices",
         ));
     }
-    // Every review wrap must be for one of this person's review keys.
-    if payload.review_wraps.len() as i64 > REVIEW_KEYS_MAX_PER_USER {
-        return Err(validation_error("review_wraps may hold at most 10 entries"));
-    }
-    let key_ids: Vec<Uuid> = payload
-        .review_wraps
-        .iter()
-        .map(|w| w.review_key_id)
-        .collect();
-    let distinct: std::collections::HashSet<_> = key_ids.iter().collect();
-    if distinct.len() != key_ids.len()
-        || payload
-            .review_wraps
-            .iter()
-            .any(|w| !is_valid_wrapped_encrypted_key_format(w.wrapped_key.trim()))
-    {
-        return Err(validation_error(
-            "review_wraps must name each review key once with an x25519v1 wrapped key",
-        ));
-    }
-    let known: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM review_keys WHERE user_id = $1 AND id = ANY($2)")
-            .bind(user_uuid)
-            .bind(&key_ids)
-            .fetch_one(&pool)
-            .await
-            .map_err(|error| internal_error("failed to check review keys", error))?;
-    if !key_ids.is_empty() && known != key_ids.len() as i64 {
-        return Err(validation_error("review_wraps names an unknown review key"));
-    }
-
     // The sender must be this credential's agent, and the signature must
     // verify now.
     let signing_agent = agent_owned_by_user_in_db(&pool, user_uuid, sender_did)
@@ -7165,27 +6994,16 @@ async fn create_agent_draft(
         ));
     }
 
-    let wraps = serde_json::to_value(
-        payload
-            .review_wraps
-            .iter()
-            .map(|w| ReviewWrap {
-                review_key_id: w.review_key_id,
-                wrapped_key: w.wrapped_key.trim().to_string(),
-            })
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|error| internal_error("failed to encode review wraps", error))?;
     let row = sqlx::query(
         r#"
         INSERT INTO agent_drafts (
           owner_user_id, aid, sender_did, recipient_did, thread_id, in_reply_to,
           subject_encrypted, encrypted_content, encrypted_key, nonce, signature,
-          content_type, review_wraps, via, expires_at,
+          content_type, via, expires_at,
           signature_v2, sender_encrypted_key, encrypted_keys, sender_encrypted_keys
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                NOW() + ($15::bigint * INTERVAL '1 day'), $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                NOW() + ($14::bigint * INTERVAL '1 day'), $15, $16, $17, $18)
         RETURNING id, expires_at::text AS expires_at
         "#,
     )
@@ -7202,7 +7020,6 @@ async fn create_agent_draft(
     // v1 signatures are no longer taken (docs/40 §15.2).
     .bind(None::<String>)
     .bind(&content_type)
-    .bind(&wraps)
     .bind(short_label(payload.via.as_deref()))
     .bind(AGENT_DRAFT_TTL_DAYS)
     .bind(&signature_v2)
@@ -7241,7 +7058,7 @@ async fn list_agent_drafts(
     let rows = sqlx::query(
         r#"
         SELECT d.id, d.aid, d.sender_did, d.recipient_did, d.thread_id, d.in_reply_to,
-               d.subject_encrypted, d.encrypted_content, d.content_type, d.review_wraps,
+               d.subject_encrypted, d.encrypted_content, d.content_type,
                d.signature_v2 IS NOT NULL AS signed_v2,
                d.sender_encrypted_keys,
                d.via, d.created_at::text AS created_at, d.expires_at::text AS expires_at,
@@ -7288,7 +7105,6 @@ async fn list_agent_drafts(
             subject_encrypted: row.get("subject_encrypted"),
             encrypted_content: row.get("encrypted_content"),
             content_type: row.get("content_type"),
-            review_wraps: serde_json::from_value(row.get("review_wraps")).unwrap_or_default(),
             via: row.get("via"),
             signed_v2: row.get("signed_v2"),
             sender_encrypted_keys: row
@@ -17567,14 +17383,6 @@ fn app_with_state(state: AppState) -> Router {
         .route("/mcp-resources/relay-ticket", post(oauth::relay_ticket))
         .route("/mcp-resources/relay-status", post(oauth::relay_status))
         .route("/mcp-relay/ticket-key", get(oauth::relay_ticket_public_key))
-        .route(
-            "/review-keys",
-            get(list_review_keys).post(create_review_key),
-        )
-        .route(
-            "/review-keys/{id}",
-            axum::routing::delete(delete_review_key),
-        )
         .route(
             "/agent-drafts",
             get(list_agent_drafts).post(create_agent_draft),

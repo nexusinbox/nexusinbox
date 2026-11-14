@@ -266,19 +266,6 @@ fn wrapped_key(marker: u8) -> String {
     )
 }
 
-async fn register_review_key(app: &axum::Router, auth: &str) -> String {
-    let (status, body) = call(
-        app,
-        "POST",
-        "/review-keys",
-        auth,
-        Some(json!({ "public_key": URL_SAFE_NO_PAD.encode([9u8; 32]), "label": "Safari" })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    body["id"].as_str().unwrap().to_string()
-}
-
 macro_rules! setup {
     () => {{
         if !db_tests_enabled() {
@@ -631,7 +618,6 @@ async fn v1_is_refused_with_an_update_notice() {
 
     // A v1 draft from an older computer is refused the same way.
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
     let (status, body) = call(
         &app,
         "POST",
@@ -646,7 +632,6 @@ async fn v1_is_refused_with_an_update_notice() {
             "nonce": m.nonce,
             "signature": signature,
             "content_type": "text/plain",
-            "review_wraps": [{ "review_key_id": key_id, "wrapped_key": wrapped_key(2) }],
         })),
     )
     .await;
@@ -665,7 +650,6 @@ async fn a_v2_draft_is_sent_with_the_wraps_it_was_signed_with() {
     let me = seed_user_with_agent(&pool, "0xv2-draft-me", "secretary", 0x68).await;
     let friend = seed_user_with_agent(&pool, "0xv2-draft-friend", "friend", 0x69).await;
     let agent = seed_agent_token(&pool, &me).await;
-    let key_id = register_review_key(&app, &me.auth).await;
 
     let m = v2_message(&me, &friend.did, 8);
     let sig = sign_v2(&me.signing_key, &me, &friend.did, &me.aid, &friend.aid, &m);
@@ -681,7 +665,6 @@ async fn a_v2_draft_is_sent_with_the_wraps_it_was_signed_with() {
         "encrypted_keys": wraps_json(&m.encrypted_keys),
         "sender_encrypted_keys": wraps_json(&m.sender_encrypted_keys),
         "content_type": "text/plain",
-        "review_wraps": [{ "review_key_id": key_id, "wrapped_key": wrapped_key(2) }],
         "via": "Muse",
     });
 
@@ -715,7 +698,7 @@ async fn a_v2_draft_is_sent_with_the_wraps_it_was_signed_with() {
 #[tokio::test]
 #[serial]
 async fn a_draft_is_read_by_the_agents_listed_devices() {
-    // docs/40 §16.3: no review keys, the devices on the agent's list read it.
+    // docs/40 §16.3: the devices on the agent's list read it.
     let (app, pool) = setup!();
     let me = seed_user_with_agent(&pool, "0xv2-draft-me-2", "secretary", 0x6a).await;
     let friend = seed_user_with_agent(&pool, "0xv2-draft-friend-2", "friend", 0x6b).await;
@@ -764,5 +747,5 @@ async fn a_draft_is_read_by_the_agents_listed_devices() {
         listed["sender_encrypted_keys"],
         wraps_json(&m.sender_encrypted_keys)
     );
-    assert_eq!(listed["review_wraps"], json!([]));
+    assert!(listed.get("review_wraps").is_none(), "{listed}");
 }

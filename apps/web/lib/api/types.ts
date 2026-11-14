@@ -645,19 +645,7 @@ export type PutAutoReplyPolicyRequest = {
   revision?: number;
 };
 
-// docs/33 §9: browsers set up to read drafts that a cloud AI wrote, and
-// the drafts themselves. The server cannot read either.
-export type ReviewKey = {
-  id: string;
-  public_key: string;
-  label: string;
-  created_at: string;
-};
-
-export type ReviewKeysResponse = {
-  review_keys: ReviewKey[];
-};
-
+// docs/33 §9: drafts that a cloud AI wrote. The server cannot read them.
 export type AgentDraft = {
   id: string;
   aid: string;
@@ -670,7 +658,6 @@ export type AgentDraft = {
   subject_encrypted: string;
   encrypted_content: string;
   content_type: string | null;
-  review_wraps: { review_key_id: string; wrapped_key: string }[];
   via: string | null;
   /** Signed with v2 and its wraps by the computer: approving only sends it (docs/40 §14.4). */
   signed_v2?: boolean;

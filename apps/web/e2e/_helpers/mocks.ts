@@ -208,14 +208,6 @@ export async function mockNexusInboxBackend(page: Page): Promise<void> {
     await route.fallback();
   });
 
-  await page.route("**/api/review-keys*", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill(jsonOk({ review_keys: [] }));
-      return;
-    }
-    await route.fallback();
-  });
-
   await page.route("**/api/agent-audit-log*", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill(jsonOk({ events: [], total: 0 }));

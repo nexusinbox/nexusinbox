@@ -37,7 +37,6 @@ export const queryKeys = {
   auditLog: (query?: AuditLogQuery) => ["audit-log", query] as const,
   autoReplyPolicy: (agentId: string | null) =>
     ["auto-reply-policy", agentId] as const,
-  reviewKeys: () => ["review-keys"] as const,
   oauthGrants: () => ["oauth-grants"] as const,
   agentDrafts: () => ["agent-drafts"] as const,
 };
@@ -515,14 +514,6 @@ export function useAgentDraftsQuery() {
   });
 }
 
-export function useReviewKeysQuery() {
-  return useQuery({
-    queryKey: queryKeys.reviewKeys(),
-    queryFn: () => defaultApiClient.listReviewKeys(),
-    staleTime: 30_000,
-    retry: 1,
-  });
-}
 
 export function useSendAgentDraftMutation() {
   const queryClient = useQueryClient();
