@@ -23,7 +23,7 @@ import { findFirstFreeCandidate } from "../../lib/calendar/gcalFreebusy";
 import { checkReceived } from "../../lib/agents/sender-check";
 import { answeredReplies } from "../../lib/protocol/answered";
 
-export function BrowserAutoReply({ agent }: { agent: Agent }) {
+export function BrowserAutoReply({ agent, deviceDid }: { agent: Agent; deviceDid: string }) {
   const currentAgent = agent;
   const messagesQuery = useMessagesQuery({
     agentDid: agent.did,
@@ -76,12 +76,13 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
     executorRunningRef.current = true;
     (async () => {
       try {
-        const signingKey = await getSigningPrivateKey(agent.did);
+        // This browser's device of the agent (docs/40 §17.4).
+        const signingKey = await getSigningPrivateKey(deviceDid);
         if (cancelled) return;
         const gcalEntry = await getCalendarToken();
         const gcalToken = gcalEntry?.access_token ?? null;
         await runAutoReplyExecutor({
-          viewerAgentDid: agent.did,
+          viewerAgentDid: deviceDid,
           viewerHasSigningKey: !!signingKey,
           messages,
           policy: (policyQuery.data?.policy as Record<string, unknown>) ?? null,
@@ -109,7 +110,8 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
               viewerAgentDid: input.viewerAgentDid,
               proposerDid: input.proposerDid,
               autoReplyOrigin: input.autoReplyOrigin,
-              senderEncryptionKey: agent.encryption_key,
+              senderEncryptionKey:
+                agent.devices?.find((d) => d.did === deviceDid)?.encryption_public_key ?? agent.encryption_key,
               sendMessage: (payload) =>
                 defaultApiClient.seedMessage({
                   senderDid: payload.senderDid,
@@ -152,6 +154,7 @@ export function BrowserAutoReply({ agent }: { agent: Agent }) {
     };
   }, [
     currentAgent,
+    deviceDid,
     knownContactDids,
     messagesQuery.data,
     policyQuery.data,

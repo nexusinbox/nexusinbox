@@ -203,20 +203,28 @@ export function MessageUnavailableCard({
   state,
   messageId,
   recipientDid,
+  beforeAdded = false,
 }: {
   state: MessageVisibilityState;
   messageId: string;
   recipientDid: string;
+  /** This browser was added to the agent later (docs/40 §17.4): no key for what came before. */
+  beforeAdded?: boolean;
 }) {
   const { t } = useTranslation();
 
-  const isDaemon = state === "unavailable_on_this_device";
-  const title = isDaemon
-    ? t("inbox.unavailableOnThisDeviceCardTitle")
-    : t("inbox.decryptFailedCardTitle");
-  const body = isDaemon
-    ? t("inbox.unavailableOnThisDeviceCardBody")
-    : t("inbox.decryptFailedCardBody");
+  const added = beforeAdded && state === "unavailable_on_this_device";
+  const isDaemon = state === "unavailable_on_this_device" && !added;
+  const title = added
+    ? t("inbox.beforeAddedTitle")
+    : isDaemon
+      ? t("inbox.unavailableOnThisDeviceCardTitle")
+      : t("inbox.decryptFailedCardTitle");
+  const body = added
+    ? t("inbox.beforeAddedBody")
+    : isDaemon
+      ? t("inbox.unavailableOnThisDeviceCardBody")
+      : t("inbox.decryptFailedCardBody");
 
   return (
     <div

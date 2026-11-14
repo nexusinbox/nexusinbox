@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   checkDeviceList,
-  holdsRootKey,
+  listSignerHere,
   mismatchedDevices,
   onlyRootDevice,
   storeDeviceList,
@@ -78,7 +78,7 @@ export function DeviceListNotice({ agents }: { agents: Agent[] }) {
           next.push({ kind: "wrong", agent, changed });
           continue;
         }
-        if (status.kind !== "none" || !(await holdsRootKey(agent))) continue;
+        if (status.kind !== "none" || (await listSignerHere(agent)) === null) continue;
         if (onlyRootDevice(agent)) {
           // Nothing to ask: this browser approves itself.
           if (!quietTried.current.has(agent.aid)) {

@@ -106,4 +106,27 @@ describe("device list approval (docs/40 stage 1)", () => {
     // Devices the server no longer lists are dropped.
     expect(nextDeviceList(agent, new Set(["did:key:zGone"]))).toBeNull();
   });
+
+  it("names every browser a signer once there is a second one (docs/40 §17.4)", async () => {
+    const { agent } = await agentWithList([browser("ROOT")], [browser("ROOT"), computer("did:key:zPC1")], 2);
+    const phone: AgentDevice = {
+      did: "did:key:zPhone",
+      encryption_public_key: "PHONE_ENC",
+      kind: "browser",
+      label: "Safari (iPhone)",
+      activated_at: "2026-11-14T00:00:00Z",
+    };
+    const at = new Date("2026-11-14T00:00:00Z");
+    // Added: not yet on the server's list, passed as extra.
+    const added = nextDeviceList(agent, new Set([agent.did, "did:key:zPC1", phone.did]), at, [phone]);
+    expect(added).toMatchObject({ v: 2, version: 3, signers: [agent.did, phone.did] });
+    expect(added?.devices.map((d) => d.did)).toEqual([agent.did, "did:key:zPC1", phone.did]);
+    // The root browser removed: the phone alone signs.
+    const withPhone = { ...agent, devices: [...(agent.devices ?? []), phone] };
+    const removed = nextDeviceList(withPhone, new Set(["did:key:zPC1", phone.did]), at);
+    expect(removed).toMatchObject({ v: 2, signers: [phone.did] });
+    // Back to the root alone: v1, which older computers read.
+    expect(nextDeviceList(withPhone, new Set([agent.did]), at)).toMatchObject({ v: 1 });
+    expect(nextDeviceList(withPhone, new Set([agent.did]), at)).not.toHaveProperty("signers");
+  });
 });

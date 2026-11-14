@@ -60,7 +60,10 @@ export default function LoginPage() {
     // onSuccess / handleVerify postMessages (IDKit sends both).
     if (finalizingRef.current) return;
     finalizingRef.current = true;
-    window.location.assign(nextPath);
+    // A pairing link (docs/40 §17.4) keeps its part after `#` through the
+    // sign-in redirect; carry it on to /pair, which reads it.
+    const hash = nextPath === "/pair" ? window.location.hash : "";
+    window.location.assign(nextPath + hash);
   }, [nextPath]);
 
   const closeIframe = useCallback(() => {

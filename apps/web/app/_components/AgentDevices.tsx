@@ -7,8 +7,9 @@
 //
 // Approving (docs/40 stage 1): the browser the agent was created in signs
 // the list of devices it approves. Devices it has not approved, or whose
-// key differs from the approved one, are marked; only that browser can
-// approve.
+// key differs from the approved one, are marked; only a browser that can
+// sign approves. Since §17 other browsers of the person can be added; every
+// browser may sign, and any of them removes another (World ID again).
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -17,50 +18,70 @@ import {
   approvalOf,
   approvedWith,
   checkDeviceList,
-  holdsRootKey,
+  listSignerDids,
+  listSignerHere,
   storeDeviceList,
   type Approval,
   type ListStatus,
 } from "../../lib/agents/device-list";
 import { deviceState, saveSeenDevices, type DeviceState } from "../../lib/agents/devices";
 import { pairingMismatch } from "../../lib/agents/pairing";
-import { defaultApiClient } from "../../lib/api/client";
+import { localDeviceDid } from "../../lib/agents/local-device";
+import { ApiError, defaultApiClient } from "../../lib/api/client";
 import { queryKeys, useRevokeAgentCredentialMutation } from "../../lib/api/hooks";
 import type { Agent, AgentDevice } from "../../lib/api/types";
 import { hasRecipientPrivateKey } from "../../lib/crypto/recipient-keyring";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
+import { AddBrowserPanel } from "./AddBrowserPanel";
 import { STRONG } from "./AgentSetup";
 
 export function deviceName(t: (key: string, vars?: Record<string, string | number>) => string, d: AgentDevice): string {
-  if (d.kind === "browser") return t("agentStatus.deviceBrowser");
+  if (d.kind === "browser") return d.label ?? t("agentStatus.deviceBrowser");
   if (d.kind === "computer") {
     return d.label ? t("agentStatus.deviceComputer", { name: d.label }) : t("agentStatus.deviceComputerUnnamed");
   }
   return t("agentStatus.deviceOther");
 }
 
-/** The list's status and whether this browser can approve (holds the root key). */
-export function useDeviceList(agent: Agent): { status: ListStatus | null; rootHere: boolean } {
+/**
+ * The list's status, whether this browser can approve (it may sign the
+ * list), which browsers may, and this browser's device of the agent.
+ */
+export function useDeviceList(agent: Agent): {
+  status: ListStatus | null;
+  rootHere: boolean;
+  signers: string[];
+  local: string | null;
+} {
   const [status, setStatus] = useState<ListStatus | null>(null);
   const [rootHere, setRootHere] = useState(false);
+  const [signers, setSigners] = useState<string[]>([]);
+  const [local, setLocal] = useState<string | null>(null);
   const key = `${agent.aid}|${agent.device_list?.jws ?? ""}|${(agent.devices ?? [])
     .map((d) => `${d.did}:${d.encryption_public_key ?? ""}`)
     .join(",")}`;
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [next, root] = await Promise.all([checkDeviceList(agent), holdsRootKey(agent)]);
+      const [next, signer, all, here] = await Promise.all([
+        checkDeviceList(agent),
+        listSignerHere(agent),
+        listSignerDids(agent),
+        localDeviceDid(agent),
+      ]);
       if (!cancelled) {
         setStatus(next);
-        setRootHere(root);
+        setRootHere(signer !== null);
+        setSigners(all);
+        setLocal(here);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [key]);
-  return { status, rootHere };
+  return { status, rootHere, signers, local };
 }
 
 /**
@@ -85,10 +106,19 @@ export function AgentDevices({
   const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
   const revoke = useRevokeAgentCredentialMutation();
-  const [failed, setFailed] = useState<"remove" | "approve" | null>(null);
+  const [failed, setFailed] = useState<"remove" | "approve" | "reauth" | null>(null);
   const [busy, setBusy] = useState(false);
   const devices = agent.devices ?? [];
-  const { status, rootHere } = useDeviceList(agent);
+  const { status, rootHere, signers, local } = useDeviceList(agent);
+  const browsers = devices.filter((d) => d.kind === "browser");
+  // A World ID sign-in just made for adding a browser (docs/40 §17.5).
+  const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("addBrowser") === "1") setAdding(true);
+  }, []);
+  // Which browser runs the automatic replies (docs/40 §17.6).
+  const autoReplyDid = agent.auto_reply_device ?? agent.did;
+  const autoReplyBrowser = browsers.find((d) => d.did === autoReplyDid);
 
   // Which listed keys this browser holds ("この端末").
   const [heldHere, setHeldHere] = useState<Set<string>>(new Set());
@@ -139,6 +169,36 @@ export function AgentDevices({
       setFailed("approve");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Another browser: sign the list without it (docs/40 §17.5). The server
+  // stops its key at once; it asks for World ID again first.
+  const removeBrowser = async (d: AgentDevice) => {
+    if (!status || status.kind !== "ok") return;
+    if (!window.confirm(t("deviceList.removeBrowserConfirm", { name: deviceName(t, d) }))) return;
+    setFailed(null);
+    setBusy(true);
+    try {
+      const keep = approvedWith(agent, status, []);
+      keep.delete(d.did);
+      await storeDeviceList(agent, keep);
+      await refreshed();
+    } catch (error) {
+      setFailed(error instanceof ApiError && error.status === 403 ? "reauth" : "remove");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runAutoRepliesHere = async () => {
+    if (!local) return;
+    setFailed(null);
+    try {
+      await defaultApiClient.setAutoReplyDevice(agent.id, local === agent.did ? null : local);
+      await refreshed();
+    } catch {
+      setFailed("remove");
     }
   };
 
@@ -242,6 +302,9 @@ export function AgentDevices({
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={STRONG}>{deviceName(t, d)}</span>
               {badge(state)}
+              {d.kind === "browser" && signers.includes(d.did) ? (
+                <Pill color="var(--ok)" background="var(--ok-soft)" text={t("deviceList.signer")} />
+              ) : null}
               {pairingMismatch(d) ? (
                 <Pill color="var(--danger)" background="var(--danger-soft)" text={t("pairing.mismatchBadge")} />
               ) : approval ? (
@@ -252,9 +315,11 @@ export function AgentDevices({
               ) : null}
               <p className="item-sub" style={{ margin: "2px 0 0" }}>
                 {[
-                  d.kind === "browser"
+                  d.kind === "browser" && d.did === agent.did
                     ? t("agentStatus.deviceCreated", { date: date(d.activated_at) })
-                    : t("agentStatus.deviceJoined", { date: date(d.activated_at) }),
+                    : d.kind === "browser"
+                      ? t("deviceList.browserAdded", { date: date(d.activated_at) })
+                      : t("agentStatus.deviceJoined", { date: date(d.activated_at) }),
                   seen ? t("agentStatus.deviceSeen", { ago: seen }) : null,
                   approval === "pending" && !rootHere ? t("deviceList.pendingOther") : null,
                 ]
@@ -299,6 +364,18 @@ export function AgentDevices({
                 {t("deviceList.approve")}
               </button>
             ) : null}
+            {d.kind === "browser" && d.did !== local && rootHere && browsers.length > 1 ? (
+              <button
+                type="button"
+                className="btn"
+                style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                onClick={() => void removeBrowser(d)}
+                disabled={busy}
+                data-testid="agent-device-remove-browser"
+              >
+                {t("agentStatus.deviceRemove")}
+              </button>
+            ) : null}
             {d.credential_id && !connectedTheOldWay(d) ? (
               <button
                 type="button"
@@ -317,9 +394,55 @@ export function AgentDevices({
         {t("agentStatus.devicesNote")}
         {allApproved ? ` ${t("deviceList.approved")}` : ""}
       </p>
+      {rootHere && listed ? (
+        <div style={{ marginTop: 10 }}>
+          {adding ? (
+            <AddBrowserPanel onClose={() => setAdding(false)} onDone={() => void refreshed()} />
+          ) : (
+            <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="add-browser">
+              {t("addBrowser.button")}
+            </button>
+          )}
+          {signers.length === 1 && !adding ? (
+            <p
+              className="item-sub"
+              data-testid="single-signer-hint"
+              style={{ margin: "8px 0 0", padding: "8px 10px", borderRadius: 10, background: "var(--surface-2, #f1f3f6)" }}
+            >
+              {t("addBrowser.singleSignerHint")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {browsers.length > 1 ? (
+        <div data-testid="auto-reply-browser" style={{ marginTop: 10 }}>
+          <p style={{ margin: 0, fontWeight: 700 }}>{t("addBrowser.autoReplyTitle")}</p>
+          <p className="item-sub" style={{ margin: "2px 0 0" }}>
+            {t("addBrowser.autoReplyRunsOn", {
+              name: autoReplyBrowser ? deviceName(t, autoReplyBrowser) : t("agentStatus.deviceBrowser"),
+            })}
+          </p>
+          {local && local !== autoReplyDid ? (
+            <button type="button" className="btn" style={{ marginTop: 6 }} onClick={() => void runAutoRepliesHere()}>
+              {t("addBrowser.autoReplyHere")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {failed ? (
         <p className="item-sub" style={{ margin: "4px 0 0", color: "var(--danger)" }} role="status">
-          {failed === "remove" ? t("agentStatus.deviceRemoveFailed") : t("deviceList.failed")}
+          {failed === "reauth" ? (
+            <>
+              {t("addBrowser.reauth")}{" "}
+              <a href={`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}>
+                {t("addBrowser.reauthLink")}
+              </a>
+            </>
+          ) : failed === "remove" ? (
+            t("agentStatus.deviceRemoveFailed")
+          ) : (
+            t("deviceList.failed")
+          )}
         </p>
       ) : null}
     </div>

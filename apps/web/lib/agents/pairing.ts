@@ -20,7 +20,7 @@ import {
 import { defaultApiClient } from "../api/client";
 import type { Agent, AgentDevice } from "../api/types";
 import { secureDeleteKey, secureLoadKey, secureStoreKey } from "../crypto/keystore";
-import { approvalOf, approvedWith, checkDeviceList, holdsRootKey, storeDeviceList } from "./device-list";
+import { approvalOf, approvedWith, checkDeviceList, listSignerHere, storeDeviceList } from "./device-list";
 
 type PairingNote = {
   aid: string;
@@ -173,7 +173,7 @@ export async function finishPairing(agent: Agent, device: AgentDevice): Promise<
 export async function settlePairing(agent: Agent): Promise<PairingCheck & { changed: boolean }> {
   const check = await checkPairedDevices(agent);
   let changed = false;
-  if (check.matched.length === 0 || !(await holdsRootKey(agent))) return { ...check, changed };
+  if (check.matched.length === 0 || (await listSignerHere(agent)) === null) return { ...check, changed };
   const status = await checkDeviceList(agent);
   if (status.kind === "broken") return { ...check, changed };
   const missing = check.matched.filter((d) => status.kind !== "ok" || approvalOf(d, status) !== "approved");

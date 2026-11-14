@@ -103,6 +103,32 @@ function base58Decode(value: string): Uint8Array | null {
   return out;
 }
 
+/** The did:key of a raw Ed25519 public key (32 bytes). */
+export function didKeyFromEd25519(raw: Uint8Array): string {
+  const bytes = new Uint8Array(2 + raw.length);
+  bytes[0] = 0xed;
+  bytes[1] = 0x01;
+  bytes.set(raw, 2);
+  // Big-endian base 256 to base 58, then one "1" per leading zero byte.
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let i = 0; i < digits.length; i += 1) {
+      carry += digits[i] << 8;
+      digits[i] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  let out = "";
+  for (let i = 0; i < bytes.length && bytes[i] === 0; i += 1) out += "1";
+  for (let i = digits.length - 1; i >= 0; i -= 1) out += BASE58[digits[i]];
+  return `did:key:z${out}`;
+}
+
 /** The Ed25519 public key inside a did:key, or null if it is not one. */
 export function ed25519KeyFromDidKey(did: string): Uint8Array | null {
   if (!did.startsWith("did:key:z")) return null;

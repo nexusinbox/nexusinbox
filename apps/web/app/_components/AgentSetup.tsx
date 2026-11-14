@@ -7,7 +7,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { presetSettings, type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
-import { holdsRootKey } from "../../lib/agents/device-list";
+import { listSignerHere } from "../../lib/agents/device-list";
 import { pairingCodeWithSecret } from "../../lib/agents/pairing";
 import {
   daemonConnectCommand,
@@ -181,7 +181,7 @@ export function ConnectComputer({
       // In the browser that holds the agent's root key, add a secret only
       // it and the computer know, so it can check the computer's keys
       // before approving it (docs/40 §13.5).
-      const long = (await holdsRootKey(agent))
+      const long = (await listSignerHere(agent)) !== null
         ? await pairingCodeWithSecret(created.credential_id, agent.aid, created.pairing_code)
         : null;
       setPairing({

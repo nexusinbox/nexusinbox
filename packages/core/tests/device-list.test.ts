@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEd25519KeyPair, deriveDidKeyFromPublicKey } from "../src/index";
 import {
   deviceListVersion,
+  didKeyFromEd25519,
   ed25519KeyFromDidKey,
   listSigners,
   readDeviceList,
@@ -37,6 +38,8 @@ describe("device lists (docs/40 §4.2)", () => {
     const { pair, did } = await root();
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
     expect(ed25519KeyFromDidKey(did)).toEqual(raw);
+    // And makes the same did:key from the raw key, without the Node-only index.
+    expect(didKeyFromEd25519(raw)).toBe(did);
     expect(ed25519KeyFromDidKey("did:key:zNotBase58!")).toBeNull();
     expect(ed25519KeyFromDidKey("did:web:example.com")).toBeNull();
   });

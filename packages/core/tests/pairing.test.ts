@@ -5,12 +5,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  browserPairDeviceMac,
+  browserPairFragment,
+  browserPairRootMac,
   generatePairingSecret,
   importPairingKey,
   longPairingCode,
   macEqual,
   pairingDeviceMac,
   pairingRootMac,
+  parseBrowserPairFragment,
   splitPairingCode,
 } from "../src/pairing";
 
@@ -48,5 +52,31 @@ describe("pairing (docs/40 §13.5)", () => {
     expect(macEqual("abc", "abc")).toBe(true);
     expect(macEqual("abc", "abd")).toBe(false);
     expect(macEqual("abc", "ab")).toBe(false);
+  });
+});
+
+describe("a second browser (docs/40 §17.4)", () => {
+  it("puts the code and the secret after # and reads them back", () => {
+    const fragment = browserPairFragment("k7q2m-9xh4t", "8f3jv6wn2rcpzd4e");
+    expect(fragment).toBe("K7Q2M9XH4T.8F3JV6WN2RCPZD4E");
+    expect(parseBrowserPairFragment(`#${fragment}`)).toEqual({ code: "K7Q2M-9XH4T", secret: "8F3JV6WN2RCPZD4E" });
+    // The 26-character code typed by hand reads the same.
+    expect(parseBrowserPairFragment("K7Q2M-9XH4T-8F3J-V6WN-2RCP-ZD4E")).toEqual({
+      code: "K7Q2M-9XH4T",
+      secret: "8F3JV6WN2RCPZD4E",
+    });
+    // Without the secret there is nothing to check the keys with.
+    expect(parseBrowserPairFragment("K7Q2M9XH4T")).toBeNull();
+  });
+
+  it("MACs bind the pairing, the agent and the key, apart from the computer's", async () => {
+    const secret = "8F3JV6WN2RCPZD4E";
+    const mac = await browserPairDeviceMac(secret, "p1", "aid:ai:a", "did:key:z1", "ENC");
+    expect(await browserPairDeviceMac(secret, "p1", "aid:ai:a", "did:key:z1", "ENC")).toBe(mac);
+    expect(await browserPairDeviceMac(secret, "p1", "aid:ai:b", "did:key:z1", "ENC")).not.toBe(mac);
+    expect(await browserPairDeviceMac(secret, "p2", "aid:ai:a", "did:key:z1", "ENC")).not.toBe(mac);
+    expect(await pairingDeviceMac(secret, "p1", "did:key:z1", "ENC")).not.toBe(mac);
+    const root = await browserPairRootMac(secret, "p1", "aid:ai:a", "did:key:zRoot");
+    expect(await pairingRootMac(secret, "p1", "aid:ai:a", "did:key:zRoot")).not.toBe(root);
   });
 });

@@ -117,3 +117,49 @@ export function macEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+// ---------------------------------------------------------------------------
+// A second browser (docs/40 §17.4). The browser that can sign shows a link
+// `/pair#<code>.<secret>`: the code goes to the server, the secret after
+// `#` never does. The new browser MACs each key it makes for an agent; the
+// browser that signs MACs each agent's root back.
+//
+//   device: HMAC-SHA256(secret, "nexusinbox-pair-browser-device-v1\n" + pairing_id + "\n" + aid + "\n" + did + "\n" + enc)
+//   root:   HMAC-SHA256(secret, "nexusinbox-pair-browser-root-v1\n" + pairing_id + "\n" + aid + "\n" + root)
+
+/** The new browser's MAC over the key it made for one agent. */
+export function browserPairDeviceMac(
+  secret: string | CryptoKey,
+  pairingId: string,
+  aid: string,
+  did: string,
+  enc: string,
+): Promise<string> {
+  return hmac(secret, `nexusinbox-pair-browser-device-v1\n${pairingId}\n${aid}\n${did}\n${enc}`);
+}
+
+/** The signing browser's MAC over one agent's root. */
+export function browserPairRootMac(
+  secret: string | CryptoKey,
+  pairingId: string,
+  aid: string,
+  root: string,
+): Promise<string> {
+  return hmac(secret, `nexusinbox-pair-browser-root-v1\n${pairingId}\n${aid}\n${root}`);
+}
+
+/** The part of the link after `#`: `<code>.<secret>`. */
+export function browserPairFragment(code: string, secret: string): string {
+  const c = normalize(code);
+  const s = normalize(secret);
+  if (!c || c.length !== PAIRING_CODE_LEN || !s || s.length !== PAIRING_SECRET_LEN) {
+    throw new Error("not a pairing code and secret");
+  }
+  return `${c}.${s}`;
+}
+
+/** Read `<code>.<secret>` (or the 26-character typed code) back. */
+export function parseBrowserPairFragment(raw: string): { code: string; secret: string } | null {
+  const split = splitPairingCode(raw.replace(/^#/, "").replace(".", ""));
+  return split && split.secret ? { code: split.code, secret: split.secret } : null;
+}

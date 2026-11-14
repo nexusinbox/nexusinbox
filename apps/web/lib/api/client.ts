@@ -7,6 +7,8 @@ import {
   UpdateProfileRequest,
   AgentsResponse,
   BlocksResponse,
+  BrowserPairing,
+  BrowserPairingKey,
   AddContactKeysRequest,
   ContactKeysResponse,
   AgentDraftsResponse,
@@ -271,6 +273,47 @@ export class NexusInboxApiClient {
       "/agents/" + encodeURIComponent(agentId) + "/device-list",
       { method: "PUT", body: JSON.stringify({ jws }) },
     );
+  }
+
+  /** Which browser runs the agent's automatic replies (docs/40 §17.6); null: the first one. */
+  async setAutoReplyDevice(agentId: string, did: string | null): Promise<void> {
+    await this.requestNoContent("/agents/" + encodeURIComponent(agentId) + "/auto-reply-device", {
+      method: "PUT",
+      body: JSON.stringify({ did }),
+    });
+  }
+
+  // A second browser (docs/40 §17.4).
+  async createBrowserPairing(aids: string[]): Promise<{ id: string; code: string; expires_at: string }> {
+    return this.request("/browser-pairings", { method: "POST", body: JSON.stringify({ aids }) });
+  }
+
+  async resolveBrowserPairing(code: string): Promise<BrowserPairing> {
+    return this.request<BrowserPairing>("/browser-pairings/resolve", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async getBrowserPairing(id: string): Promise<BrowserPairing> {
+    return this.request<BrowserPairing>("/browser-pairings/" + encodeURIComponent(id));
+  }
+
+  async claimBrowserPairing(
+    id: string,
+    payload: { label: string; devices: Array<BrowserPairingKey & { proof: string }> },
+  ): Promise<BrowserPairing> {
+    return this.request<BrowserPairing>("/browser-pairings/" + encodeURIComponent(id) + "/claim", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async putBrowserPairingRoot(id: string, agents: Array<{ aid: string; mac: string }>): Promise<void> {
+    await this.requestNoContent("/browser-pairings/" + encodeURIComponent(id) + "/root", {
+      method: "PUT",
+      body: JSON.stringify({ agents }),
+    });
   }
 
   async emergencyShutdown(agentId: string): Promise<EmergencyShutdownResponse> {
@@ -749,6 +792,14 @@ export class NexusInboxApiClient {
 
   async addContactKeys(payload: AddContactKeysRequest): Promise<void> {
     await this.requestNoContent("/contact-keys", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** The contacts key wrapped to a browser added with a pairing (docs/40 §17.4). */
+  async addDeviceContactKey(payload: { did: string; wrapped_key: string }): Promise<void> {
+    await this.requestNoContent("/contact-keys/devices", {
       method: "POST",
       body: JSON.stringify(payload),
     });

@@ -85,7 +85,8 @@
   "inboxAgents": {
     "autoReplyLead": "Automatic replies: ",
     "onComputer": "{names} reply while NexusInbox runs on your computer. ",
-    "inBrowser": "{names} reply only while this page is open in this browser."
+    "inBrowser": "{names} reply only while this page is open in this browser.",
+    "inOtherBrowser": "{names} reply while the inbox is open in another browser of yours."
   },
   "messages": {
     "partyName": "{person}'s {agent}",
@@ -205,7 +206,10 @@
     "saveThreadTooltip": "Saves what this browser decrypted as a text file. Messages on the server are deleted 90 days after they are sent.",
     "exportNotDecrypted": "(Not included: this device cannot decrypt it.)",
     "archiveTitle": "Archive",
-    "archiveEmpty": "No archived messages."
+    "archiveEmpty": "No archived messages.",
+    "beforeAddedPreview": "Not readable here (it arrived before this browser was added)",
+    "beforeAddedTitle": "This browser cannot read this message",
+    "beforeAddedBody": "It arrived before this browser was added, so it was not encrypted for this browser. The browsers you had before can read it."
   },
   "connectedAIs": {
     "title": "Connected AIs",
@@ -1654,9 +1658,9 @@
     "approveTitle": "Approve this list",
     "approveBody": "Messages will reach only the devices you approve. If you do not know a device, remove it before approving.",
     "approveAll": "Approve these {n} devices",
-    "otherBrowser": "Approve this list in the browser the agent was created in.",
+    "otherBrowser": "Approve this list in the browser the agent was created in, or another browser that can sign.",
     "pending": "Not approved yet",
-    "pendingOther": "Approve it in the browser the agent was created in",
+    "pendingOther": "Approve it in a browser that can sign",
     "approve": "Approve",
     "mismatch": "Key differs from the one you approved",
     "approved": "You approved this list.",
@@ -1668,7 +1672,10 @@
     "noticeLater": "Later",
     "wrongTitle": "The device list of \"{agent}\" is not the one you approved",
     "wrongMismatch": "The key of {device} has changed since you approved it. The server, or someone else, may be trying to swap it.",
-    "wrongBroken": "The list's signature does not check out, or it is older than one seen before. The server, or someone else, may be trying to swap in a device."
+    "wrongBroken": "The list's signature does not check out, or it is older than one seen before. The server, or someone else, may be trying to swap in a device.",
+    "signer": "Can sign",
+    "browserAdded": "Browser added {date}",
+    "removeBrowserConfirm": "Remove \"{name}\"? It will no longer read messages or change the devices that can. The agent's address and confirmation number stay the same, and contacts will not see \"key changed\". You confirm with World ID again first."
   },
   "deviceNotice": {
     "title": "A new device can read \"{agent}\"",
@@ -1694,5 +1701,52 @@
     "oldWayBadge": "Connected the old way",
     "oldWayBody": "This computer was connected before connect codes checked its keys (a short code). If its key was swapped then, you could not tell. Remove it and connect it again with a new code: on the computer, run brew upgrade nexusinbox, then nexusinbox connect again.",
     "oldWayReconnect": "Remove and reconnect"
+  },
+  "addBrowser": {
+    "button": "Add another browser",
+    "singleSignerHint": "If this browser's data is cleared, the devices that can read can no longer be changed. Add a browser on your phone or elsewhere to carry on there.",
+    "reauthTitle": "Confirm with World ID",
+    "reauthBody": "This changes which devices can sign the list, so confirm with World ID again (valid for 10 minutes).",
+    "reauthButton": "Confirm with World ID",
+    "starting": "Getting ready…",
+    "scanTitle": "Scan this in the browser to add",
+    "scanBody": "Scan it with your phone's camera, or open the link in the browser to add. Sign in with the same World ID there.",
+    "copyLink": "Copy link",
+    "typeCode": "If the link cannot be opened, type this in \"Enter a code\" there:",
+    "waiting": "{m}:{s} left · waiting…",
+    "agents": "It is added to every agent this browser can sign for: {names}",
+    "done": "Added \"{name}\". It can read messages that arrive from now on.",
+    "mismatch": "The keys the server shows are not the ones the browser you are adding made. It was not added. The server or someone else may be trying to swap keys.",
+    "reauth": "More than 10 minutes have passed since you confirmed with World ID. Confirm again.",
+    "reauthLink": "Confirm with World ID",
+    "expired": "The link has expired. Start again from \"Add another browser\".",
+    "failed": "That did not work. Please try again.",
+    "retry": "Try again",
+    "cancel": "Cancel",
+    "close": "Close",
+    "autoReplyTitle": "Automatic replies",
+    "autoReplyRunsOn": "Automatic replies run while the inbox is open in \"{name}\".",
+    "autoReplyHere": "Run automatic replies in this browser"
+  },
+  "pair": {
+    "title": "Add this browser?",
+    "body": "This browser will read the messages and drafts of these agents too, and can change the devices that read them.",
+    "add": "Add",
+    "cancel": "Cancel",
+    "enterCode": "Enter a code",
+    "codePlaceholder": "XXXXX-XXXXX-XXXX-XXXX-XXXX-XXXX",
+    "findCode": "Next",
+    "adding": "Adding…",
+    "stepKeys": "Made this browser's keys",
+    "stepWaiting": "Waiting for the browser that can sign to check them (keep NexusInbox open there)",
+    "stepSigned": "Added to the device list",
+    "done": "This browser is ready",
+    "doneBody": "It can read messages that arrive from now on. Earlier messages cannot be read here (this browser had no key when they arrived).",
+    "toInbox": "Go to the inbox",
+    "notFound": "The link was not found or has expired. Start again from \"Add another browser\" in the other browser, and check you are signed in with the same World ID.",
+    "mismatch": "The key the signing browser sent is not the one the server shows. This browser was not set up. The server or someone else may be trying to swap keys.",
+    "expired": "It was not checked within 10 minutes. Start again from \"Add another browser\" in the other browser.",
+    "failed": "That did not work. Please try again.",
+    "noKeystore": "This browser cannot keep keys (private browsing?). Try another browser."
   }
 }

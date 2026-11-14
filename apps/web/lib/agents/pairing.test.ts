@@ -16,7 +16,7 @@ vi.mock("../crypto/keystore", () => ({
 vi.mock("../api/client", () => ({ defaultApiClient: { putPairingRoot } }));
 vi.mock("./device-list", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./device-list")>()),
-  holdsRootKey: async () => true,
+  listSignerHere: async () => "did:key:zRoot",
   checkDeviceList: async () => ({ kind: "none" }),
   storeDeviceList,
 }));

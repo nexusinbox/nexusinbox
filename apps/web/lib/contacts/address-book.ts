@@ -35,6 +35,7 @@ import { rememberContactRoots } from "../agents/peer-pins";
 
 export type AddressBookApi = {
   listContacts(): Promise<ContactRecordsResponse>;
+  addDeviceContactKey?(payload: { did: string; wrapped_key: string }): Promise<void>;
   listContactKeys(): Promise<ContactKeysResponse>;
   addContactKeys(payload: AddContactKeysRequest): Promise<void>;
   resetContactKeys(): Promise<void>;
@@ -179,6 +180,19 @@ export async function sealForSave(
 }
 
 /** Drops every wrap so this device can start a new contacts key. */
+/**
+ * Wrap the contacts key to a browser being added (docs/40 §17.4), so it
+ * opens the address book with its own key. Nothing when there is no
+ * contacts key yet.
+ */
+export async function shareContactsKeyWithDevice(api: AddressBookApi, did: string, enc: string): Promise<void> {
+  if (!api.addDeviceContactKey || !isValidX25519PublicKeyB64Url(enc)) return;
+  const key = cachedKey ?? (await resolveContactsKey(api)).key;
+  if (!key) return;
+  cachedKey = key;
+  await api.addDeviceContactKey({ did, wrapped_key: await wrapContactsKeyForAgent(key, enc) });
+}
+
 export async function resetContactsKey(api: AddressBookApi): Promise<void> {
   await api.resetContactKeys();
   cachedKey = null;

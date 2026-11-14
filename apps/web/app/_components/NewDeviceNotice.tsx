@@ -12,7 +12,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { approvedWith, checkDeviceList, holdsRootKey, storeDeviceList } from "../../lib/agents/device-list";
+import { approvedWith, checkDeviceList, listSignerHere, storeDeviceList } from "../../lib/agents/device-list";
 import { pairedHere, settlePairing } from "../../lib/agents/pairing";
 import { loadSeenDevices, saveSeenDevices, unseenDevices } from "../../lib/agents/devices";
 import { defaultApiClient } from "../../lib/api/client";
@@ -48,7 +48,7 @@ export async function acknowledgeDevicesAfterConnect(
       if (result.changed) await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
       if (result.mismatched.some((d) => d.did === connected.did)) return "mismatch";
       if (result.matched.some((d) => d.did === connected.did)) return "verified";
-    } else if (agent && connected && (await holdsRootKey(agent))) {
+    } else if (agent && connected && (await listSignerHere(agent)) !== null) {
       const status = await checkDeviceList(agent);
       if (status.kind !== "broken") {
         await storeDeviceList(agent, approvedWith(agent, status, [connected.did]));
@@ -87,7 +87,7 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
         // A computer connected with a code made here is checked against
         // the code instead (DeviceListNotice).
         const added = unseenDevices(devices, seen).filter((d) => !pairedHere(d));
-        if (added.length > 0) next.push({ agent, devices: added, rootHere: await holdsRootKey(agent) });
+        if (added.length > 0) next.push({ agent, devices: added, rootHere: (await listSignerHere(agent)) !== null });
       }
       if (!cancelled) setPending(next);
     })();

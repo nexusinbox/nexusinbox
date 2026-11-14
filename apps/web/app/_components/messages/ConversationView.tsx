@@ -69,6 +69,7 @@ import { ConfirmationPanel } from "../ConfirmationPanel";
 import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
+import { localDeviceDid } from "../../../lib/agents/local-device";
 
 // Same bound as the list's preview decrypt: the X25519 unwrap hits
 // IndexedDB, so more in parallel only adds in-flight fetches.
@@ -216,6 +217,20 @@ export function ConversationView({
 
   const messages = conversation.messages;
 
+  // This browser was added to the agent later (docs/40 §17.4): what came
+  // before was not wrapped for it.
+  const [addedBrowser, setAddedBrowser] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const own = conversation.ownAgent;
+    void localDeviceDid(own ?? undefined).then((did) => {
+      if (!cancelled) setAddedBrowser(!!own && !!did && did !== own.did);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation.ownAgent]);
+
   // Mark the counterpart's unread messages read once the conversation is open.
   const markedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -315,6 +330,9 @@ export function ConversationView({
       ? subjectText
       : `Re: ${subjectText || t("common.noSubject")}`;
     setProtocolStop(null);
+    // This browser's device of the agent signs (docs/40 §17.4).
+    const own = conversation.ownAgent;
+    const deviceDid = (await localDeviceDid(own ?? undefined)) ?? entry.recipient_did;
     try {
       await sendProtocolReply({
       protocolType,
@@ -323,9 +341,10 @@ export function ConversationView({
       originalProtocolId,
       subject: replySubject,
       bodySummary: summariseReply(reply, t),
-      viewerAgentDid: entry.recipient_did,
+      viewerAgentDid: deviceDid,
       proposerDid: entry.sender_did,
-      senderEncryptionKey: conversation.ownAgent?.encryption_key,
+      senderEncryptionKey:
+        own?.devices?.find((d) => d.did === deviceDid)?.encryption_public_key ?? own?.encryption_key,
       sendMessage: sendMessage.mutateAsync,
       acceptRoot,
       });
@@ -593,6 +612,7 @@ export function ConversationView({
                 state={r.state === "no_key" ? "unavailable_on_this_device" : "decrypt_failed"}
                 messageId={entry.id}
                 recipientDid={entry.recipient_did}
+                beforeAdded={addedBrowser}
               />
             );
           }
@@ -894,6 +914,13 @@ function Composer({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // This browser's active device of the agent (docs/40 §17.4); a
+      // removed browser keeps its key but may not send with it.
+      if (ownAgent) {
+        const local = await localDeviceDid(ownAgent);
+        if (!cancelled) setSenderDid(local);
+        return;
+      }
       for (const did of Array.from(new Set([ownDid, ...ownDids]))) {
         if (await hasSigningPrivateKeyMaterial(did)) {
           if (!cancelled) setSenderDid(did);
@@ -905,7 +932,7 @@ function Composer({
     return () => {
       cancelled = true;
     };
-  }, [ownDid, ownDids]);
+  }, [ownDid, ownDids, ownAgent]);
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {

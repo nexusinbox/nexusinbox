@@ -37,6 +37,7 @@ import {
 } from "../lib/api/hooks";
 import type { Agent, MessageContentResponse } from "../lib/api/types";
 import { hasRecipientPrivateKey } from "../lib/crypto/recipient-keyring";
+import { localDeviceDid } from "../lib/agents/local-device";
 import {
   groupConversations,
   previewSnippet,
@@ -226,6 +227,15 @@ function WelcomeNoMessages({
   );
 }
 
+/**
+ * A preview per conversation and message: a message between two of the
+ * person's own agents is in both conversations, and each side may hold
+ * different keys (docs/40 §17.4).
+ */
+function previewKey(c: Conversation): string {
+  return `${c.key}|${c.latest.entry.id}`;
+}
+
 export default function MessagesPage() {
   return (
     <Suspense fallback={null}>
@@ -282,6 +292,17 @@ function MessagesPageInner() {
 
   const agentsQuery = useAgentsQuery();
   const agentList = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
+  // Agents this browser was added to later (docs/40 §17.4), by their DID.
+  const [addedHere, setAddedHere] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(agentList.map(async (a) => [a.did, await localDeviceDid(a)] as const)).then((pairs) => {
+      if (!cancelled) setAddedHere(new Set(pairs.filter(([did, local]) => local && local !== did).map(([did]) => did)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentList]);
   // Read by the preview workers, which outlive a render.
   const agentsRef = useRef(agentList);
   agentsRef.current = agentList;
@@ -344,11 +365,12 @@ function MessagesPageInner() {
     contactsByDid.has(did) || agentList.some((a) => a.did === did);
 
   const previewText = (c: Conversation): string => {
-    const p = previews[c.latest.entry.id];
+    const p = previews[previewKey(c)];
     let text: string;
     if (!p) text = t("inbox.previewLoading");
     else if (p.state === "readable") text = p.text || t("inbox.previewEmpty");
     else if (c.latest.mine) text = t("messages.previewMineLocked");
+    else if (p.state === "no_key" && c.ownAgent && addedHere.has(c.ownAgent.did)) text = t("inbox.beforeAddedPreview");
     else if (p.state === "no_key") text = t("inbox.unavailableOnThisDevicePreview");
     else text = t("inbox.previewUnavailable");
     return c.latest.mine ? t("messages.you", { text }) : text;
@@ -360,7 +382,7 @@ function MessagesPageInner() {
       if (chip === "unread" && c.unread === 0) return false;
       if (chip !== "all" && chip !== "unread" && c.ownAgent?.did !== chip) return false;
       if (!keyword) return true;
-      const p = previews[c.latest.entry.id];
+      const p = previews[previewKey(c)];
       const haystack = [counterpartName(c), p?.state === "readable" ? p.text : ""]
         .join(" ")
         .toLowerCase();
@@ -454,9 +476,13 @@ function MessagesPageInner() {
     };
   }, []);
   useEffect(() => {
-    const queue = visible.filter((c) => !queuedRef.current.has(c.latest.entry.id));
+    // Wait for the agents: without them a conversation knows only the DID
+    // the row names, not this browser's device of the agent, and a preview
+    // made then is never made again.
+    if (!agentsQuery.data) return;
+    const queue = visible.filter((c) => !queuedRef.current.has(previewKey(c)));
     if (queue.length === 0) return;
-    for (const c of queue) queuedRef.current.add(c.latest.entry.id);
+    for (const c of queue) queuedRef.current.add(previewKey(c));
 
     const hasKey = async (dids: string[]) => {
       for (const did of dids) {
@@ -506,11 +532,11 @@ function MessagesPageInner() {
           preview = { state: "error", text: "", protocolType: null };
         }
         if (!aliveRef.current) return;
-        setPreviews((prev) => ({ ...prev, [entry.id]: preview }));
+        setPreviews((prev) => ({ ...prev, [previewKey(c)]: preview }));
       }
     };
     void Promise.all(Array.from({ length: PREVIEW_DECRYPT_CONCURRENCY }, worker));
-  }, [visible, queryClient]);
+  }, [visible, queryClient, agentsQuery.data]);
 
   const openConversation = (key: string) => {
     setActiveKey(key);
@@ -633,8 +659,8 @@ function MessagesPageInner() {
             ) : (
               visible.map((c) => {
                 const name = counterpartName(c);
-                const protocolType = previews[c.latest.entry.id]?.protocolType ?? null;
-                const unverified = !c.latest.mine && previews[c.latest.entry.id]?.unverified === true;
+                const protocolType = previews[previewKey(c)]?.protocolType ?? null;
+                const unverified = !c.latest.mine && previews[previewKey(c)]?.unverified === true;
                 // Not a contact (nor one of the person's own agents); no tag
                 // when the name already says so.
                 const unknown =

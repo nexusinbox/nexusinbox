@@ -85,6 +85,8 @@ export type Agent = {
   devices?: AgentDevice[];
   /** The latest device list the agent's root key signed (docs/40 §4.2). */
   device_list?: DeviceListRef;
+  /** The browser that runs automatic replies (docs/40 §17.6); absent: `did`. */
+  auto_reply_device?: string;
 };
 
 /** A signed device list as the server returns it (docs/40 §4.2). */
@@ -704,4 +706,24 @@ export type OAuthGrant = {
   scope: string[];
   created_at: string;
   last_used_at: string;
+};
+
+/** A key the new browser made for one agent (docs/40 §17.4). */
+export type BrowserPairingKey = {
+  aid: string;
+  did: string;
+  signing_public_key: string;
+  encryption_public_key: string;
+  /** HMAC under the secret after `#` in the link. */
+  mac: string;
+};
+
+/** A pairing for a second browser, as both browsers see it. */
+export type BrowserPairing = {
+  id: string;
+  aids: string[];
+  label: string | null;
+  claimed: BrowserPairingKey[] | null;
+  root_macs: Array<{ aid: string; mac: string }> | null;
+  expires_at: string;
 };

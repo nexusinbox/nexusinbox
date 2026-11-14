@@ -38,7 +38,8 @@ import {
   encodeAttachmentKey,
   sha256OfBytes,
 } from "../../lib/crypto/attachment";
-import { getSigningPrivateKey, hasSigningPrivateKeyMaterial } from "../../lib/crypto/signing-keyring";
+import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
+import { localDeviceDid } from "../../lib/agents/local-device";
 import { ApiError, defaultApiClient } from "../../lib/api/client";
 import type {
   AttachmentMetadataPlain,
@@ -211,6 +212,9 @@ function ComposePageInner() {
   // A send stopped by the recipient's device list (docs/40 §12.5).
   const [sendStop, setSendStop] = useState<{ stop: SendStop; name: string | null } | null>(null);
   const [hasSenderPrivateKey, setHasSenderPrivateKey] = useState<boolean>(false);
+  // This browser's device of the sending agent (docs/40 §17.4): the DID it
+  // signs and sends as, which is `senderDid` for the browser that created it.
+  const [signingDid, setSigningDid] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Prefill reply recipient + subject from the original message.
@@ -364,17 +368,19 @@ function ComposePageInner() {
     let cancelled = false;
     if (!senderDid) {
       setHasSenderPrivateKey(false);
+      setSigningDid("");
       return;
     }
-    void hasSigningPrivateKeyMaterial(senderDid).then((result) => {
+    void localDeviceDid(apiAgents.find((agent) => agent.did === senderDid)).then((did) => {
       if (!cancelled) {
-        setHasSenderPrivateKey(result);
+        setHasSenderPrivateKey(did !== null);
+        setSigningDid(did ?? "");
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [senderDid]);
+  }, [senderDid, apiAgents]);
 
   // Debounced recipient lookup — feeds the compose-time Mode hint
   // (docs/21 §4.4). Only fires for inputs that plausibly look like
@@ -570,7 +576,7 @@ function ComposePageInner() {
         throw err;
       }
       // Only devices the recipient's signed list names (docs/40 §12).
-      const plan = await planSend(resolvedRecipient, recipientInput, senderDid, { acceptRoot });
+      const plan = await planSend(resolvedRecipient, recipientInput, signingDid, { acceptRoot });
       const recipientAddress = plan.recipient.did;
       const recipientEncryptionKey = plan.recipient.encryption_public_key;
       if (plan.senderKey) senderEncryptionKey = plan.senderKey;
@@ -619,7 +625,7 @@ function ComposePageInner() {
 
           // 2. Request a presigned PUT URL from the API.
           const intent = await defaultApiClient.createAttachmentIntent({
-            sender_did: senderDid,
+            sender_did: signingDid,
             ciphertext_size_bytes: ciphertext.byteLength,
           });
           createdIntentIds.push(intent.attachment_id);
@@ -656,7 +662,7 @@ function ComposePageInner() {
           const deviceAttachmentWraps = await wrapContentKeyForDevices(
             attachmentKeyStr,
             [...recipientDevices, ...senderDevices].filter(
-              (d) => d.did !== recipientAddress && d.did !== senderDid,
+              (d) => d.did !== recipientAddress && d.did !== signingDid,
             ),
           );
 
@@ -668,7 +674,7 @@ function ComposePageInner() {
             cipher_nonce: nonceB64Url,
             attachment_key_wraps: [
               { recipient_did: recipientAddress, wrapped_key: recipientWrap.wrappedKey },
-              { recipient_did: senderDid, wrapped_key: senderWrap.wrappedKey },
+              { recipient_did: signingDid, wrapped_key: senderWrap.wrappedKey },
               ...deviceAttachmentWraps.map((w) => ({ recipient_did: w.did, wrapped_key: w.key })),
             ],
             sha256_plaintext: sha256Plain,
@@ -695,7 +701,7 @@ function ComposePageInner() {
         }
       }
 
-      const signingPrivateKey = await getSigningPrivateKey(senderDid);
+      const signingPrivateKey = await getSigningPrivateKey(signingDid);
       if (!signingPrivateKey) {
         setStatus({
           kind: "error",
@@ -717,7 +723,7 @@ function ComposePageInner() {
           : undefined;
 
       await sendMessage.mutateAsync({
-        senderDid,
+        senderDid: signingDid,
         recipientDid: recipientAddress,
         subjectEncrypted: encryptedSubject.serialized,
         encryptedContent: encryptedBody.serialized,

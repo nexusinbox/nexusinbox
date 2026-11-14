@@ -652,6 +652,240 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
 
+  /agents/{id}/auto-reply-device:
+    put:
+      summary: Choose the browser that runs the agent's automatic replies
+      description: |
+        docs/40 §17.6. `did` is one of the agent's active browsers, or null
+        for the browser it was created with. Human session only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                did:
+                  type: [string, 'null']
+              required: [did]
+      responses:
+        '204':
+          description: Stored
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not an agent of the caller
+        '422':
+          description: Not an active browser of the agent
+
+  /browser-pairings:
+    post:
+      summary: Start adding another browser of the person
+      description: |
+        docs/40 §17.4. A browser that can sign the device lists of `aids`
+        gets a 10-character code for a link; it adds a secret after `#`
+        that the server never sees. Valid for 10 minutes. Human session only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aids:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: string
+              required: [aids]
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  code:
+                    type: string
+                  expires_at:
+                    type: string
+                required: [id, code, expires_at]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: An agent is not the caller's
+
+  /browser-pairings/resolve:
+    post:
+      summary: Find a pairing by its code (the new browser)
+      description: Same person only, before it expires. Rate-limited per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+              required: [code]
+      responses:
+        '200':
+          description: The pairing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserPairing'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not found or expired
+
+  /browser-pairings/{id}:
+    get:
+      summary: Watch a pairing (both browsers)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The pairing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserPairing'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not found or expired
+
+  /browser-pairings/{id}/claim:
+    post:
+      summary: Send the new browser's keys, one per agent of the pairing
+      description: |
+        Each key comes with a signature by it over
+        "nexusinbox-browser-pair-v1\n" + id + "\n" + aid + "\n" + did + "\n" + encryption_public_key
+        and a MAC under the secret. Once only. The keys become active
+        browsers of an agent when a signer puts a device list naming them.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                devices:
+                  type: array
+                  items:
+                    allOf:
+                      - $ref: '#/components/schemas/BrowserPairingKey'
+                      - type: object
+                        properties:
+                          proof:
+                            type: string
+                        required: [proof]
+              required: [devices]
+      responses:
+        '200':
+          description: Claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserPairing'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not found, expired, or already used
+        '409':
+          description: A key is already in use
+        '422':
+          description: A key, proof or MAC does not hold
+
+  /browser-pairings/{id}/root:
+    put:
+      summary: MAC each agent's root back to the new browser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agents:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      aid:
+                        type: string
+                      mac:
+                        type: string
+                    required: [aid, mac]
+              required: [agents]
+      responses:
+        '204':
+          description: Stored
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not found, expired, or not claimed
+
+  /contact-keys/devices:
+    post:
+      summary: The contacts key wrapped to a browser added with a pairing
+      description: docs/40 §17.4. The device must be an active browser of one of the caller's agents.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                did:
+                  type: string
+                wrapped_key:
+                  type: string
+              required: [did, wrapped_key]
+      responses:
+        '204':
+          description: Stored
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Not an active browser of the caller
+
   /recipients/device-lists:
     get:
       summary: An agent's device list versions after a given one
@@ -1462,6 +1696,51 @@ components:
         jws:
           type: string
       required: [version, jws]
+
+    BrowserPairingKey:
+      type: object
+      description: A key the new browser made for one agent (docs/40 §17.4).
+      properties:
+        aid:
+          type: string
+        did:
+          type: string
+        signing_public_key:
+          type: string
+        encryption_public_key:
+          type: string
+        mac:
+          type: string
+      required: [aid, did, signing_public_key, encryption_public_key, mac]
+
+    BrowserPairing:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        aids:
+          type: array
+          items:
+            type: string
+        label:
+          type: [string, 'null']
+        claimed:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/BrowserPairingKey'
+        root_macs:
+          type: [array, 'null']
+          items:
+            type: object
+            properties:
+              aid:
+                type: string
+              mac:
+                type: string
+        expires_at:
+          type: string
+      required: [id, aids, expires_at]
 
     PutDeviceListRequest:
       type: object

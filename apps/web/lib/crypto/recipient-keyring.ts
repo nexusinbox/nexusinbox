@@ -57,6 +57,13 @@ export async function generateX25519KeyPairMaterial(): Promise<{
   };
 }
 
+/** Keep a receiving key and wait until it is stored (a browser being added, docs/40 §17.4). */
+export async function storeRecipientPrivateKey(did: string, privateKey: CryptoKey): Promise<void> {
+  memoryKeyring.set(did, privateKey);
+  if (!isKeystoreAvailable()) throw new Error("this browser cannot keep keys");
+  await secureStoreKey(storageKey(did), privateKey);
+}
+
 export function saveRecipientPrivateKey(did: string, privateKey: CryptoKey): void {
   if (!did || !privateKey) return;
   memoryKeyring.set(did, privateKey);

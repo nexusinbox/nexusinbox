@@ -27,7 +27,8 @@ import {
 import { sendScheduleProposal } from "../../../lib/protocol/send-propose";
 import { isSendStop, planSend, type SendStop } from "../../../lib/crypto/device-wraps";
 import { SendStopNotice } from "../../_components/messages/SendStopNotice";
-import { getSigningPrivateKey, hasSigningPrivateKeyMaterial } from "../../../lib/crypto/signing-keyring";
+import { getSigningPrivateKey } from "../../../lib/crypto/signing-keyring";
+import { localDeviceDid } from "../../../lib/agents/local-device";
 import {
   CANDIDATE_MAX_COUNT,
   toIsoWithLocalOffset,
@@ -80,6 +81,7 @@ export default function ProposePage() {
   const [deadline, setDeadline] = useState("");
   const [note, setNote] = useState("");
   const [hasSenderKey, setHasSenderKey] = useState(false);
+  const [signingDid, setSigningDid] = useState("");
   const [status, setStatus] = useState<StatusState>(null);
   const [pending, setPending] = useState(false);
 
@@ -101,16 +103,20 @@ export default function ProposePage() {
   useEffect(() => {
     if (!senderDid) {
       setHasSenderKey(false);
+      setSigningDid("");
       return;
     }
     let cancelled = false;
-    void hasSigningPrivateKeyMaterial(senderDid).then((ok) => {
-      if (!cancelled) setHasSenderKey(ok);
+    // This browser's device of the agent (docs/40 §17.4).
+    void localDeviceDid(agentsQuery.data?.agents.find((a) => a.did === senderDid)).then((did) => {
+      if (cancelled) return;
+      setHasSenderKey(did !== null);
+      setSigningDid(did ?? "");
     });
     return () => {
       cancelled = true;
     };
-  }, [senderDid]);
+  }, [senderDid, agentsQuery.data]);
 
   const addRow = () => {
     if (rows.length >= CANDIDATE_MAX_COUNT) return;
@@ -189,7 +195,7 @@ export default function ProposePage() {
         throw err;
       }
       // Only devices the recipient's signed list names (docs/40 §12).
-      const plan = await planSend(resolved, recipientInput, senderDid, { acceptRoot });
+      const plan = await planSend(resolved, recipientInput, signingDid, { acceptRoot });
       const recipientEncKey = plan.recipient.encryption_public_key;
       if (!recipientEncKey) {
         setStatus({ kind: "error", message: t("a2a.proposeValidationNoEncKey") });
@@ -197,7 +203,7 @@ export default function ProposePage() {
         return;
       }
 
-      const signingPrivateKey = await getSigningPrivateKey(senderDid);
+      const signingPrivateKey = await getSigningPrivateKey(signingDid);
       if (!signingPrivateKey) {
         setStatus({ kind: "error", message: t("a2a.proposeKeyMissing") });
         setPending(false);
@@ -206,12 +212,13 @@ export default function ProposePage() {
 
       await sendScheduleProposal(
         {
-          senderDid,
+          senderDid: signingDid,
           signingPrivateKey,
           plan,
-          senderEncryptionKey: agentsQuery.data?.agents.find(
-            (a) => a.did === senderDid || a.dids?.includes(senderDid),
-          )?.encryption_key,
+          senderEncryptionKey: (() => {
+            const agent = agentsQuery.data?.agents.find((a) => a.did === senderDid || a.dids?.includes(senderDid));
+            return agent?.devices?.find((d) => d.did === signingDid)?.encryption_public_key ?? agent?.encryption_key;
+          })(),
           subject: eventTitle.trim(),
           body: note.trim() || eventTitle.trim(),
           payload: proposePayload,

@@ -58,6 +58,13 @@ export async function generateEd25519SigningKeyPairMaterial(): Promise<{
   };
 }
 
+/** Keep a signing key and wait until it is stored (a browser being added, docs/40 §17.4). */
+export async function storeSigningPrivateKey(did: string, privateKey: CryptoKey): Promise<void> {
+  memorySigningKeyring.set(did, privateKey);
+  if (!isKeystoreAvailable()) throw new Error("this browser cannot keep keys");
+  await secureStoreKey(storageKey(did), privateKey);
+}
+
 export function saveSigningPrivateKey(did: string, privateKey: CryptoKey): void {
   if (!did || !privateKey) return;
   memorySigningKeyring.set(did, privateKey);

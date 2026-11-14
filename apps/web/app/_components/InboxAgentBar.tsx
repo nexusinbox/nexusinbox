@@ -2,11 +2,12 @@
 
 // The inbox's "where do automatic replies run" line (docs/34 §3 step 3).
 // Also starts the browser-side auto-reply for each agent whose keys live
-// in this browser, so replies go out while the inbox is open.
+// in this browser, so replies go out while the inbox is open. With more
+// than one browser, only the one chosen for it runs them (docs/40 §17.6).
 
 import { useEffect, useState } from "react";
 import type { Agent } from "../../lib/api/types";
-import { hasSigningPrivateKeyMaterial } from "../../lib/crypto/signing-keyring";
+import { localDeviceDid } from "../../lib/agents/local-device";
 import { useTranslation } from "../../lib/i18n";
 import { BrowserAutoReply } from "./BrowserAutoReply";
 
@@ -18,16 +19,14 @@ export function agentForDid(agents: Agent[], did: string | undefined): Agent | u
 
 export function InboxAgentBar({ agents }: { agents: Agent[] }) {
   const { t } = useTranslation();
-  // DIDs whose signing key this browser holds (browser-run agents).
-  const [inBrowser, setInBrowser] = useState<Set<string> | null>(null);
+  // This browser's device of each agent whose keys it holds, by agent DID.
+  const [inBrowser, setInBrowser] = useState<Map<string, string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all(
-      agents.map(async (a) => [a.did, await hasSigningPrivateKeyMaterial(a.did)] as const),
-    ).then((pairs) => {
+    Promise.all(agents.map(async (a) => [a.did, await localDeviceDid(a)] as const)).then((pairs) => {
       if (cancelled) return;
-      setInBrowser(new Set(pairs.filter(([, has]) => has).map(([did]) => did)));
+      setInBrowser(new Map(pairs.flatMap(([did, local]) => (local ? [[did, local] as const] : []))));
     });
     return () => {
       cancelled = true;
@@ -37,13 +36,20 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
   if (agents.length === 0) return null;
 
   const autoReplying = agents.filter((a) => a.auto_reply);
-  const browserRun = inBrowser ? autoReplying.filter((a) => inBrowser.has(a.did)) : [];
+  // Run here: this browser is the one chosen (by default the one the agent
+  // was created with). Another browser of the person: neither here nor on
+  // a computer.
+  const runsHere = (a: Agent) => inBrowser?.get(a.did) === (a.auto_reply_device ?? a.did);
+  const browserRun = inBrowser ? autoReplying.filter(runsHere) : [];
+  const otherBrowserRun = inBrowser
+    ? autoReplying.filter((a) => !runsHere(a) && inBrowser.has(a.did))
+    : [];
   const computerRun = inBrowser ? autoReplying.filter((a) => !inBrowser.has(a.did)) : [];
   const names = (list: Agent[]) => list.map((a) => a.label).join("、");
 
   return (
     <section className="inbox-agent-bar">
-      {browserRun.length > 0 || computerRun.length > 0 ? (
+      {browserRun.length > 0 || computerRun.length > 0 || otherBrowserRun.length > 0 ? (
         <p
           data-testid="inbox-auto-reply-note"
           style={{
@@ -62,10 +68,13 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
           {browserRun.length > 0
             ? t("inboxAgents.inBrowser", { names: names(browserRun) })
             : ""}
+          {otherBrowserRun.length > 0
+            ? t("inboxAgents.inOtherBrowser", { names: names(otherBrowserRun) })
+            : ""}
         </p>
       ) : null}
       {browserRun.map((a) => (
-        <BrowserAutoReply key={a.did} agent={a} />
+        <BrowserAutoReply key={a.did} agent={a} deviceDid={inBrowser?.get(a.did) ?? a.did} />
       ))}
     </section>
   );

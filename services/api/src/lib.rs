@@ -539,6 +539,10 @@ struct Agent {
     /// Agent lists only; absent until the root browser signs one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     device_list: Option<DeviceListRef>,
+    /// The browser that runs automatic replies (docs/40 §17.6); absent:
+    /// the one the agent was created with. Agent lists only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto_reply_device: Option<String>,
 }
 
 /// One device in an agent's recipient set (docs/38 stage 4).
@@ -548,8 +552,9 @@ struct AgentDevice {
     /// The device's X25519 key, as senders wrap for it. The root browser
     /// signs it into the device list (docs/40 §4.2).
     encryption_public_key: String,
-    /// "browser" for the key the agent was created with, "computer" for a
-    /// key a credential activated, "other" otherwise.
+    /// "browser" for the key the agent was created with and browsers added
+    /// with a pairing (docs/40 §17.4), "computer" for a key a credential
+    /// activated, "other" otherwise.
     kind: String,
     /// The computer's name (its credential label, e.g. "macOS").
     label: Option<String>,
@@ -704,6 +709,91 @@ struct DeviceListHistoryResponse {
 
 /// Most versions one history answer carries.
 const MAX_DEVICE_LIST_HISTORY: i64 = 200;
+
+/// A pairing link for a second browser stays usable this long (docs/40 §17.4).
+const BROWSER_PAIRING_TTL_MINUTES: i64 = 10;
+/// Signer changes need a World ID sign-in this recent (docs/40 §17.5).
+const SIGNER_CHANGE_REAUTH_SECS: i64 = 10 * 60;
+
+#[derive(Deserialize)]
+struct CreateBrowserPairingRequest {
+    aids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct CreateBrowserPairingResponse {
+    id: Uuid,
+    /// The part of the link the server sees; the browser adds its secret.
+    code: String,
+    expires_at: String,
+}
+
+#[derive(Deserialize)]
+struct ResolveBrowserPairingRequest {
+    code: String,
+}
+
+/// A key the new browser made for one agent, with the MAC under the
+/// secret the server never sees.
+#[derive(Clone, Deserialize, Serialize)]
+struct ClaimedBrowserKey {
+    aid: String,
+    did: String,
+    signing_public_key: String,
+    encryption_public_key: String,
+    mac: String,
+}
+
+#[derive(Deserialize)]
+struct ClaimBrowserKey {
+    #[serde(flatten)]
+    key: ClaimedBrowserKey,
+    /// Signature by the key over BROWSER_PAIR_PROOF_PREFIX, the pairing,
+    /// the agent, the DID and the encryption key.
+    proof: String,
+}
+
+#[derive(Deserialize)]
+struct ClaimBrowserPairingRequest {
+    label: Option<String>,
+    devices: Vec<ClaimBrowserKey>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct BrowserRootMac {
+    aid: String,
+    mac: String,
+}
+
+#[derive(Deserialize)]
+struct BrowserPairingRootRequest {
+    agents: Vec<BrowserRootMac>,
+}
+
+#[derive(Serialize)]
+struct BrowserPairingResponse {
+    id: Uuid,
+    aids: Vec<String>,
+    label: Option<String>,
+    claimed: Option<Vec<ClaimedBrowserKey>>,
+    root_macs: Option<Vec<BrowserRootMac>>,
+    expires_at: String,
+}
+
+const BROWSER_PAIR_PROOF_PREFIX: &str = "nexusinbox-browser-pair-v1\n";
+
+#[derive(Deserialize)]
+struct AddDeviceContactKeyRequest {
+    did: String,
+    wrapped_key: String,
+}
+
+#[derive(Deserialize)]
+struct AutoReplyDeviceRequest {
+    /// The browser that runs automatic replies; null: the one the agent
+    /// was created with.
+    did: Option<String>,
+}
 
 #[derive(Clone, Serialize)]
 struct RecipientResolutionResponse {
@@ -2657,14 +2747,12 @@ fn verify_device_list_jws(
     Ok((payload, header.kid))
 }
 
-/// Who may sign the next version after the latest stored list of `aid`
-/// (docs/40 §17.3): its signers, or the root when none is stored. The
-/// stored list was checked when it was put.
-async fn next_device_list_signers(
+/// The latest stored device list of `aid`, if any (it was checked when
+/// it was put): who may sign the next version, and what it named.
+async fn latest_device_list_payload(
     pool: &PgPool,
     aid: &str,
-    root_did: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Option<DeviceListPayload>, String> {
     let latest: Option<String> = sqlx::query_scalar(
         "SELECT jws FROM agent_device_lists WHERE aid = $1 ORDER BY version DESC LIMIT 1",
     )
@@ -2673,15 +2761,14 @@ async fn next_device_list_signers(
     .await
     .map_err(|error| format!("failed to read the latest device list: {error}"))?;
     let Some(jws) = latest else {
-        return Ok(vec![root_did.to_string()]);
+        return Ok(None);
     };
-    let payload: DeviceListPayload = jws
-        .split('.')
+    jws.split('.')
         .nth(1)
         .and_then(|b64| URL_SAFE_NO_PAD.decode(b64).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .ok_or("the stored device list is not readable")?;
-    Ok(payload.next_signers())
+        .map(Some)
+        .ok_or_else(|| "the stored device list is not readable".to_string())
 }
 
 /// Shape check for a list of per-device wraps (docs/38 §5.3): at most
@@ -2853,6 +2940,7 @@ async fn agent_owned_by_user_in_db(
         share_enabled: false,
         devices: Vec::new(),
         device_list: None,
+        auto_reply_device: None,
     }))
 }
 
@@ -7388,11 +7476,20 @@ async fn list_contact_keys(
     let pool = contact_keys_pool(&state).await?;
     let rows = sqlx::query(
         r#"
-        SELECT w.agent_id, a.did AS agent_did, w.wrapped_key
+        SELECT w.agent_id, a.did AS agent_did, w.wrapped_key, w.created_at
         FROM contact_key_wraps w
         JOIN agents a ON a.id = w.agent_id AND a.user_id = w.user_id
         WHERE w.user_id = $1
-        ORDER BY w.created_at ASC
+        UNION ALL
+        -- Wraps to browsers added with a pairing (docs/40 §17.4), by the
+        -- browser's own DID.
+        SELECT a.id AS agent_id, d.did AS agent_did, d.wrapped_key, d.created_at
+        FROM contact_key_device_wraps d
+        JOIN agent_identity_keys k ON k.did = d.did AND k.status = 'active'
+        JOIN agent_identities i ON i.aid = k.aid AND i.user_id = d.user_id
+        JOIN agents a ON a.id = i.agent_id
+        WHERE d.user_id = $1
+        ORDER BY created_at ASC
         "#,
     )
     .bind(user_uuid)
@@ -7591,6 +7688,7 @@ async fn list_agents(
               a.created_at::text AS created_at,
               a.bio,
               a.share_enabled,
+              a.auto_reply_device,
               COALESCE(
                 (SELECT array_agg(k.did ORDER BY k.activated_at)
                    FROM agent_identity_keys k WHERE k.aid = ai.aid),
@@ -7611,7 +7709,8 @@ async fn list_agents(
         let device_rows = sqlx::query(
             r#"
             SELECT k.aid, k.did, k.encryption_public_key, k.activated_at::text AS activated_at,
-                   (a.did = k.did) AS created_with,
+                   (a.did = k.did OR COALESCE(k.device_kind = 'browser', FALSE)) AS created_with,
+                   k.device_label,
                    c.id IS NOT NULL AS has_credential,
                    c.label, c.last_used_at::text AS last_used_at,
                    c.id::text AS credential_id, c.pairing_device_mac
@@ -7650,7 +7749,9 @@ async fn list_agents(
                     did: row.get("did"),
                     encryption_public_key: row.get("encryption_public_key"),
                     kind: kind.to_string(),
-                    label: row.get("label"),
+                    label: row
+                        .get::<Option<String>, _>("label")
+                        .or_else(|| row.get("device_label")),
                     activated_at: row.get("activated_at"),
                     last_used_at: row.get("last_used_at"),
                     credential_id: row.get("credential_id"),
@@ -7672,6 +7773,7 @@ async fn list_agents(
             out.push(Agent {
                 devices: devices_by_aid.remove(&aid).unwrap_or_default(),
                 device_list: lists_by_aid.remove(&aid),
+                auto_reply_device: row.get("auto_reply_device"),
                 id,
                 aid: row.get("aid"),
                 did: row.get("did"),
@@ -7842,6 +7944,7 @@ async fn create_agent(
             share_enabled: false,
             devices: Vec::new(),
             device_list: None,
+            auto_reply_device: None,
         };
 
         let mut lock = state
@@ -8704,6 +8807,410 @@ async fn get_auto_reply_policy(
     Ok(response)
 }
 
+/// The session behind a human request, and whether its World ID sign-in
+/// is recent enough for `secs` (the server's own issue time).
+async fn session_is_recent(
+    pool: &PgPool,
+    claims: &TokenClaims,
+    secs: i64,
+) -> Result<bool, (StatusCode, Json<ErrorResponse>)> {
+    let Some(jwt_id) = claims.jti.as_deref() else {
+        return Ok(false);
+    };
+    let user_uuid = parse_user_uuid(&claims.sub)?;
+    let recent: Option<bool> = sqlx::query_scalar(
+        "SELECT issued_at > NOW() - ($3::bigint * INTERVAL '1 second') FROM sessions \
+         WHERE user_id = $1 AND jwt_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(user_uuid)
+    .bind(jwt_id)
+    .bind(secs)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| internal_error("failed to look up session", e))?;
+    Ok(recent == Some(true))
+}
+
+fn reauthentication_required(message: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: "reauthentication_required".to_string(),
+            message: message.to_string(),
+        }),
+    )
+}
+
+fn browser_pairing_response(row: &sqlx::postgres::PgRow) -> BrowserPairingResponse {
+    let claimed: Option<serde_json::Value> = row.get("claimed");
+    let root_macs: Option<serde_json::Value> = row.get("root_macs");
+    BrowserPairingResponse {
+        id: row.get("id"),
+        aids: row.get("aids"),
+        label: row.get("label"),
+        claimed: claimed.and_then(|v| serde_json::from_value(v).ok()),
+        root_macs: root_macs.and_then(|v| serde_json::from_value(v).ok()),
+        expires_at: row.get("expires_at"),
+    }
+}
+
+/// `POST /browser-pairings` — a browser that can sign starts adding
+/// another browser to the person's agents in `aids` (docs/40 §17.4). The
+/// code goes into the link with a secret the server never sees.
+async fn create_browser_pairing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<CreateBrowserPairingRequest>,
+) -> Result<Json<CreateBrowserPairingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let unique: std::collections::HashSet<&String> = payload.aids.iter().collect();
+    if payload.aids.is_empty()
+        || payload.aids.len() > MAX_DEVICE_WRAPS
+        || unique.len() != payload.aids.len()
+    {
+        return Err(validation_error("aids must name 1 to 10 agents, each once"));
+    }
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let owned: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_identities WHERE user_id = $1 AND aid = ANY($2)",
+    )
+    .bind(user_uuid)
+    .bind(&payload.aids)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| internal_error("failed to check agents", e))?;
+    if owned as usize != payload.aids.len() {
+        return Err(not_found_error("agent not found"));
+    }
+    sqlx::query("DELETE FROM browser_pairings WHERE user_id = $1 AND expires_at < NOW()")
+        .bind(user_uuid)
+        .execute(&pool)
+        .await
+        .map_err(|e| internal_error("failed to clear old pairings", e))?;
+    let code = generate_pairing_code();
+    let normalized =
+        normalize_pairing_code(&code).ok_or_else(|| internal_server_error("bad code"))?;
+    let row = sqlx::query(
+        r#"
+        INSERT INTO browser_pairings (user_id, code_hash, aids, expires_at)
+        VALUES ($1, $2, $3, NOW() + ($4::bigint * INTERVAL '1 minute'))
+        RETURNING id, expires_at::text AS expires_at
+        "#,
+    )
+    .bind(user_uuid)
+    .bind(sha256_hex(normalized.as_bytes()))
+    .bind(&payload.aids)
+    .bind(BROWSER_PAIRING_TTL_MINUTES)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| internal_error("failed to store the pairing", e))?;
+    Ok(Json(CreateBrowserPairingResponse {
+        id: row.get("id"),
+        code,
+        expires_at: row.get("expires_at"),
+    }))
+}
+
+const BROWSER_PAIRING_COLUMNS: &str =
+    "id, aids, label, claimed, root_macs, expires_at::text AS expires_at";
+
+/// `POST /browser-pairings/resolve` — the new browser looks up the pairing
+/// its link names. Only the same person's, and only before it expires.
+async fn resolve_browser_pairing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<ResolveBrowserPairingRequest>,
+) -> Result<Json<BrowserPairingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    if !consume_keyed_budget(
+        &state.pairing_ip_budgets,
+        &extract_client_ip(&headers),
+        PAIRING_RESOLVE_LIMIT_PER_IP,
+        PAIRING_RESOLVE_WINDOW_SECS,
+    ) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "rate_limited".to_string(),
+                message: "too many pairing attempts from this IP; wait a few minutes".to_string(),
+            }),
+        ));
+    }
+    let code = normalize_pairing_code(&payload.code)
+        .ok_or_else(|| validation_error("code must be 10 letters and digits"))?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let row = sqlx::query(&format!(
+        "SELECT {BROWSER_PAIRING_COLUMNS} FROM browser_pairings \
+         WHERE code_hash = $1 AND user_id = $2 AND expires_at > NOW()"
+    ))
+    .bind(sha256_hex(code.as_bytes()))
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("pairing lookup failed", e))?
+    .ok_or_else(|| not_found_error("pairing not found or expired"))?;
+    Ok(Json(browser_pairing_response(&row)))
+}
+
+/// `GET /browser-pairings/{id}` — both browsers watch the pairing.
+async fn get_browser_pairing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<BrowserPairingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let row = sqlx::query(&format!(
+        "SELECT {BROWSER_PAIRING_COLUMNS} FROM browser_pairings \
+         WHERE id = $1 AND user_id = $2 AND expires_at > NOW()"
+    ))
+    .bind(id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("pairing lookup failed", e))?
+    .ok_or_else(|| not_found_error("pairing not found or expired"))?;
+    Ok(Json(browser_pairing_response(&row)))
+}
+
+/// `POST /browser-pairings/{id}/claim` — the new browser sends one key per
+/// agent of the pairing, each with proof it holds the key and a MAC the
+/// browser that showed the link checks. Once only.
+async fn claim_browser_pairing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    JsonBody(payload): JsonBody<ClaimBrowserPairingRequest>,
+) -> Result<Json<BrowserPairingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let aids: Vec<String> = sqlx::query_scalar(
+        "SELECT aids FROM browser_pairings \
+         WHERE id = $1 AND user_id = $2 AND expires_at > NOW() AND claimed IS NULL",
+    )
+    .bind(id)
+    .bind(user_uuid)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("pairing lookup failed", e))?
+    .ok_or_else(|| not_found_error("pairing not found, expired, or already used"))?;
+
+    let mut named: Vec<&str> = payload.devices.iter().map(|d| d.key.aid.as_str()).collect();
+    named.sort_unstable();
+    let mut wanted: Vec<&str> = aids.iter().map(String::as_str).collect();
+    wanted.sort_unstable();
+    if named != wanted {
+        return Err(validation_error(
+            "devices must hold one key for each agent of the pairing",
+        ));
+    }
+    let mut dids = std::collections::HashSet::new();
+    for device in &payload.devices {
+        let key = &device.key;
+        if derive_did_from_public_key(&key.signing_public_key).as_deref() != Some(key.did.as_str())
+        {
+            return Err(validation_error(
+                "did must be the did:key of signing_public_key",
+            ));
+        }
+        if URL_SAFE_NO_PAD
+            .decode(&key.encryption_public_key)
+            .map_or(true, |bytes| bytes.len() != 32)
+        {
+            return Err(validation_error(
+                "encryption_public_key must be a base64url X25519 key",
+            ));
+        }
+        if !is_pairing_mac(&key.mac) {
+            return Err(validation_error("mac must be a base64url HMAC-SHA256"));
+        }
+        let proof_input = format!(
+            "{BROWSER_PAIR_PROOF_PREFIX}{id}\n{}\n{}\n{}",
+            key.aid, key.did, key.encryption_public_key
+        );
+        if !verify_envelope_signature(&key.signing_public_key, &device.proof, &proof_input) {
+            return Err(validation_error("proof does not verify"));
+        }
+        if !dids.insert(key.did.as_str()) {
+            return Err(validation_error("each key may appear only once"));
+        }
+    }
+    let taken: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_identity_keys WHERE did = ANY($1))")
+            .bind(dids.iter().map(|d| d.to_string()).collect::<Vec<_>>())
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| internal_error("failed to check keys", e))?;
+    if taken {
+        return Err(conflict_error("a key is already in use"));
+    }
+    let claimed: Vec<&ClaimedBrowserKey> = payload.devices.iter().map(|d| &d.key).collect();
+    let row = sqlx::query(&format!(
+        "UPDATE browser_pairings SET claimed = $3, label = $4 \
+         WHERE id = $1 AND user_id = $2 AND expires_at > NOW() AND claimed IS NULL \
+         RETURNING {BROWSER_PAIRING_COLUMNS}"
+    ))
+    .bind(id)
+    .bind(user_uuid)
+    .bind(serde_json::to_value(&claimed).map_err(|e| internal_error("bad keys", e))?)
+    .bind(device_label_from(payload.label.as_deref()))
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| internal_error("failed to store the keys", e))?
+    .ok_or_else(|| conflict_error("pairing already used"))?;
+    Ok(Json(browser_pairing_response(&row)))
+}
+
+/// `PUT /browser-pairings/{id}/root` — the browser that signed MACs each
+/// agent's root back, for the new browser to check.
+async fn put_browser_pairing_root(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    JsonBody(payload): JsonBody<BrowserPairingRootRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    if payload.agents.is_empty()
+        || payload.agents.len() > MAX_DEVICE_WRAPS
+        || payload.agents.iter().any(|a| !is_pairing_mac(&a.mac))
+    {
+        return Err(validation_error("agents must hold 1 to 10 MACs"));
+    }
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let stored = sqlx::query(
+        "UPDATE browser_pairings SET root_macs = $3 \
+         WHERE id = $1 AND user_id = $2 AND expires_at > NOW() AND claimed IS NOT NULL \
+           AND (SELECT bool_and(a = ANY(aids)) FROM unnest($4::text[]) a)",
+    )
+    .bind(id)
+    .bind(user_uuid)
+    .bind(serde_json::to_value(&payload.agents).map_err(|e| internal_error("bad MACs", e))?)
+    .bind(
+        payload
+            .agents
+            .iter()
+            .map(|a| a.aid.clone())
+            .collect::<Vec<_>>(),
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("failed to store the MACs", e))?;
+    if stored.rows_affected() == 0 {
+        return Err(not_found_error(
+            "pairing not found, expired, or not claimed",
+        ));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /contact-keys/devices` — the contacts key wrapped to a browser's
+/// own key (a browser added with a pairing, docs/40 §17.4).
+async fn add_device_contact_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(payload): JsonBody<AddDeviceContactKeyRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let wrapped = validate_contact_key_wrap(&payload.wrapped_key)?;
+    let pool = contact_keys_pool(&state).await?;
+    let browser: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM agent_identity_keys k \
+         JOIN agent_identities i ON i.aid = k.aid \
+         WHERE i.user_id = $1 AND k.did = $2 AND k.status = 'active' AND k.device_kind = 'browser')",
+    )
+    .bind(user_uuid)
+    .bind(&payload.did)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| internal_error("failed to check the device", e))?;
+    if !browser {
+        return Err(not_found_error("browser not found"));
+    }
+    sqlx::query(
+        "INSERT INTO contact_key_device_wraps (did, user_id, wrapped_key) VALUES ($1, $2, $3) \
+         ON CONFLICT (did) DO UPDATE SET wrapped_key = EXCLUDED.wrapped_key \
+         WHERE contact_key_device_wraps.user_id = EXCLUDED.user_id",
+    )
+    .bind(&payload.did)
+    .bind(user_uuid)
+    .bind(wrapped)
+    .execute(&pool)
+    .await
+    .map_err(|e| internal_error("failed to store contact key", e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `PUT /agents/{id}/auto-reply-device` — which browser runs the agent's
+/// automatic replies (docs/40 §17.6): one of its active browsers, or null
+/// for the one it was created with.
+async fn put_auto_reply_device(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(agent_id): Path<Uuid>,
+    JsonBody(payload): JsonBody<AutoReplyDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let user_uuid = parse_user_uuid(&user_id)?;
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    ensure_agent_owned_by_user(&pool, agent_id, user_uuid).await?;
+    if let Some(did) = &payload.did {
+        let browser: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM agent_identity_keys k \
+             JOIN agent_identities i ON i.aid = k.aid \
+             JOIN agents a ON a.id = i.agent_id \
+             WHERE a.id = $1 AND k.did = $2 AND k.status = 'active' \
+               AND (k.device_kind = 'browser' OR k.did = a.did))",
+        )
+        .bind(agent_id)
+        .bind(did)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| internal_error("failed to check the device", e))?;
+        if !browser {
+            return Err(validation_error(
+                "did must be an active browser of this agent",
+            ));
+        }
+    }
+    sqlx::query("UPDATE agents SET auto_reply_device = $2 WHERE id = $1")
+        .bind(agent_id)
+        .bind(&payload.did)
+        .execute(&pool)
+        .await
+        .map_err(|e| internal_error("failed to store the device", e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// `GET /recipients/device-lists?aid=&after=` — an agent's device list
 /// versions after `after`, oldest first (docs/40 §17.3). Readers follow
 /// them from the version they remember when the latest is signed by a
@@ -8761,13 +9268,13 @@ async fn put_device_list(
     Path(agent_id): Path<Uuid>,
     JsonBody(payload): JsonBody<PutDeviceListRequest>,
 ) -> Result<Json<PutDeviceListResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = authenticated_user_id(&state, &headers).await?;
+    let claims = authenticated_claims(&state, &headers).await?;
     let pool = state
         .database_pool()
         .await
         .map_err(|msg| internal_server_error(&msg))?
         .ok_or_else(database_required_but_unavailable_error)?;
-    let user_uuid = parse_user_uuid(&user_id)?;
+    let user_uuid = parse_user_uuid(&claims.sub)?;
     ensure_agent_owned_by_user(&pool, agent_id, user_uuid).await?;
 
     // The root is the agent's identity (`agents.did`); its device may
@@ -8788,10 +9295,14 @@ async fn put_device_list(
     let aid: String = root.get("aid");
     let root_did: String = root.get("did");
 
+    // Active keys, and which of them the server knows as browsers: the
+    // root's device and browsers added with a pairing.
     let mut active: HashMap<String, String> = HashMap::new();
     let mut signing_keys: HashMap<String, String> = HashMap::new();
+    let mut browsers: std::collections::HashSet<String> =
+        std::iter::once(root_did.clone()).collect();
     for row in sqlx::query(
-        "SELECT did, signing_public_key, encryption_public_key FROM agent_identity_keys \
+        "SELECT did, signing_public_key, encryption_public_key, device_kind FROM agent_identity_keys \
          WHERE aid = $1 AND status = 'active'",
     )
     .bind(&aid)
@@ -8800,14 +9311,40 @@ async fn put_device_list(
     .map_err(|e| internal_error("failed to list devices", e))?
     {
         let did: String = row.get("did");
+        if row.get::<Option<String>, _>("device_kind").as_deref() == Some("browser") {
+            browsers.insert(did.clone());
+        }
         signing_keys.insert(did.clone(), row.get("signing_public_key"));
         active.insert(did, row.get("encryption_public_key"));
     }
-    // Browsers the server knows: the root's device.
-    let browsers: std::collections::HashSet<String> = std::iter::once(root_did.clone()).collect();
-    let allowed = next_device_list_signers(&pool, &aid, &root_did)
+    // Keys a new browser sent with a pairing (docs/40 §17.4): a list may
+    // name them, which makes them active browsers of the agent.
+    let mut pending: HashMap<String, (ClaimedBrowserKey, Option<String>)> = HashMap::new();
+    for row in sqlx::query(
+        "SELECT claimed, label FROM browser_pairings \
+         WHERE user_id = $1 AND expires_at > NOW() AND claimed IS NOT NULL",
+    )
+    .bind(user_uuid)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| internal_error("failed to read pairings", e))?
+    {
+        let claimed: serde_json::Value = row.get("claimed");
+        let label: Option<String> = row.get("label");
+        for key in serde_json::from_value::<Vec<ClaimedBrowserKey>>(claimed).unwrap_or_default() {
+            if key.aid == aid && !active.contains_key(&key.did) {
+                active.insert(key.did.clone(), key.encryption_public_key.clone());
+                browsers.insert(key.did.clone());
+                pending.insert(key.did.clone(), (key, label.clone()));
+            }
+        }
+    }
+    let previous = latest_device_list_payload(&pool, &aid)
         .await
         .map_err(|e| internal_server_error(&e))?;
+    let allowed = previous
+        .as_ref()
+        .map_or_else(|| vec![root_did.clone()], DeviceListPayload::next_signers);
 
     let (list, signer) = verify_device_list_jws(
         payload.jws.trim(),
@@ -8829,6 +9366,34 @@ async fn put_device_list(
         ));
     }
 
+    // Who may sign changes, or a browser leaves: a recent World ID
+    // sign-in, so a browser left signed in cannot take over (§17.5).
+    let as_set = |v: Vec<String>| v.into_iter().collect::<std::collections::HashSet<_>>();
+    let named: std::collections::HashSet<&str> =
+        list.devices.iter().map(|d| d.did.as_str()).collect();
+    let dropped: Vec<String> = previous
+        .as_ref()
+        .map(|prev| {
+            prev.devices
+                .iter()
+                .filter(|d| browsers.contains(&d.did) && active.contains_key(&d.did))
+                .filter(|d| !named.contains(d.did.as_str()))
+                .map(|d| d.did.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if (as_set(allowed.clone()) != as_set(list.next_signers()) || !dropped.is_empty())
+        && !session_is_recent(&pool, &claims, SIGNER_CHANGE_REAUTH_SECS).await?
+    {
+        return Err(reauthentication_required(
+            "sign in with World ID again to change which browsers can sign",
+        ));
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start device list transaction", e))?;
     let stored: Option<i64> = sqlx::query_scalar(
         r#"
         INSERT INTO agent_device_lists (aid, version, root_did, jws)
@@ -8843,7 +9408,7 @@ async fn put_device_list(
     .bind(list.version)
     .bind(&root_did)
     .bind(payload.jws.trim())
-    .fetch_optional(&pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to store the device list", e))?;
     let Some(version) = stored else {
@@ -8855,6 +9420,53 @@ async fn put_device_list(
             }),
         ));
     };
+    let mut added = Vec::new();
+    for (did, (key, label)) in &pending {
+        if !named.contains(did.as_str()) {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO agent_identity_keys \
+               (aid, did, signing_public_key, encryption_public_key, status, activated_at, \
+                device_kind, device_label) \
+             VALUES ($1, $2, $3, $4, 'active', NOW(), 'browser', $5)",
+        )
+        .bind(&aid)
+        .bind(did)
+        .bind(&key.signing_public_key)
+        .bind(&key.encryption_public_key)
+        .bind(label)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to add the browser", e))?;
+        added.push(did.clone());
+    }
+    if !dropped.is_empty() {
+        // Removed browsers stop at once: senders no longer wrap for them.
+        sqlx::query(
+            "UPDATE agent_identity_keys SET status = 'retired', retired_at = NOW() \
+             WHERE aid = $1 AND did = ANY($2) AND status = 'active'",
+        )
+        .bind(&aid)
+        .bind(&dropped)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to remove the browser", e))?;
+        sqlx::query("DELETE FROM contact_key_device_wraps WHERE did = ANY($1)")
+            .bind(&dropped)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to remove the browser's contact key", e))?;
+        sqlx::query("UPDATE agents SET auto_reply_device = NULL WHERE id = $1 AND auto_reply_device = ANY($2)")
+            .bind(agent_id)
+            .bind(&dropped)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| internal_error("failed to reset the auto-reply browser", e))?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to commit the device list", e))?;
 
     record_audit_event(
         pool,
@@ -8867,6 +9479,8 @@ async fn put_device_list(
             "devices": list.devices.len(),
             "signer": signer,
             "signers": list.next_signers().len(),
+            "added_browsers": added.len(),
+            "removed_browsers": dropped.len(),
         }),
     );
     Ok(Json(PutDeviceListResponse { version }))
@@ -16901,6 +17515,13 @@ fn app_with_state(state: AppState) -> Router {
             post(agent_emergency_shutdown),
         )
         .route("/agents/{id}/device-list", put(put_device_list))
+        .route("/agents/{id}/auto-reply-device", put(put_auto_reply_device))
+        .route("/browser-pairings", post(create_browser_pairing))
+        .route("/browser-pairings/resolve", post(resolve_browser_pairing))
+        .route("/browser-pairings/{id}", get(get_browser_pairing))
+        .route("/browser-pairings/{id}/claim", post(claim_browser_pairing))
+        .route("/browser-pairings/{id}/root", put(put_browser_pairing_root))
+        .route("/contact-keys/devices", post(add_device_contact_key))
         .route(
             "/agents/{id}/auto-reply-policy",
             get(get_auto_reply_policy)
@@ -18022,6 +18643,7 @@ mod internal_tests {
             share_enabled: false,
             devices: Vec::new(),
             device_list: None,
+            auto_reply_device: None,
         });
     }
 
