@@ -21,6 +21,7 @@ import type { Agent, AgentDevice } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { deviceName } from "./AgentDevices";
+import { NoticeCard } from "./NoticeCard";
 
 /**
  * After the person connects a computer in this browser, record the agent's
@@ -130,58 +131,43 @@ export function NewDeviceNotice({ agents }: { agents: Agent[] }) {
   if (pending.length === 0 && !note) return null;
 
   return (
-    <div data-testid="new-device-notice">
+    <div data-testid="new-device-notice" className="notice-stack">
       {pending.map((p) => {
         const { agent, devices, rootHere } = p;
         return (
-        <div
-          key={agent.aid}
-          role="alert"
-          style={{
-            margin: "10px 16px",
-            padding: "12px 14px",
-            borderRadius: 14,
-            border: "1px solid var(--warn)",
-            background: "var(--warn-soft)",
-            color: "var(--text)",
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceNotice.title", { agent: agent.label })}</p>
-          {devices.map((d) => (
-            <p key={d.did} className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("deviceNotice.body", {
-                device: deviceName(t, d),
-                date: formatListTimestamp(d.activated_at, { locale }),
-              })}
-            </p>
-          ))}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            <button type="button" className="dm-btn accent" onClick={() => void mine(p)} data-testid="new-device-mine">
-              {rootHere ? t("deviceNotice.mineApprove") : t("deviceNotice.mine")}
-            </button>
-            <Link href={`/settings/agents?agent=${encodeURIComponent(agent.did)}`} className="dm-btn">
-              {t("deviceNotice.view")}
-            </Link>
-            <button
-              type="button"
-              className="dm-btn"
-              style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-              onClick={() => void stop(agent)}
-              disabled={shutdown.isPending}
-              data-testid="new-device-stop"
-            >
-              {t("deviceNotice.stop")}
-            </button>
-          </div>
-        </div>
+          <NoticeCard key={agent.aid} tone="warn" title={t("deviceNotice.title", { agent: agent.label })}>
+            <div className="notice-body">
+              {devices.map((d) => (
+                <p key={d.did}>
+                  {t("deviceNotice.body", {
+                    device: deviceName(t, d),
+                    date: formatListTimestamp(d.activated_at, { locale }),
+                  })}
+                </p>
+              ))}
+            </div>
+            <div className="notice-actions">
+              <button type="button" className="notice-link" onClick={() => void mine(p)} data-testid="new-device-mine">
+                {rootHere ? t("deviceNotice.mineApprove") : t("deviceNotice.mine")}
+              </button>
+              <Link href={`/settings/agents?agent=${encodeURIComponent(agent.did)}`} className="notice-link">
+                {t("deviceNotice.view")}
+              </Link>
+              <button
+                type="button"
+                className="notice-link danger"
+                onClick={() => void stop(agent)}
+                disabled={shutdown.isPending}
+                data-testid="new-device-stop"
+              >
+                {t("deviceNotice.stop")}
+              </button>
+            </div>
+          </NoticeCard>
         );
       })}
       {note ? (
-        <p
-          role="status"
-          className="item-sub"
-          style={{ margin: "6px 16px", color: note.tone === "error" ? "var(--danger)" : "var(--ok)" }}
-        >
+        <p role="status" className="item-sub" style={{ margin: 0, color: note.tone === "error" ? "var(--danger)" : "var(--ok)" }}>
           {note.text}
         </p>
       ) : null}

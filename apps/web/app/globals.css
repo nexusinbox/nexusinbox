@@ -965,6 +965,11 @@ button, input, textarea, select {
   margin: 8px 0 6px;
 }
 .dm-btn {
+  /* Links use it too: centre the label like a <button> does. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
   padding: 0 18px;
   border: 1px solid var(--line-strong);
@@ -973,6 +978,9 @@ button, input, textarea, select {
   color: var(--text);
   font-size: var(--fs-sm);
   font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  text-align: center;
   cursor: pointer;
 }
 .dm-btn.accent {
@@ -2647,6 +2655,9 @@ button, input, textarea, select {
   line-height: 1.6;
   gap: 12px;
   min-height: 160px;
+  /* Notices above it must not squeeze it: centred content would spill
+     over them. The page scrolls instead. */
+  flex-shrink: 0;
 }
 
 .empty-state::before {
@@ -4832,4 +4843,207 @@ details[open] .help-accordion-chevron {
 /* The language button scrolls away with the page rather than covering it. */
 .lgx-page .ai-concept-lang-toggle {
   position: absolute;
+}
+
+/* ============================================================
+ * Notices above the inbox (mock docs/inbox_notices_mock.html):
+ * one card per kind, coloured by how serious it is, one row per
+ * agent, one 「あとで」 per card.
+ * ============================================================ */
+.notice-group {
+  display: grid;
+  gap: 10px;
+  margin: 10px 16px;
+  flex-shrink: 0;
+}
+.notice-group:empty {
+  display: none;
+}
+.notice-stack {
+  display: grid;
+  gap: 10px;
+}
+.notice-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-alt);
+  color: var(--text);
+  overflow: hidden;
+}
+.notice-card.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+.notice-card.danger {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.notice-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.notice-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+.notice-icon.warn {
+  background: var(--warn);
+  color: var(--bg);
+}
+.notice-icon.danger {
+  background: var(--danger);
+  color: #fff;
+}
+.notice-icon.info {
+  background: var(--line-strong);
+  color: var(--text);
+}
+.notice-title {
+  flex: 1;
+  min-width: 0;
+}
+.notice-title-text {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.5;
+  word-break: auto-phrase; /* Break Japanese between phrases, not mid-word. */
+}
+.notice-sub {
+  margin: 2px 0 0;
+  word-break: auto-phrase;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.notice-body {
+  padding: 0 14px 10px 46px;
+  color: var(--text-muted);
+  word-break: auto-phrase;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.notice-body p {
+  margin: 0 0 4px;
+}
+.notice-later {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.notice-later:hover {
+  background: var(--surface-hover);
+}
+.notice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px 8px 46px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.notice-row-name {
+  flex: none;
+  min-width: 140px;
+  font-weight: 700;
+}
+.notice-row-why {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  word-break: auto-phrase;
+}
+.notice-row-action {
+  flex: none;
+}
+.notice-part {
+  display: inline-block;
+  max-width: 100%;
+}
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* Links carry 10px of padding: line their text up with the body's. */
+  padding: 0 14px 12px 36px;
+}
+/* Text actions inside a card: a link that says what happens. */
+.notice-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--primary-text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.notice-link:hover {
+  background: var(--surface-hover);
+}
+.notice-link.danger {
+  color: var(--danger);
+}
+.notice-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 640px) {
+  /* Name over why on the left, the action centred on the right. */
+  .notice-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 8px;
+    padding: 8px 14px;
+  }
+  .notice-row-name {
+    min-width: 0;
+  }
+  .notice-row-why {
+    grid-column: 1;
+  }
+  .notice-row-action {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .notice-body {
+    padding: 0 14px 0;
+  }
+  .notice-actions {
+    padding-left: 4px;
+  }
+  /* Easy to tap on a phone. */
+  .notice-link,
+  .notice-later {
+    min-height: 44px;
+  }
 }

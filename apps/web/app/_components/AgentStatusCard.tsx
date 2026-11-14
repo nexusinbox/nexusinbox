@@ -194,10 +194,12 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
             {computer.kind === "browser" ? t("agentStatus.connectButton") : t("agentStatus.connectAnother")}
           </button>
         ) : null}
-        {connectStage === "idle" && computer.kind === "browser" ? (
-          <p className="item-sub" style={{ margin: "4px 0 0" }}>
-            {t("agentStatus.connectButtonSub")}
-          </p>
+        {connectStage === "idle" ? (
+          computer.kind === "browser" ? (
+            <p className="item-sub" style={{ margin: "4px 0 0" }}>
+              {t("agentStatus.connectButtonSub")}
+            </p>
+          ) : null
         ) : connectStage === "confirm" ? (
           <div style={{ marginTop: 8 }}>
             <p className="item-sub" style={{ margin: 0 }}>

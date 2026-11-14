@@ -47,6 +47,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Screen readers and Japanese line breaking follow <html lang>.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
     try {

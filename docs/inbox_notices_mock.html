@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受信箱の上の知らせ（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #8a5300; --warn-soft: #fff6e5; --warn-line: #f0c36d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .cols { grid-template-columns: 1fr; } }
+  .col h2 { font-size: 15px; margin: 0 0 8px; }
+  .screen { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .bar { padding: 12px 18px; border-bottom: 1px solid var(--line); font-weight: 800; }
+  .body { padding: 12px 14px; display: grid; gap: 10px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .ok { background: var(--ok-soft); color: var(--ok); border-radius: 10px; padding: 6px 12px; font-size: 13px; }
+  .old { border-radius: 12px; padding: 10px 12px; background: var(--soft); }
+  .old.gray { background: #f1f3f6; }
+  .old b { display: block; font-size: 14px; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 0 14px; min-height: 30px; font-size: 13px; font-weight: 700; border: 1px solid #c9ced6; background: #fff; margin-top: 6px; margin-right: 4px; }
+  .pill.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .pill.tall { min-height: 40px; align-items: flex-start; padding-top: 4px; }
+  .card { border-radius: 14px; border: 1px solid var(--line); background: #fff; }
+  .card.warn { border-color: var(--warn-line); background: var(--warn-soft); }
+  .card-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .card-head b { flex: 1; font-size: 14px; }
+  .icon { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; flex: none; }
+  .icon.warn { background: #f7d58a; color: #6b3f00; }
+  .icon.info { background: #e3e7ee; color: #3d4652; }
+  .rows { border-top: 1px solid rgba(0,0,0,.06); }
+  .r { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid rgba(0,0,0,.05); font-size: 13.5px; }
+  .r:first-child { border-top: 0; }
+  .r .name { font-weight: 700; min-width: 130px; }
+  .r .why { color: var(--muted); flex: 1; }
+  .link { color: var(--primary); font-weight: 700; white-space: nowrap; }
+  .later { font-size: 13px; color: var(--muted); font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 4px; vertical-align: 1px; }
+  .empty { text-align: center; color: var(--muted); padding: 18px 0 6px; font-size: 14px; }
+  .notes { margin-top: 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>受信箱の上の知らせ（案）</h1>
+  <p class="lead">運営者の受信箱と同じ状態: 受け取る端末が未定のエージェントが 3 つ、止まっているパソコンが 3 台。左がいま、右が案。<span class="new">新</span> が変わるところ。</p>
+  <div class="cols">
+    <div class="col">
+      <h2>いま</h2>
+      <div class="screen">
+        <div class="bar">メッセージ</div>
+        <div class="body">
+          <div class="ok">自動返信: first secretary、enroll-test、接続テスト はこのブラウザでこの画面を開いている間だけ返信します。</div>
+          <div class="old"><b>「first secretary」に、まだメッセージが届きません</b><span class="muted">受け取る端末がまだ決まっていないためです。エージェントの画面で決めてください。</span><br><span class="pill pri tall">開く</span><span class="pill">あとで</span></div>
+          <div class="old"><b>「second secretary」に、まだメッセージが届きません</b><span class="muted">受け取る端末がまだ決まっていないためです。エージェントの画面で決めてください。</span><br><span class="pill pri tall">開く</span><span class="pill">あとで</span></div>
+          <div class="old"><b>「enroll-test」に、まだメッセージが届きません</b><span class="muted">受け取る端末がまだ決まっていないためです。エージェントの画面で決めてください。</span><br><span class="pill pri tall">開く</span><span class="pill">あとで</span></div>
+          <div class="old gray"><b>「first secretary」のパソコンが止まっています</b><span class="muted">パソコン（isolated）· 192 日前から。止まっている間は、自動返信とクラウドの AI も止まります。</span><br><span class="pill pri tall">エージェント画面で見る</span><span class="pill">閉じる</span></div>
+          <div class="old gray"><b>「second secretary」のパソコンが止まっています</b><span class="muted">パソコン（second secretary）· 4 時間前から。…</span><br><span class="pill pri tall">エージェント画面で見る</span><span class="pill">閉じる</span></div>
+          <div class="old gray"><b>「enroll-test」のパソコンが止まっています</b><span class="muted">パソコン（enroll）· 20 日前から。…</span><br><span class="pill pri tall">エージェント画面で見る</span><span class="pill">閉じる</span></div>
+          <div class="empty">（ここでやっと受信箱）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>案</h2>
+      <div class="screen">
+        <div class="bar">メッセージ</div>
+        <div class="body">
+          <div class="ok">自動返信: first secretary、enroll-test、接続テスト はこのブラウザでこの画面を開いている間だけ返信します。</div>
+
+          <div class="card warn">
+            <div class="card-head"><span class="icon warn">!</span><b>3 つのエージェントに、メッセージが届いていません</b><span class="later">あとで</span></div>
+            <div class="rows">
+              <div class="r"><span class="name">first secretary</span><span class="why">受け取る端末が未定</span><span class="link">端末を決める →</span></div>
+              <div class="r"><span class="name">second secretary</span><span class="why">受け取る端末が未定</span><span class="link">端末を決める →</span></div>
+              <div class="r"><span class="name">enroll-test</span><span class="why">受け取る端末が未定</span><span class="link">端末を決める →</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="icon info">i</span><b>3 台のパソコンが止まっています</b><span class="later">あとで</span></div>
+            <div class="rows">
+              <div class="r"><span class="name">second secretary</span><span class="why">4 時間前から · 自動返信とクラウドの AI も止まっています</span><span class="link">確かめる →</span></div>
+              <div class="r"><span class="name">enroll-test</span><span class="why">20 日前から</span><span class="link">確かめる →</span></div>
+              <div class="r"><span class="name">first secretary</span><span class="why">192 日前から · 使っていなければ外せます</span><span class="link">外す →</span></div>
+            </div>
+          </div>
+
+          <div class="empty">受信箱がすぐ下に来る</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>同じ種類の知らせは 1 枚にまとめ、エージェントごとに 1 行にする（6 枚 → 2 枚）</li>
+      <li>色は深刻さで決める: 「届いていない」は注意の色（黄）とアイコン、「止まっている」は控えめな色。いまは逆（届かない方が案内の青）</li>
+      <li>行ごとの操作は文字のリンクにし、何が起きるかで名付ける（「開く」→「端末を決める →」、「エージェント画面で見る」→「確かめる →」）</li>
+      <li>閉じる操作は「あとで」に統一し、カードの右上に 1 つ。押すとそのカードの知らせを今日は出さない（いまの「あとで」「閉じる」と同じ記録を使う）</li>
+      <li>止まって 30 日を過ぎたパソコンは「使っていなければ外せます」と出し、操作を「外す →」にする（押すとエージェント画面の「外す」へ）</li>
+      <li>止まっているパソコンは、最近止まったものから並べる</li>
+      <li>ボタンの文字は上下左右の中央に揃える（直し済み）。知らせの中の操作は小さめ（高さ 30〜36px）にし、スマホでは押しやすい高さ（44px）を保つ</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>この形でよいか（推奨: この形。ほかの知らせ — 端末が増えた、鍵が違う、など — も同じカードの形にそろえる）</li>
+      <li>30 日を過ぎたパソコンの扱い（推奨: 「外せます」と勧めるだけ。勝手には外さない）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

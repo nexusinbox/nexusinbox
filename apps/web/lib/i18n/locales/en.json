@@ -1681,10 +1681,8 @@
     "approved": "You chose these devices.",
     "broken": "This device list may have been tampered with. The server, or someone else, may be trying to swap in a device.",
     "failed": "That did not work. Please try again.",
-    "noticeTitle": "\"{agent}\" is not receiving messages yet",
-    "noticeBody": "No device has been chosen to receive them. Choose on the agent's page.",
-    "noticeView": "Open",
-    "noticeLater": "Later",
+    "noticeTitle": "\"{agent}\" is not receiving messages",
+    "noticeBody": "No device has been chosen to receive them yet.",
     "wrongTitle": "The devices of \"{agent}\" are not the ones you chose",
     "wrongMismatch": "{device} has changed since you checked it. The server, or someone else, may be trying to swap it.",
     "wrongBroken": "The device list cannot be checked. The server, or someone else, may be trying to swap a device.",
@@ -1693,23 +1691,29 @@
     "removeBrowserConfirm": "Remove \"{name}\"? That browser will no longer read messages or add and remove devices. The agent's address and confirmation number stay the same, so contacts are not told anything. You confirm with World ID again first.",
     "notReceivingTitle": "This agent is not receiving messages right now",
     "notReceivingOldWay": "No device has been chosen to receive them yet. Remove or reconnect the computer below first; that chooses them for you.",
-    "redoBody": "If all the devices below are yours, press \"Deliver to these {n}\" to choose them again."
+    "redoBody": "If all the devices below are yours, press \"Deliver to these {n}\" to choose them again.",
+    "groupTitle": "{n} agents are not receiving messages",
+    "groupWhy": "No receiving device chosen",
+    "groupAction": "Choose devices →"
   },
   "deviceNotice": {
     "title": "A new device connected to \"{agent}\"",
     "body": "{device} connected {date}. If you did not connect it, remove it or use the emergency stop now.",
     "mine": "I connected it",
     "mineApprove": "I connected it (deliver here too)",
-    "view": "See devices",
+    "view": "See devices →",
     "stop": "Emergency stop",
     "stopped": "Emergency stop done. Every computer and AI connected to \"{agent}\" has been stopped.",
     "stopFailed": "The emergency stop failed. Try again from the agent page."
   },
   "stoppedNotice": {
     "title": "The computer for \"{agent}\" has stopped",
-    "body": "{device} · since {ago}. While it is stopped, auto-replies and cloud AIs stop too.",
-    "view": "Open the agent page",
-    "dismiss": "Dismiss"
+    "groupTitle": "{n} computers have stopped",
+    "groupSub": "While stopped, auto-replies and cloud AIs stop too.",
+    "since": "stopped {ago}",
+    "stale": "you can remove it if unused",
+    "actionView": "Check →",
+    "actionRemove": "Remove →"
   },
   "pairing": {
     "mismatchTitle": "The computer you connected is not the one the server shows",
@@ -1768,5 +1772,8 @@
     "expired": "It was not checked within 10 minutes. Start again from \"Use it on your phone too\" in the other browser.",
     "failed": "That did not work. Please try again.",
     "noKeystore": "This browser cannot keep keys (private browsing?). Try another browser."
+  },
+  "notices": {
+    "later": "Later"
   }
 }

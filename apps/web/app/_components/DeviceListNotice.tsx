@@ -26,6 +26,7 @@ import type { Agent, AgentDevice } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { deviceName } from "./AgentDevices";
+import { NoticeCard, NoticeRow } from "./NoticeCard";
 
 const laterKey = (aid: string) => `nexusinbox.devicelist.later.${aid}`;
 
@@ -131,42 +132,34 @@ export function DeviceListNotice({ agents }: { agents: Agent[] }) {
   if (notices.length === 0 && !stopped) return null;
   const agentLink = (agent: Agent) => `/settings/agents?agent=${encodeURIComponent(agent.did)}`;
 
+  const asks = notices.filter((n): n is Extract<Notice, { kind: "ask" }> => n.kind === "ask");
+  const alerts = notices.filter((n) => n.kind !== "ask");
+
   return (
-    <div data-testid="device-list-notice">
-      {notices.map((n) =>
+    <div data-testid="device-list-notice" className="notice-stack">
+      {alerts.map((n) =>
         n.kind === "pairing" ? (
-          <div
-            key={`pairing-${n.agent.aid}`}
-            role="alert"
-            data-testid="pairing-mismatch"
-            style={{
-              margin: "10px 16px",
-              padding: "12px 14px",
-              borderRadius: 14,
-              border: "1px solid var(--danger)",
-              background: "var(--danger-soft)",
-              color: "var(--text)",
-            }}
-          >
-            <p style={{ margin: 0, fontWeight: 700 }}>{t("pairing.mismatchTitle")}</p>
-            {n.devices.map((d) => (
-              <p key={d.did} className="item-sub" style={{ margin: "2px 0 0" }}>
-                {t("pairing.mismatchBody", {
-                  agent: n.agent.label,
-                  date: formatListTimestamp(d.activated_at, { locale }),
-                  device: deviceName(t, d),
-                })}
-              </p>
-            ))}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <Link href={agentLink(n.agent)} className="dm-btn">
+          <NoticeCard key={`pairing-${n.agent.aid}`} tone="danger" title={t("pairing.mismatchTitle")} testId="pairing-mismatch">
+            <div className="notice-body">
+              {n.devices.map((d) => (
+                <p key={d.did}>
+                  {t("pairing.mismatchBody", {
+                    agent: n.agent.label,
+                    date: formatListTimestamp(d.activated_at, { locale }),
+                    device: deviceName(t, d),
+                  })}
+                </p>
+              ))}
+            </div>
+            <div className="notice-actions">
+              <Link href={agentLink(n.agent)} className="notice-link">
                 {t("deviceNotice.view")}
               </Link>
               {n.devices.map((d) => (
                 <button
                   key={d.did}
                   type="button"
-                  className="dm-btn"
+                  className="notice-link"
                   onClick={() => void removeDevice(d)}
                   disabled={revoke.isPending}
                   data-testid="pairing-mismatch-remove"
@@ -178,80 +171,74 @@ export function DeviceListNotice({ agents }: { agents: Agent[] }) {
               ))}
               <button
                 type="button"
-                className="dm-btn"
-                style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                className="notice-link danger"
                 onClick={() => void stop(n.agent)}
                 disabled={shutdown.isPending}
               >
                 {t("deviceNotice.stop")}
               </button>
             </div>
-          </div>
+          </NoticeCard>
         ) : n.kind === "wrong" ? (
-          <div
+          <NoticeCard
             key={`wrong-${n.agent.aid}`}
-            role="alert"
-            data-testid="device-list-wrong"
-            style={{
-              margin: "10px 16px",
-              padding: "12px 14px",
-              borderRadius: 14,
-              border: "1px solid var(--danger)",
-              background: "var(--danger-soft)",
-              color: "var(--text)",
-            }}
+            tone="danger"
+            title={t("deviceList.wrongTitle", { agent: n.agent.label })}
+            testId="device-list-wrong"
           >
-            <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceList.wrongTitle", { agent: n.agent.label })}</p>
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {n.changed.length > 0
-                ? t("deviceList.wrongMismatch", { device: n.changed.map((d) => deviceName(t, d)).join("、") })
-                : t("deviceList.wrongBroken")}
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <Link href={agentLink(n.agent)} className="dm-btn">
+            <div className="notice-body">
+              <p>
+                {n.changed.length > 0
+                  ? t("deviceList.wrongMismatch", { device: n.changed.map((d) => deviceName(t, d)).join("、") })
+                  : t("deviceList.wrongBroken")}
+              </p>
+            </div>
+            <div className="notice-actions">
+              <Link href={agentLink(n.agent)} className="notice-link">
                 {t("deviceNotice.view")}
               </Link>
               <button
                 type="button"
-                className="dm-btn"
-                style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                className="notice-link danger"
                 onClick={() => void stop(n.agent)}
                 disabled={shutdown.isPending}
               >
                 {t("deviceNotice.stop")}
               </button>
             </div>
-          </div>
-        ) : (
-          <div
-            key={`ask-${n.agent.aid}`}
-            role="status"
-            data-testid="device-list-ask"
-            style={{
-              margin: "10px 16px",
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid var(--line)",
-              background: "var(--primary-soft)",
-            }}
-          >
-            <p style={{ margin: 0, fontWeight: 700 }}>{t("deviceList.noticeTitle", { agent: n.agent.label })}</p>
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("deviceList.noticeBody")}
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <Link href={agentLink(n.agent)} className="dm-btn accent" onClick={() => later(n.agent.aid)}>
-                {t("deviceList.noticeView")}
-              </Link>
-              <button type="button" className="dm-btn" onClick={() => later(n.agent.aid)}>
-                {t("deviceList.noticeLater")}
-              </button>
-            </div>
-          </div>
-        ),
+          </NoticeCard>
+        ) : null,
       )}
+      {asks.length > 0 ? (
+        // Agents with no device chosen yet: one card, one row each.
+        <NoticeCard
+          tone="warn"
+          title={
+            asks.length === 1
+              ? t("deviceList.noticeTitle", { agent: asks[0].agent.label })
+              : t("deviceList.groupTitle", { n: asks.length })
+          }
+          sub={t("deviceList.noticeBody")}
+          onLater={() => asks.forEach((n) => later(n.agent.aid))}
+          laterLabel={t("notices.later")}
+          testId="device-list-ask"
+        >
+          {asks.map((n) => (
+            <NoticeRow
+              key={n.agent.aid}
+              name={n.agent.label}
+              why={t("deviceList.groupWhy")}
+              action={
+                <Link href={agentLink(n.agent)} className="notice-link" onClick={() => later(n.agent.aid)}>
+                  {t("deviceList.groupAction")}
+                </Link>
+              }
+            />
+          ))}
+        </NoticeCard>
+      ) : null}
       {stopped ? (
-        <p role="status" className="item-sub" style={{ margin: "6px 16px" }}>
+        <p role="status" className="item-sub" style={{ margin: 0 }}>
           {stopped}
         </p>
       ) : null}

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主な画面の見直し（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --warn: #8a5300; --warn-soft: #fff6e5; --warn-line: #f0c36d; --danger: #d0193f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); word-break: auto-phrase; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 34px 0 4px; }
+  .lead, .why { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .cols { grid-template-columns: 1fr; } }
+  .col h3 { font-size: 14px; margin: 0 0 6px; color: var(--muted); }
+  .screen { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .phone { max-width: 360px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .box { border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 13.5px; }
+  .yellow { background: var(--warn-soft); color: var(--warn); }
+  .yellow b { color: var(--ink); }
+  .pill { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; color: var(--warn); background: var(--warn-soft); }
+  .pill.broken { white-space: normal; width: 52px; text-align: center; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid #c9ced6; background: #fff; font-size: 13px; font-weight: 700; margin: 6px 6px 0 0; }
+  .btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .btn.small { min-height: 30px; }
+  .btn.full { width: 100%; min-height: 44px; }
+  code { background: #f1f3f6; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .cmd { display: flex; justify-content: space-between; align-items: center; background: #f1f3f6; border-radius: 8px; padding: 6px 10px; font: 12px ui-monospace, monospace; margin: 6px 0; }
+  .steps { counter-reset: s; display: grid; gap: 10px; margin-top: 8px; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; }
+  .step::before { counter-increment: s; content: counter(s); width: 24px; height: 24px; border-radius: 50%; background: var(--soft); color: var(--primary); font-weight: 800; display: grid; place-items: center; font-size: 13px; }
+  details { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .x { text-decoration: line-through; color: var(--muted); }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
+  .fab { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 22px; float: right; }
+  input { width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .notes { margin-top: 30px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>主な画面の見直し（案）</h1>
+  <p class="lead">エージェント画面・新しい会話・コンタクト・エージェント作成を、パソコン幅とスマホ幅で確かめた結果。左がいま、右が案。<span class="new">新</span> が変わるところ。<br>
+  見つけた不具合「パソコンがあるエージェントの画面を開くだけで接続の手順が始まる」は、すでに直してあります（未 push）。</p>
+
+  <h2>1. エージェント画面: 同じ色の注意が 3 つ並び、勧めることが食い違う</h2>
+  <p class="why">古い手順のパソコンには「つなぎ直す / 外す」を勧めているのに、その下の別の箱で「nexusinbox start で再開」を勧めている。どれを押せばいいか分からない。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen">
+      <div class="box yellow"><b>いまは、このエージェントにメッセージが届きません</b><br>受け取る端末がまだ決まっていないためです…</div>
+      <div>💻 <b>パソコン（isolated）</b><span class="pill">止まっています</span><span class="pill">つなぎ直しが必要</span></div>
+      <div class="box yellow">このパソコンは古い手順でつながっています。安全のため、一度外して、つなぎ直してください。…</div>
+      <span class="btn pri small">つなぎ直す</span><span class="btn danger small">外す</span>
+      <div style="margin-top:8px">🌐 <b>このブラウザ</b></div>
+      <div class="box yellow">パソコンのプログラムが止まっているようです。…ターミナルで次のコマンドを実行すると再開します<div class="cmd">nexusinbox start ~/.nexusinbox/first-secretary</div>フォルダは…／Mac なら <code>nexusinbox autostart on</code> で…</div>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="screen">
+      <div class="box yellow"><b>いまは、このエージェントにメッセージが届きません</b><br>受け取る端末がまだ決まっていないためです。下のパソコンを「つなぎ直す」か「外す」と届くようになります。</div>
+      <div>💻 <b>パソコン（isolated）</b><span class="pill">止まっています</span><span class="pill">つなぎ直しが必要</span></div>
+      <div class="muted">使い続けるなら「つなぎ直す」、もう使わないなら「外す」。</div>
+      <span class="btn pri small">つなぎ直す</span><span class="btn danger small">外す</span>
+      <div style="margin-top:8px">🌐 <b>このブラウザ</b></div>
+      <p class="muted" style="margin-top:10px">「再開のコマンド」の箱は出さない <span class="new">新</span></p>
+      <hr style="border:0;border-top:1px solid var(--line)">
+      <div class="muted">（つなぎ直しが要らない、ただ止まっているだけのパソコンの場合）</div>
+      <div>💻 <b>パソコン（自宅の Mac）</b><span class="pill">止まっています</span></div>
+      <details open><summary>再開する方法</summary> <span class="new">新</span>
+        パソコンのターミナルで実行します。<div class="cmd">nexusinbox start ~/.nexusinbox/first-secretary <span class="btn small" style="margin:0">コピー</span></div>
+        Mac なら <code>nexusinbox autostart on</code> で、ログインしたときに自動で動きます。</details>
+    </div></div>
+  </div>
+
+  <h2>2. エージェント画面: パソコンをつなぐ手順が文章の塊で、専門用語が多い</h2>
+  <p class="why">「パスフレーズ」「後半はこのブラウザとパソコンだけが知る部分」「配布ページから入れてください: 配布ページ」、英語のエラー文の引用など。手順と注意が混ざっている。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen">
+      <div class="muted">パソコンのターミナルで、次のコマンドを実行してください。この画面はそのままで大丈夫です。<br>① はじめての場合は、プログラムを入れます（Mac、Homebrew）:</div>
+      <div class="cmd">brew install nexusinbox/tap/nexusinbox</div>
+      <div class="muted">Linux の場合は、配布ページから入れてください: 配布ページ<br>② つなぎます:</div>
+      <div class="cmd">nexusinbox connect H1XQB-9CR36-…</div>
+      <div class="muted">実行すると、パソコンの中の鍵を守るパスフレーズを決めるよう聞かれます。コードは 10 分間、1 回だけ使えます。人には教えないでください。後半はこのブラウザとパソコンだけが知る部分で、運営のサーバには送りません。すでに入れている場合は、先に brew upgrade nexusinbox で最新（v0.5.0 以上）にしてください。古いままだと「A pairing code is 10 letters and digits」と出て、つながりません。</div>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="screen">
+      <div class="muted">パソコンのターミナルで、順に実行します。この画面は開いたままにしてください。</div>
+      <div class="steps">
+        <div class="step"><div><b>プログラムを入れる</b>（はじめてのときだけ）<div class="cmd">brew install nexusinbox/tap/nexusinbox</div><span class="muted">入れたことがあれば、代わりに <code>brew upgrade nexusinbox</code></span></div></div>
+        <div class="step"><div><b>つなぐ</b><div class="cmd">nexusinbox connect H1XQB-9CR36-…</div><span class="muted">合言葉（パスフレーズ）を決めるよう聞かれます。パソコンの中の鍵を守るためのものです。</span></div></div>
+        <div class="step"><div><b>この画面に「つながりました」と出たら完了</b></div></div>
+      </div>
+      <details><summary>うまくいかないとき・Linux の場合</summary>コードは 10 分で切れます。切れたら「やめる」を押して、もう一度。Linux は <a href="#">配布ページ</a> から入れます。</details>
+      <p class="muted">このコードは 1 回だけ使えます。人に教えないでください。</p>
+    </div></div>
+  </div>
+
+  <h2>3. スマホ: 印が途中で折り返す</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen phone">💻 <b>パソコン（second secretary）</b><span class="pill broken">止まってい ます</span></div></div>
+    <div class="col"><h3>案</h3><div class="screen phone">💻 <b>パソコン（second secretary）</b><br><span class="pill" style="margin-left:0">止まっています</span><span class="pill">つなぎ直しが必要</span> <span class="new">新</span><div class="muted">印は折り返さず、収まらなければ次の行へ</div></div></div>
+  </div>
+
+  <h2>4. エージェント作成: 暗号の専門用語、小さなボタン</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen phone">
+      <b>エージェント名</b><div class="muted">わかりやすい名前を付けてください。例: 営業アシスタント / サポートBot</div><input placeholder="例: 営業アシスタント"><span class="btn pri small">作成</span>
+      <div class="box" style="background:#f6f7f9"><b>この操作について</b><br><span class="muted">Ed25519署名鍵とX25519暗号化鍵のペアがブラウザ内で生成されます。秘密鍵はこのデバイスのローカルストレージにのみ保存され、サーバーには送信されません。</span></div>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="screen phone">
+      <b>エージェントの名前</b><div class="muted">相手に見える名前です。あとで変えられます。</div><input placeholder="例: 営業アシスタント"><span class="btn pri full">エージェントを作る</span> <span class="new">新</span>
+      <p class="muted">メッセージを読むための鍵は、このブラウザの中で作ります。運営には送られないため、運営もメッセージを読めません。 <span class="new">新</span></p>
+    </div></div>
+  </div>
+
+  <h2>5. 新しい会話（スマホ）: 「＋」が自分自身に重なる、案内文が切れる</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen phone"><b>宛先</b><input placeholder="名前で探す、またはアドレス (aid:ai:...) を貼さ"><div class="muted" style="margin-top:8px">自分のエージェント…</div><span class="fab">+</span><div class="muted">新しい会話の画面にも「新しい会話」ボタン（＋）が出て、一覧の上に重なる</div></div></div>
+    <div class="col"><h3>案</h3><div class="screen phone"><b>宛先</b><input placeholder="名前かアドレスで探す"> <span class="new">新</span><div class="muted" style="margin-top:8px">自分のエージェント…</div><div class="muted">新しい会話の画面では「＋」を出さない <span class="new">新</span></div></div></div>
+  </div>
+
+  <h2>6. コンタクト: 空のときに何をすればいいか書いていない</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen"><div class="muted" style="text-align:center">コンタクトはまだ登録されていません。</div></div></div>
+    <div class="col"><h3>案</h3><div class="screen"><b>まだコンタクトがいません</b> <span class="new">新</span><div class="muted">相手から紹介リンクをもらうか、あなたの紹介リンクを送って招いてください。相手のリンクを開くと、ここに相手が出ます。</div><span class="btn pri">紹介リンクを作る</span><div class="muted">（新しい会話・受信箱と同じ案内にそろえる）</div></div></div>
+  </div>
+
+  <h2>7. 受信箱が空のとき: アイコンが 2 つ</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="screen" style="text-align:center">✉️（丸い枠）<br><b>📥 まだメッセージはありません</b></div></div>
+    <div class="col"><h3>案</h3><div class="screen" style="text-align:center">✉️（丸い枠）<br><b>まだメッセージはありません</b> <span class="new">新</span></div></div>
+  </div>
+
+  <div class="notes">
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>1〜7 をこの案どおりに進めてよいか（推奨: すべて進める。3・5・7 は見た目の不具合の修正、1・2・4・6 は文章と配置の変更）</li>
+      <li>2 の「パスフレーズ」の言い方（推奨: 「合言葉（パスフレーズ）」。パソコン側の画面に出る言葉と結びつくように、かっこで残す）</li>
+    </ul>
+    <b>今回は見送るもの</b>
+    <ul>
+      <li>見つからないページ（404）が英語の SF 風の見た目で、ほかの画面と調子が違う。機能には影響しないので後回し</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

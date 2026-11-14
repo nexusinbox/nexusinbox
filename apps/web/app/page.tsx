@@ -607,12 +607,15 @@ function MessagesPageInner() {
       {/* The auto-reply note, and the browser-side auto-reply itself: it
           runs while this screen is open, so it stays mounted. */}
       <InboxAgentBar agents={agentList} />
-      {/* A device joined one of these agents since this browser looked (docs/38). */}
-      <NewDeviceNotice agents={agentList} />
-      {/* The signed device list: ask to approve, or warn when it differs (docs/40). */}
-      <DeviceListNotice agents={agentList} />
-      {/* A computer that stopped (e.g. after a restart) stops auto-replies too (docs/39). */}
-      <StoppedComputerNotice agents={agentList} />
+      {/* Notices, most serious first, one card per kind (docs/inbox_notices_mock.html). */}
+      <div className="notice-group">
+        {/* A device joined one of these agents since this browser looked (docs/38). */}
+        <NewDeviceNotice agents={agentList} />
+        {/* The signed device list: ask to approve, or warn when it differs (docs/40). */}
+        <DeviceListNotice agents={agentList} />
+        {/* A computer that stopped (e.g. after a restart) stops auto-replies too (docs/39). */}
+        <StoppedComputerNotice agents={agentList} />
+      </div>
 
       {showWelcomeNoAgents ? (
         // First-time user, no agents yet → the "what do I do first" card.

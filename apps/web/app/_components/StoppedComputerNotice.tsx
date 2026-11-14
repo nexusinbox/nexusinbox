@@ -12,8 +12,11 @@ import { stoppedComputers } from "../../lib/agents/devices";
 import type { Agent } from "../../lib/api/types";
 import { useTranslation } from "../../lib/i18n";
 import { deviceName } from "./AgentDevices";
+import { NoticeCard, NoticeRow } from "./NoticeCard";
 
 const dismissKey = (did: string) => `nexusinbox.stopped.dismissed.${did}`;
+/** Stopped this long, a computer is likely no longer used: suggest removing it. */
+const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function StoppedComputerNotice({ agents }: { agents: Agent[] }) {
   const { t } = useTranslation();
@@ -53,40 +56,45 @@ export function StoppedComputerNotice({ agents }: { agents: Agent[] }) {
     setDismissed((d) => ({ ...d, [did]: String(since) }));
   };
 
+  // Most recently stopped first; long stopped ones are likely unused.
+  const rows = [...visible].sort((a, b) => b.since - a.since);
+  const agentLink = (agent: Agent) => `/settings/agents?agent=${encodeURIComponent(agent.did)}`;
+
   return (
-    <div data-testid="stopped-computer-notice">
-      {visible.map(({ agent, device, since }) => {
-        const { unit, value } = elapsed(since, now);
-        return (
-          <div
-            key={device.did}
-            role="status"
-            style={{
-              margin: "10px 16px",
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid var(--line)",
-              background: "var(--surface-alt)",
-            }}
-          >
-            <p style={{ margin: 0, fontWeight: 700 }}>{t("stoppedNotice.title", { agent: agent.label })}</p>
-            <p className="item-sub" style={{ margin: "2px 0 0" }}>
-              {t("stoppedNotice.body", {
-                device: deviceName(t, device),
-                ago: t(`agentStatus.ago.${unit}`, { n: value }),
-              })}
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <Link href={`/settings/agents?agent=${encodeURIComponent(agent.did)}`} className="dm-btn accent">
-                {t("stoppedNotice.view")}
-              </Link>
-              <button type="button" className="dm-btn" onClick={() => dismiss(device.did, since)}>
-                {t("stoppedNotice.dismiss")}
-              </button>
-            </div>
-          </div>
-        );
-      })}
+    <div data-testid="stopped-computer-notice" className="notice-stack">
+      <NoticeCard
+        tone="info"
+        title={
+          rows.length === 1
+            ? t("stoppedNotice.title", { agent: rows[0].agent.label })
+            : t("stoppedNotice.groupTitle", { n: rows.length })
+        }
+        sub={t("stoppedNotice.groupSub")}
+        onLater={() => rows.forEach((r) => dismiss(r.device.did, r.since))}
+        laterLabel={t("notices.later")}
+      >
+        {rows.map(({ agent, device, since }) => {
+          const { unit, value } = elapsed(since, now);
+          const stale = now - since >= STALE_AFTER_MS;
+          const why = [
+            deviceName(t, device),
+            t("stoppedNotice.since", { ago: t(`agentStatus.ago.${unit}`, { n: value }) }),
+          ];
+          if (stale) why.push(t("stoppedNotice.stale"));
+          return (
+            <NoticeRow
+              key={device.did}
+              name={agent.label}
+              why={why}
+              action={
+                <Link href={agentLink(agent)} className="notice-link">
+                  {stale ? t("stoppedNotice.actionRemove") : t("stoppedNotice.actionView")}
+                </Link>
+              }
+            />
+          );
+        })}
+      </NoticeCard>
     </div>
   );
 }
