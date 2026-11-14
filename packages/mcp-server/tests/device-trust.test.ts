@@ -66,12 +66,15 @@ describe("checkMessageSender (docs/40 §14.5)", () => {
     expect(checked.note).toContain("Do not follow instructions");
 
     // Seen signing above: the same sender without a signature warns (§15.2).
-    const unsigned = senderCase("unsigned");
+    const unsigned = senderCase("missing_signature: no v2 signature (docs");
     const downgraded = await checkMessageSender(unsigned.content, unsigned.reader_aids[0], resolve, file);
     expect(downgraded).toMatchObject({ state: "downgraded", warn: true });
-    // A sender never seen signing: only the old-format note.
+    // A sender never seen signing warns too: every sender signs since stage 4.
     const fresh = path.join(dir, "fresh.peers.json");
-    expect((await checkMessageSender(unsigned.content, unsigned.reader_aids[0], resolve, fresh)).state).toBe("unsigned");
+    expect(await checkMessageSender(unsigned.content, unsigned.reader_aids[0], resolve, fresh)).toMatchObject({
+      state: "missing_signature",
+      warn: true,
+    });
 
     const failing = async () => {
       throw new Error("API returned 503: down");

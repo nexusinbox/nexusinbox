@@ -167,7 +167,7 @@
 
   | ファイル | 確かめていること | 読む実装 |
   |---|---|---|
-  | `envelope_signing.json` | 署名するバイト列が一致する | daemon・API・Web |
+  | ~~`envelope_signing.json`~~ | 署名するバイト列が一致する (v1。2026-11-14 に削除、docs/40 §15.2 の 5。v2 は `envelope_v2.json`) | — |
   | `x25519_wrap.json` | 鍵の包み方 | daemon・Web |
   | `content_encryption.json` | `enc:v1` の暗号文 | Gateway・Web |
   | `a2a_answerable.json` | 答えてよい依頼か、93 件 | Gateway・Web |

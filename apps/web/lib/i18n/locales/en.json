@@ -889,7 +889,7 @@
     "skipNoDevice": "The other agent has no device that receives messages.",
     "skipNoList": "The other agent has not chosen the devices that receive its messages yet. Automatic replies work once they open NexusInbox.",
     "skipUnchecked": "The sender could not be verified. Check with them another way, then reply by hand.",
-    "skipOld": "The message is in the old format. Once they update, automatic replies work again.",
+    "skipOld": "The sender could not be checked (they have no device list yet). Once they open NexusInbox, automatic replies work.",
     "skipStale": "It was sent more than 24 hours ago. If they need an answer, reply by hand."
   },
   "profile": {
@@ -1622,7 +1622,7 @@
     "autoSkippedNoDevice": "No automatic reply: the other agent has no device that receives messages",
     "autoSkippedNoList": "No automatic reply (the other agent has not chosen the devices that receive its messages yet)",
     "autoSkippedUnchecked": "Didn't auto-reply: the sender could not be verified",
-    "autoSkippedOld": "Didn't auto-reply: the message is in the old format",
+    "autoSkippedOld": "Didn't auto-reply: the sender could not be checked",
     "autoSkippedStale": "Didn't auto-reply: it was sent more than 24 hours ago",
     "cardNote": "Not sent. See the notice below."
   },
@@ -1635,12 +1635,12 @@
     "broken": "Their list of devices does not check out.",
     "downgraded": "They used to sign what they sent.",
     "missingSignature": "It has no signature.",
-    "oldFormat": "Old format: the sender was not checked",
     "confirmBody": "Answering sends a reply to a sender who could not be verified. Did you check with them another way?",
     "confirmSend": "I checked, send it",
     "confirmCancel": "Cancel",
     "notSent": "Not sent.",
-    "inboxMark": "Sender not verified"
+    "inboxMark": "Sender not verified",
+    "noListNote": "The sender has no device list yet, so they were not checked"
   },
   "confirm": {
     "title": "Confirmation number",

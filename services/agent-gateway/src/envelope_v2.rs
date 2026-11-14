@@ -21,9 +21,6 @@ pub const PREFIX: &str = "nexusinbox-envelope-v2\n";
 const MAX_CLOCK_AHEAD_MS: i64 = 10 * 60 * 1000;
 /// Automatic replies only answer messages sent within this time.
 pub const AUTO_REPLY_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
-/// From 2027-02-11T00:00:00Z every message without a v2 signature is a
-/// warning (docs/40 §15.2): messages sent before stage 4 are gone by then.
-pub const UNSIGNED_CUTOFF_MS: i64 = 1_802_304_000_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wrap {
@@ -236,10 +233,9 @@ pub fn outgoing_fields(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SenderState {
     Verified,
-    Unsigned,
     /// No signature from a sender seen signing before (docs/40 §15.2).
     Downgraded,
-    /// No signature after UNSIGNED_CUTOFF_MS.
+    /// No signature: every sender signs since stage 4 (docs/40 §15.2).
     MissingSignature,
     NoList,
     Altered,
@@ -252,7 +248,6 @@ impl SenderState {
     pub fn code(self) -> &'static str {
         match self {
             SenderState::Verified => "verified",
-            SenderState::Unsigned => "unsigned",
             SenderState::Downgraded => "downgraded",
             SenderState::MissingSignature => "missing_signature",
             SenderState::NoList => "no_list",
@@ -265,10 +260,7 @@ impl SenderState {
 
     /// Whether a reader is warned (as opposed to a quiet note, or nothing).
     pub fn warns(self) -> bool {
-        !matches!(
-            self,
-            SenderState::Verified | SenderState::Unsigned | SenderState::NoList
-        )
+        !matches!(self, SenderState::Verified | SenderState::NoList)
     }
 }
 
@@ -375,10 +367,8 @@ pub fn check_sender(
     let Some(sig) = content.get("signature_v2").filter(|v| v.is_object()) else {
         return SenderCheck::only(if signed_before {
             SenderState::Downgraded
-        } else if now_ms >= UNSIGNED_CUTOFF_MS {
-            SenderState::MissingSignature
         } else {
-            SenderState::Unsigned
+            SenderState::MissingSignature
         });
     };
     let Some(fields) = delivered_fields(content, sig) else {
@@ -520,7 +510,7 @@ pub fn auto_reply_block(
             Some(at) if now_ms - at <= AUTO_REPLY_MAX_AGE_MS => None,
             _ => Some("stale"),
         },
-        SenderState::Unsigned | SenderState::NoList => Some("unsigned"),
+        SenderState::NoList => Some("unsigned"),
         SenderState::Altered | SenderState::Downgraded | SenderState::MissingSignature => {
             Some("altered")
         }
@@ -701,7 +691,6 @@ mod tests {
         for c in v["auto_reply"].as_array().unwrap() {
             let state = match c["state"].as_str().unwrap() {
                 "verified" => SenderState::Verified,
-                "unsigned" => SenderState::Unsigned,
                 "no_list" => SenderState::NoList,
                 "altered" => SenderState::Altered,
                 "not_listed" => SenderState::NotListed,

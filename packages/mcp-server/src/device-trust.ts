@@ -72,8 +72,8 @@ async function save(file: string, peers: Peers): Promise<void> {
 /** What the AI is told about a message's sender (docs/40 §14.5); the gateway says the same. */
 export function senderCheckResult(state: SenderCheckState | "unchecked"): SenderCheckResult {
   if (state === "verified") return { state, warn: false, note: null };
-  if (state === "unsigned" || state === "no_list") {
-    return { state, warn: false, note: "Sent in the old format: the sender could not be checked." };
+  if (state === "no_list") {
+    return { state, warn: false, note: "The sender's agent has no device list yet: the sender could not be checked." };
   }
   return {
     state,

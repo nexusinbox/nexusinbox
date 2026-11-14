@@ -104,11 +104,11 @@ export async function checkReceived(
  */
 export function receivedWarns(check: ReceivedCheck | undefined): boolean {
   return (
-    check !== undefined && check !== "verified" && check !== "unsigned" && check !== "no_list" && check !== "unchecked"
+    check !== undefined && check !== "verified" && check !== "no_list" && check !== "unchecked"
   );
 }
 
-/** Signed in the old format: a quiet note only. */
-export function receivedOldFormat(check: ReceivedCheck | undefined): boolean {
-  return check === "unsigned" || check === "no_list";
+/** The sender's agent has no device list yet: a quiet note only. */
+export function receivedNoList(check: ReceivedCheck | undefined): boolean {
+  return check === "no_list";
 }

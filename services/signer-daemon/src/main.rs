@@ -671,28 +671,6 @@ pub(crate) struct DaemonState {
     allowed_uid: Option<u32>,
 }
 
-#[derive(Deserialize)]
-struct SignEnvelopeParams {
-    sender_did: String,
-    recipient_did: String,
-    subject_encrypted: String,
-    encrypted_content: String,
-    encrypted_key: String,
-    nonce: String,
-}
-
-fn build_envelope_signing_payload(params: &SignEnvelopeParams) -> String {
-    format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
-        params.sender_did,
-        params.recipient_did,
-        params.subject_encrypted,
-        params.encrypted_content,
-        params.encrypted_key,
-        params.nonce
-    )
-}
-
 // ---------------------------------------------------------------------------
 // RPC handler
 // ---------------------------------------------------------------------------
@@ -700,7 +678,6 @@ fn build_envelope_signing_payload(params: &SignEnvelopeParams) -> String {
 fn handle_rpc(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
     match req.method.as_str() {
         "sign_assertion" => handle_sign_assertion(state, req),
-        "sign_envelope" => handle_sign_envelope(state, req),
         "sign_envelope_v2" => handle_sign_envelope_v2(state, req),
         "get_public_key" => handle_get_public_key(state, req),
         "unwrap_content_key" => handle_unwrap_content_key(state, req),
@@ -914,40 +891,6 @@ fn handle_unwrap_content_key(state: &DaemonState, req: &RpcRequest) -> RpcRespon
         ),
         Err(msg) => RpcResponse::error(req.id.clone(), -32000, msg),
     }
-}
-
-fn handle_sign_envelope(state: &DaemonState, req: &RpcRequest) -> RpcResponse {
-    let params: SignEnvelopeParams = match serde_json::from_value(req.params.clone()) {
-        Ok(params) => params,
-        Err(e) => {
-            return RpcResponse::error(
-                req.id.clone(),
-                -32602,
-                format!("invalid sign_envelope params: {}", e),
-            )
-        }
-    };
-
-    let current_did = derive_did_from_verifying_key(&state.verifying_key);
-    if params.sender_did != current_did {
-        return RpcResponse::error(
-            req.id.clone(),
-            -32602,
-            "sender_did does not match current signer DID".into(),
-        );
-    }
-
-    let payload = build_envelope_signing_payload(&params);
-    let signature = state.signing_key.sign(payload.as_bytes());
-    let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
-
-    RpcResponse::success(
-        req.id.clone(),
-        serde_json::json!({
-            "sender_did": current_did,
-            "signature": signature_b64,
-        }),
-    )
 }
 
 /// Sign an envelope with signature v2 (docs/40 §14.3). Only for this
@@ -2497,41 +2440,6 @@ mod tests {
             .expect("the proof verifies with the new key");
     }
 
-    /// Shared vector (tests/vectors/envelope_signing.json): the daemon signs
-    /// exactly the bytes the API verifies and the web signs (docs/29 §2.4).
-    #[test]
-    fn envelope_signing_matches_shared_vector() {
-        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tests/vectors/envelope_signing.json"
-        )))
-        .unwrap();
-        let field = |name: &str| vector["fields"][name].as_str().unwrap().to_string();
-        let params = SignEnvelopeParams {
-            sender_did: field("sender_did"),
-            recipient_did: field("recipient_did"),
-            subject_encrypted: field("subject_encrypted"),
-            encrypted_content: field("encrypted_content"),
-            encrypted_key: field("encrypted_key"),
-            nonce: field("nonce"),
-        };
-        let payload = build_envelope_signing_payload(&params);
-        assert_eq!(payload, vector["payload"].as_str().unwrap());
-
-        let seed_hex = vector["signing_seed_hex"].as_str().unwrap();
-        let mut seed = [0u8; 32];
-        for (i, byte) in seed.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&seed_hex[i * 2..i * 2 + 2], 16).unwrap();
-        }
-        let key = SigningKey::from_bytes(&seed);
-        assert_eq!(
-            URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()),
-            vector["public_key_b64url"].as_str().unwrap()
-        );
-        let signature = URL_SAFE_NO_PAD.encode(key.sign(payload.as_bytes()).to_bytes());
-        assert_eq!(signature, vector["signature_b64url"].as_str().unwrap());
-    }
-
     /// Shared vector (tests/vectors/x25519_wrap.json): keys wrapped by the
     /// web and by this daemon both unwrap here (docs/29 §4).
     #[test]
@@ -2562,7 +2470,9 @@ mod tests {
     }
 
     #[test]
-    fn test_rpc_sign_envelope() {
+    fn test_rpc_sign_envelope_v1_is_gone() {
+        // Signature v1 is refused by the API (docs/40 §15.2); the daemon no
+        // longer signs it.
         let key = SigningKey::generate(&mut OsRng);
         let vk = key.verifying_key();
         let sender_did = derive_did_from_verifying_key(&vk);
@@ -2593,15 +2503,8 @@ mod tests {
         };
 
         let resp = handle_rpc(&state, &req);
-        assert!(resp.error.is_none());
-        let result = resp.result.unwrap();
-        assert_eq!(
-            result["sender_did"],
-            derive_did_from_verifying_key(&state.verifying_key)
-        );
-        let signature = result["signature"].as_str().unwrap();
-        let bytes = URL_SAFE_NO_PAD.decode(signature).unwrap();
-        assert_eq!(bytes.len(), 64);
+        assert!(resp.result.is_none());
+        assert_eq!(resp.error.unwrap().code, -32601);
     }
 
     #[test]

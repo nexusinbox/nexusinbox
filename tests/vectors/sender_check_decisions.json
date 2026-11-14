@@ -421,7 +421,7 @@
       }
     },
     {
-      "name": "unsigned: no v2 signature",
+      "name": "missing_signature: no v2 signature (docs/40 §15.2)",
       "content": {
         "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
         "recipient_did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
@@ -493,7 +493,7 @@
         "version": 1
       },
       "expected": {
-        "state": "unsigned",
+        "state": "missing_signature",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
           "version": 1
@@ -1781,7 +1781,7 @@
       "signed_before": true
     },
     {
-      "name": "missing_signature: no signature after 2027-02-11 (stage 5)",
+      "name": "missing_signature: no v2 signature, read at a later date",
       "content": {
         "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
         "recipient_did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
@@ -2263,12 +2263,6 @@
       "state": "verified",
       "sent_at": "2026-11-19T10:00:00.000Z",
       "expected": "stale"
-    },
-    {
-      "name": "unsigned",
-      "state": "unsigned",
-      "sent_at": null,
-      "expected": "unsigned"
     },
     {
       "name": "no list",

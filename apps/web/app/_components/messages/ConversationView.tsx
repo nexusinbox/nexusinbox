@@ -65,7 +65,7 @@ import { decryptMessageBody, type ViewerKey } from "../../../lib/inbox/decrypt-m
 import { deviceWraps, isSendStop, planSend, sendSigning, type SendStop } from "../../../lib/crypto/device-wraps";
 import { SendStopNotice } from "./SendStopNotice";
 import { ConfirmationPanel } from "../ConfirmationPanel";
-import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
+import { checkReceived, receivedNoList, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
 import { localDeviceDid, readableElsewhere } from "../../../lib/agents/local-device";
@@ -648,9 +648,9 @@ export function ConversationView({
                   <div className="dm-meta">
                     {isAutoReply ? `${t("messages.autoReplyMark")} · ` : ""}
                     {time}
-                    {!mine && receivedOldFormat(r.sender) ? (
-                      <span className="dm-oldformat" data-testid="sender-old-format">
-                        {` · ${t("senderCheck.oldFormat")}`}
+                    {!mine && receivedNoList(r.sender) ? (
+                      <span className="dm-oldformat" data-testid="sender-no-list">
+                        {` · ${t("senderCheck.noListNote")}`}
                       </span>
                     ) : null}
                   </div>

@@ -111,7 +111,7 @@ cargo run --manifest-path services/signer-daemon/Cargo.toml -- --enroll \
 
 現状の参照実装では:
 - Signer Daemon は `get_public_key` で `aid` / current `did:key` / `public_key` を返す
-- envelope 署名は `sign_envelope` RPC で行える
+- envelope 署名は `sign_envelope_v2` RPC で行える (v1 の `sign_envelope` は 2026-11-14 に削除、docs/40 §15.2)
 
 ---
 

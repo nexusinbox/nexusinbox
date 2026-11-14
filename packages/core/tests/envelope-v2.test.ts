@@ -86,7 +86,6 @@ describe("checking the sender (docs/40 §14.5)", () => {
 
   it("warns only when something does not match", () => {
     expect(senderCheckWarns("verified")).toBe(false);
-    expect(senderCheckWarns("unsigned")).toBe(false);
     expect(senderCheckWarns("no_list")).toBe(false);
     expect(senderCheckWarns("altered")).toBe(true);
     expect(senderCheckWarns("not_listed")).toBe(true);

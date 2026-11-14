@@ -37,12 +37,6 @@ export const ENVELOPE_V2_PREFIX = "nexusinbox-envelope-v2\n";
 export const MAX_CLOCK_AHEAD_MS = 10 * 60 * 1000;
 /** Automatic replies only answer messages sent within this time. */
 export const AUTO_REPLY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-/**
- * From this time every message without a v2 signature is a warning (docs/40
- * §15.2): 90 days after stage 4 went out, messages sent before it are gone
- * from storage. Read from the reader's clock, not the server's.
- */
-export const UNSIGNED_CUTOFF = Date.parse("2027-02-11T00:00:00Z");
 
 export type KeyWrapV2 = { did: string; key: string };
 export type AttachmentRefV2 = { id: string; metadata_encrypted: string; metadata_nonce: string };
@@ -182,9 +176,8 @@ export async function verifyEnvelopeV2Signature(f: EnvelopeV2Fields, signature: 
 
 /**
  *  - verified: signed by a device on the sender's list, under the root remembered;
- *  - unsigned: no v2 signature, from a sender never seen signing (an older sender);
  *  - downgraded: no v2 signature, from a sender seen signing before (docs/40 §15.2);
- *  - missing_signature: no v2 signature, after UNSIGNED_CUTOFF;
+ *  - missing_signature: no v2 signature (every sender signs since stage 4; docs/40 §15.2);
  *  - no_list: signed, but the sender's agent has no device list yet;
  *  - altered: the signature does not match what was delivered, or names other agents;
  *  - not_listed: the signing device is not on the sender's list;
@@ -193,7 +186,6 @@ export async function verifyEnvelopeV2Signature(f: EnvelopeV2Fields, signature: 
  */
 export type SenderCheckState =
   | "verified"
-  | "unsigned"
   | "downgraded"
   | "missing_signature"
   | "no_list"
@@ -271,8 +263,7 @@ export async function checkSender(input: {
   const { content, sender, pin } = input;
   const sig = content.signature_v2;
   if (!sig) {
-    if (input.signedBefore) return { state: "downgraded" };
-    return { state: (input.now ?? Date.now()) >= UNSIGNED_CUTOFF ? "missing_signature" : "unsigned" };
+    return { state: input.signedBefore ? "downgraded" : "missing_signature" };
   }
 
   const ownCopy = input.readerAids.includes(sig.sender_aid);
@@ -342,7 +333,6 @@ export function autoReplyBlock(
       const at = sentAt ? Date.parse(sentAt) : NaN;
       return Number.isFinite(at) && now - at <= AUTO_REPLY_MAX_AGE_MS ? null : "stale";
     }
-    case "unsigned":
     case "no_list":
       return "unsigned";
     case "altered":
@@ -360,5 +350,5 @@ export function autoReplyBlock(
 
 /** Whether a reader should show a warning (as opposed to a quiet note, or nothing). */
 export function senderCheckWarns(state: SenderCheckState): boolean {
-  return state !== "verified" && state !== "unsigned" && state !== "no_list";
+  return state !== "verified" && state !== "no_list";
 }
