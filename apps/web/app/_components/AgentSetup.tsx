@@ -262,36 +262,45 @@ export function ConnectComputer({
   }
   return (
     <div style={{ marginTop: 4 }}>
+      <ol className="connect-steps">
+        <li>
+          <p className="connect-step-title">{t("firstRun.connect.installStep")}</p>
+          <CommandLine command={INSTALL_COMMAND} testId="connect-install" />
+          <p className="item-sub" style={{ margin: "6px 0 0" }}>
+            {t("firstRun.connect.upgradeHint")}
+          </p>
+        </li>
+        <li>
+          <p className="connect-step-title">{t("firstRun.connect.connectStep")}</p>
+          <CommandLine command={daemonConnectCommand(pairing.code)} testId="connect-command" />
+          <p className="item-sub" style={{ margin: "6px 0 0" }}>
+            {t("firstRun.connect.passphrase")}
+          </p>
+        </li>
+        <li>
+          <p className="connect-step-title">{t("firstRun.connect.doneStep")}</p>
+          <p className="item-sub" style={{ margin: "2px 0 0" }} aria-live="polite">
+            {t("firstRun.connect.waiting")}
+          </p>
+        </li>
+      </ol>
       <p className="item-sub" style={{ marginTop: 10 }}>
-        {t("firstRun.connect.installStep")}
+        {pairing.long ? t("firstRun.connect.codeNoteLong") : t("firstRun.connect.codeNote", { code: pairing.code })}
       </p>
-      <CommandLine command={INSTALL_COMMAND} testId="connect-install" />
-      <p className="item-sub" style={{ marginTop: 6 }}>
-        {t("firstRun.connect.linuxHint")}{" "}
-        <a href={RELEASES_URL} target="_blank" rel="noreferrer">
-          {t("firstRun.connect.releasesLink")}
-        </a>
-      </p>
-      <p className="item-sub" style={{ marginTop: 12 }}>
-        {t("firstRun.connect.connectStep")}
-      </p>
-      <CommandLine command={daemonConnectCommand(pairing.code)} testId="connect-command" />
-      <p className="item-sub" style={{ marginTop: 10 }}>
-        {t("firstRun.connect.passphrase")}
-      </p>
-      <p className="item-sub" style={{ marginTop: 6 }}>
-        {pairing.long
-          ? `${t("firstRun.connect.codeNoteLong")} ${t("firstRun.connect.secretNote")}`
-          : t("firstRun.connect.codeNote", { code: pairing.code })}
-      </p>
-      {pairing.long ? (
-        <p className="item-sub" style={{ marginTop: 6 }} data-testid="connect-upgrade-note">
-          {t("firstRun.connect.upgradeNote")}
+      <details className="item-sub" style={{ marginTop: 6 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 700 }}>{t("firstRun.connect.troubleTitle")}</summary>
+        {pairing.long ? (
+          <p style={{ margin: "6px 0 0" }} data-testid="connect-upgrade-note">
+            {t("firstRun.connect.upgradeNote")}
+          </p>
+        ) : null}
+        <p style={{ margin: "6px 0 0" }}>
+          {t("firstRun.connect.linuxHint")}{" "}
+          <a href={RELEASES_URL} target="_blank" rel="noreferrer">
+            {t("firstRun.connect.releasesLink")}
+          </a>
         </p>
-      ) : null}
-      <p className="item-sub" style={{ marginTop: 12 }} aria-live="polite">
-        {t("firstRun.connect.waiting")}
-      </p>
+      </details>
     </div>
   );
 }

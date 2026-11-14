@@ -22,7 +22,7 @@ function isAddress(value: string): boolean {
 }
 
 export function NewConversation() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const agentsQuery = useAgentsQuery();
@@ -168,7 +168,7 @@ export function NewConversation() {
           <InviteCard
             agent={sender}
             title={t("share.noContactsTitle")}
-            desc={`${t("share.noContactsDesc")} ${t("share.noContactsHint")}`}
+            desc={[t("share.noContactsDesc"), t("share.noContactsHint")].join(locale === "ja" ? "" : " ")}
           />
         ) : null}
 

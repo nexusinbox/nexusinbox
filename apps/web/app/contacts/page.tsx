@@ -11,6 +11,7 @@ import { AppShell } from "../_components/AppShell";
 import { RefreshIconButton } from "../_components/RefreshIconButton";
 import { ConfirmationPanel } from "../_components/ConfirmationPanel";
 import { Avatar } from "../_components/messages/ConversationView";
+import { InviteCard } from "../_components/InviteCard";
 import {
   useAgentsQuery,
   useContactsQuery,
@@ -47,7 +48,7 @@ export default function ContactsPage() {
 }
 
 function ContactsPageInner() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const searchParams = useSearchParams();
   const prefillDid = searchParams?.get("add")?.trim() ?? "";
   const contactsQuery = useContactsQuery();
@@ -411,7 +412,18 @@ function ContactsPageInner() {
         ) : contactsQuery.isError ? (
           <p className="dm-empty">{t("contacts.loadFailed")}</p>
         ) : contacts.length === 0 ? (
-          <p className="dm-empty">{t("contacts.empty")}</p>
+          agents[0] ? (
+            // Same guidance as compose: there is no directory, so invite (docs/37).
+            <div style={{ padding: "16px" }}>
+              <InviteCard
+                agent={agents[0]}
+                title={t("share.noContactsTitle")}
+                desc={[t("share.noContactsDesc"), t("share.noContactsHint")].join(locale === "ja" ? "" : " ")}
+              />
+            </div>
+          ) : (
+            <p className="dm-empty">{t("contacts.empty")}</p>
+          )
         ) : visible.length === 0 ? (
           <p className="dm-empty">{t("contacts.noMatch")}</p>
         ) : (

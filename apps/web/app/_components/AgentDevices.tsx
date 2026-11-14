@@ -26,6 +26,7 @@ import {
   type ListStatus,
 } from "../../lib/agents/device-list";
 import { deviceState, saveSeenDevices, type DeviceState } from "../../lib/agents/devices";
+import { agentDirName, daemonStartCommand } from "../../lib/agents/enroll-command";
 import { pairingMismatch } from "../../lib/agents/pairing";
 import { autoReplyBrowser, localDeviceDid } from "../../lib/agents/local-device";
 import { ApiError, defaultApiClient } from "../../lib/api/client";
@@ -35,7 +36,7 @@ import { hasRecipientPrivateKey } from "../../lib/crypto/recipient-keyring";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { AddBrowserPanel } from "./AddBrowserPanel";
-import { STRONG } from "./AgentSetup";
+import { CommandLine, STRONG } from "./AgentSetup";
 
 /** Where a message can be read instead: 「Safari (iPhone)」 (かパソコン). */
 export function elsewhereText(
@@ -363,21 +364,25 @@ export function AgentDevices({
                   .filter(Boolean)
                   .join(" · ")}
               </p>
+              {state === "silent" && !connectedTheOldWay(d) ? (
+                // Only for a computer that just needs starting: one connected
+                // the old way is asked to reconnect instead.
+                <details open data-testid="agent-device-restart" className="item-sub" style={{ margin: "6px 0 0" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--text)" }}>
+                    {t("agentStatus.restartTitle")}
+                  </summary>
+                  <p style={{ margin: "4px 0 0" }}>{t("agentStatus.silentSub")}</p>
+                  <p style={{ margin: "4px 0 0" }}>{t("agentStatus.startHint")}</p>
+                  <CommandLine command={daemonStartCommand(agentDirName(agent.label, agent.aid))} />
+                  <p style={{ margin: "6px 0 0" }}>{t("agentStatus.startDirNote")}</p>
+                  <p style={{ margin: "6px 0 0" }}>{t("agentStatus.autostartHint")}</p>
+                </details>
+              ) : null}
               {connectedTheOldWay(d) ? (
                 <div data-testid="agent-device-old-way" style={{ marginTop: 6 }}>
-                  <div
-                    className="item-sub"
-                    style={{
-                      margin: 0,
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      background: "var(--warn-soft)",
-                      color: "var(--text)",
-                    }}
-                  >
-                    <p style={{ margin: 0 }}>{t("pairing.oldWayBody")}</p>
-                    <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>{t("pairing.oldWayHow")}</p>
-                  </div>
+                  <p className="item-sub" style={{ margin: 0 }}>
+                    {t("pairing.oldWayBody")}
+                  </p>
                   <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
                     <button
                       type="button"
@@ -507,6 +512,8 @@ function Pill({ color, background, text }: { color: string; background: string; 
   return (
     <span
       style={{
+        display: "inline-block",
+        whiteSpace: "nowrap",
         marginLeft: 6,
         fontSize: 11,
         fontWeight: 700,

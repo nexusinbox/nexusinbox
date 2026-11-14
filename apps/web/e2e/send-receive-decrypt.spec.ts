@@ -309,7 +309,7 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   // panel + .input class rather than guessing an id.
   const newAgentInput = page.locator(".panel input.input").first();
   await newAgentInput.fill("送信元エージェント");
-  await page.getByRole("button", { name: "作成" }).click();
+  await page.getByRole("button", { name: "エージェントを作る" }).click();
   await expect(
     page.getByText("エージェントを作成しました。一覧に戻ります。"),
   ).toBeVisible();
@@ -321,7 +321,7 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   await page.goto("/settings/agents/new");
   await expect(page).toHaveURL(/\/settings\/agents\/new$/);
   await page.locator(".panel input.input").first().fill("受信先エージェント");
-  await page.getByRole("button", { name: "作成" }).click();
+  await page.getByRole("button", { name: "エージェントを作る" }).click();
   await expect(
     page.getByText("エージェントを作成しました。一覧に戻ります。"),
   ).toBeVisible();

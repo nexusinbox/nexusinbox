@@ -394,7 +394,8 @@ export function AppShell({
           );
         })}
       </nav>
-      {canCompose ? (
+      {/* Not on the compose page itself: it would cover what is being written. */}
+      {canCompose && !activePath.startsWith("/compose") ? (
         <Link href="/compose" className="x-fab" aria-label={t("nav.newConversation")}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
             <line x1="12" y1="5" x2="12" y2="19" />

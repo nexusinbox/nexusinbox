@@ -67,35 +67,24 @@ export default function CreateAgentPage() {
             style={{ marginTop: 10 }}
             autoFocus
           />
-          <div className="row" style={{ marginTop: 14, gap: 8 }}>
-            <button
-              className="btn primary"
-              type="button"
-              onClick={handleCreate}
-              disabled={createAgent.isPending}
-            >
-              {createAgent.isPending ? t("agentCreate.creating") : t("agentCreate.createBtn")}
-            </button>
-          </div>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={handleCreate}
+            disabled={createAgent.isPending}
+            style={{ marginTop: 14, width: "100%", minHeight: 44 }}
+          >
+            {createAgent.isPending ? t("agentCreate.creating") : t("agentCreate.createBtn")}
+          </button>
           {banner ? (
             <p className="item-sub" style={{ marginTop: 14 }}>
               {banner.text}
             </p>
           ) : null}
         </div>
-
-        <div className="panel" style={{ marginTop: 12 }}>
-          <p className="item-title">{t("agentCreate.infoTitle")}</p>
-          <p className="item-sub" style={{ marginTop: 6 }}>
-            {t("agentCreate.info1")}
-          </p>
-          <p className="item-sub">
-            {t("agentCreate.info2")}
-          </p>
-          <p className="item-sub">
-            {t("agentCreate.info3")}
-          </p>
-        </div>
+        <p className="item-sub" style={{ margin: "12px 4px 0" }}>
+          {t("agentCreate.keysNote")}
+        </p>
       </section>
     </AppShell>
   );

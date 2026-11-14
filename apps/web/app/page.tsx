@@ -121,7 +121,7 @@ function WelcomeNoAgents({
   return (
     <InboxWelcomeFrame>
       <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
-        👋 {t("inbox.welcomeTitle")}
+        {t("inbox.welcomeTitle")}
       </h2>
       <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>
         {t("inbox.welcomeDesc")}
@@ -194,7 +194,7 @@ function WelcomeNoMessages({
   return (
     <InboxWelcomeFrame>
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
-        📨 {t("inbox.noMessagesTitle")}
+        {t("inbox.noMessagesTitle")}
       </h2>
       <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>
         {t("inbox.noMessagesDesc")}

@@ -14,7 +14,6 @@ import {
   recentAutoReplies,
 } from "../../lib/agents/agent-status";
 import type { AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
-import { agentDirName, daemonStartCommand } from "../../lib/agents/enroll-command";
 import { indexContactsByDid, resolveParticipantLabel } from "../../lib/api/labels";
 import {
   queryKeys,
@@ -156,24 +155,6 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
 
       <Row label={t("agentStatus.devices")}>
         <AgentDevices agent={agent} now={now} onReconnect={() => setConnectStage("pairing")} />
-        {computer.kind === "silent" ? (
-          <div
-            data-testid="agent-status-silent"
-            style={{
-              marginTop: 8,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "var(--warn-soft)",
-              color: "var(--warn)",
-              fontSize: 13,
-            }}
-          >
-            {t("agentStatus.silentSub")} {t("agentStatus.startHint")}
-            <CommandLine command={daemonStartCommand(agentDirName(agent.label, agent.aid))} />
-            <p style={{ margin: "6px 0 0" }}>{t("agentStatus.startDirNote")}</p>
-            <p style={{ margin: "6px 0 0" }}>{t("agentStatus.autostartHint")}</p>
-          </div>
-        ) : null}
         {connectStage === "idle" && pairingResult ? (
           <p
             className="item-sub"
