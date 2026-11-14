@@ -48,7 +48,7 @@ export default function ContactsPage() {
 }
 
 function ContactsPageInner() {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const searchParams = useSearchParams();
   const prefillDid = searchParams?.get("add")?.trim() ?? "";
   const contactsQuery = useContactsQuery();
@@ -360,7 +360,7 @@ function ContactsPageInner() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("contacts.searchPlaceholder")}
+            placeholder={t("contacts.searchShort")}
             aria-label={t("contacts.searchPlaceholder")}
             autoComplete="off"
             data-testid="contacts-search"
@@ -418,7 +418,7 @@ function ContactsPageInner() {
               <InviteCard
                 agent={agents[0]}
                 title={t("share.noContactsTitle")}
-                desc={[t("share.noContactsDesc"), t("share.noContactsHint")].join(locale === "ja" ? "" : " ")}
+                desc={t("share.noContactsDesc")}
               />
             </div>
           ) : (

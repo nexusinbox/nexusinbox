@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>エージェント画面「詳細」タブの言葉（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #8a5300; --warn-soft: #fff6e5; --danger: #d0193f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.65 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); word-break: auto-phrase; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 30px 0 4px; }
+  .lead, .why { color: var(--muted); font-size: 15px; margin: 0 0 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .cols { grid-template-columns: 1fr; } }
+  .col h3 { font-size: 14px; margin: 0 0 6px; color: var(--muted); }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .t { font-weight: 800; margin: 0 0 4px; }
+  .s { color: var(--muted); font-size: 15px; margin: 2px 0 8px; }
+  .mono { font: 13px ui-monospace, monospace; background: #f1f3f6; border-radius: 6px; padding: 2px 6px; word-break: break-all; }
+  .row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row .grow { flex: 1; min-width: 0; }
+  .pill { display: inline-block; white-space: nowrap; font-size: 13px; font-weight: 700; border-radius: 6px; padding: 0 7px; margin-left: 6px; }
+  .p-ok { color: var(--ok); background: var(--ok-soft); }
+  .p-warn { color: var(--warn); background: var(--warn-soft); }
+  .p-gray { color: var(--muted); background: #eef0f3; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid #c9ced6; background: #fff; font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  details { color: var(--muted); font-size: 15px; margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 700; }
+  .x { color: var(--muted); }
+  .new { display: inline-block; font-size: 12px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 0 7px; margin-left: 4px; vertical-align: 1px; }
+  .notes { margin-top: 30px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 15px; }
+  .notes li { margin: 4px 0; }
+  select { font: inherit; font-size: 15px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>エージェント画面「詳細」タブの言葉（案）</h1>
+  <p class="lead">運営者の画面と同じ状態（first secretary）。左がいま、右が案。<span class="new">新</span> が変わるところ。設定の中身や動きは変えず、言葉と見せ方だけを変える。</p>
+
+  <h2>1. つないだパソコンと AI ツール（いまの「APIクレデンシャル」）</h2>
+  <p class="why">使われずに期限が切れた接続コードが「アクティベーション期限切れ — 再発行してください」として並び、何かしないといけないように見える（前に直した不具合で作られたものも含む）。「クレデンシャルID」「Interactive」「失効」も意味が取りにくい。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="panel">
+      <p class="t">APIクレデンシャル</p><p class="s">パソコンや AI ツールが、このエージェントとして API を使うための登録です。</p>
+      <div class="row"><div class="grow">パソコン <span class="pill p-gray">不明</span><div class="s">クレデンシャルID: 9e48b997...<br>アクティベーション期限切れ — 再発行してください</div></div><span class="btn">コピー</span><span class="btn danger">失効</span></div>
+      <div class="row"><div class="grow">パソコン <span class="pill p-gray">不明</span><div class="s">クレデンシャルID: 14789aa9...<br>アクティベーション期限切れ — 再発行してください</div></div><span class="btn">コピー</span><span class="btn danger">失効</span></div>
+      <div class="row"><div class="grow">isolated <span class="pill p-gray">Interactive</span><div class="s">クレデンシャルID: d2b76e3b...<br>有効 · 最終使用 2026/5/6</div></div><span class="btn">コピー</span><span class="btn danger">失効</span></div>
+      <input placeholder="クレデンシャル名 (例: prod-signer)" style="width:60%;font:inherit;font-size:14px;padding:4px 8px;margin-top:8px"> <span class="btn">作成</span>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="panel">
+      <p class="t">つないだパソコンと AI ツール <span class="new">新</span></p><p class="s">このエージェントとして動いている、パソコンや AI ツールです。</p>
+      <div class="row"><div class="grow">isolated <span class="pill p-ok">使える</span> <span class="new">新</span><div class="s">最後に使ったのは 2026/5/6</div></div><span class="btn danger">外す</span></div>
+      <p class="s">使われずに期限が切れた接続コードは出さない <span class="new">新</span></p>
+      <details><summary>開発者向け: 手動で登録する <span class="new">新</span></summary>
+        Signer Daemon を自分で動かすときだけ使います。ふつうは「状態」タブの「ブラウザを閉じても動くようにする」からつないでください。<br>
+        <input placeholder="名前（例: 自宅の Mac）" style="font:inherit;font-size:14px;padding:4px 8px;margin-top:6px"> <span class="btn">登録する</span>
+        <div style="margin-top:6px">それぞれの登録番号（credential ID）は、ここでコピーできます。</div>
+      </details>
+    </div></div>
+  </div>
+
+  <h2>2. アドレスと識別子（いまの「技術情報」）</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="panel">
+      <p class="t">技術情報</p>
+      <div>エージェントID: <span class="mono">aid:ai:01M7CJMH5S9RMZEH2958QSADTH</span></div><p class="s">人間や他のエージェントに共有する安定したアドレスです。鍵ローテーション後も変わりません。</p><span class="btn">エージェントIDをコピー</span>
+      <div style="margin-top:10px">現在のエージェントアドレス: <span class="mono">did:key:z6MkkYk18z9UU6Gkw1x5g1JC1YmBQKsGaDkjLFycfi1Ayjmx</span></div><p class="s">現在アクティブな鍵から導出された技術的なDIDです。API送信や監査で利用されます。</p><span class="btn">現在のDIDをコピー</span>
+      <p class="s" style="margin-top:10px">未読 0件 / 作成日 2026/11/14 / ステータス: 稼働中</p>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="panel">
+      <p class="t">このエージェントについて <span class="new">新</span></p>
+      <p class="s">作成日 2026/11/14 · 未読 0 件 · 動いています</p>
+      <details><summary>開発者向けの識別子 <span class="new">新</span></summary>
+        <div style="margin-top:6px">アドレス（aid）: <span class="mono">aid:ai:01M7CJMH5S9RMZEH2958QSADTH</span></div>
+        <div>いま使っている鍵の ID（did）: <span class="mono">did:key:z6MkkYk18z9UU6…</span></div>
+        <div>API やログで使います。ふだんは使いません。</div>
+        <span class="btn">aid をコピー</span> <span class="btn">did をコピー</span>
+      </details>
+      <p class="s">（相手に伝えるアドレスは、画面のいちばん上にあるのでここではくり返さない）</p>
+    </div></div>
+  </div>
+
+  <h2>3. 鍵がある場所</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="panel">
+      <p class="t">鍵がある場所 (この端末から見た状態)</p>
+      <p class="s">現在の credential (did:key:z6MkkYk1…fi1Ayjmx) の秘密鍵がこの端末からアクセスできる場所を表示します。</p>
+      <div class="row"><div class="grow">🌐 このブラウザ<div class="s">このブラウザに保管あり — Web UI で復号可能</div></div>✓</div>
+      <div class="row"><div class="grow">🤖 AI ツール<div class="s">サーバーから直接の検出はできません。Claude Desktop / Code 等で `--init` を実行した場合、その PC のノード keystore に鍵が保管されます。</div></div>◯</div>
+      <p class="s">Mode の違いを詳しく見る →</p>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="panel">
+      <p class="t">メッセージを読む鍵の場所 <span class="new">新</span></p>
+      <div class="row"><div class="grow">🌐 このブラウザ<div class="s">あります。この画面で読めます。</div></div>✓</div>
+      <div class="row"><div class="grow">🤖 AI ツール<div class="s">ここからは確かめられません。パソコンの AI ツールでつないだ場合は、そのパソコンにあります。</div></div>—</div>
+      <p class="s">違いを見る →</p>
+    </div></div>
+  </div>
+
+  <h2>4. 自動応答のくわしい設定</h2>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="panel">
+      <p class="t">自動応答ポリシー</p>
+      <p class="s" style="color:var(--warn)">自動応答の master スイッチがオフです。ポリシーは保存できますが、上のトグルを有効にするまで評価されません。</p>
+      <div>デフォルトアクション <select><option>自分で返事する</option></select></div>
+      <p class="s">プロトコル固有の上書きに一致しないときに適用されます。</p>
+      <div>日程調整の依頼 — ☐ このプロトコルでデフォルトを上書きする</div>
+      <div>タスクの依頼 — ☐ このプロトコルでデフォルトを上書きする</div>
+      <span class="btn">保存</span> <span class="btn">既定値に戻す</span> <span class="x">リビジョン 0</span>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="panel">
+      <p class="t">自動返信のくわしい設定 <span class="new">新</span></p>
+      <p class="s" style="color:var(--warn)">自動返信がオフのため、いまは使われません。保存はできます。 <span class="new">新</span></p>
+      <div>ふだんの対応 <select><option>自分で返事する</option></select> <span class="new">新</span></div>
+      <p class="s">下で別に決めていない依頼に使います。</p>
+      <div>日程調整の依頼 — ☐ この種類だけ別にする <span class="new">新</span></div>
+      <div>タスクの依頼 — ☐ この種類だけ別にする</div>
+      <span class="btn">保存</span> <span class="btn">はじめの設定に戻す</span> <span class="new">新</span>
+      <p class="s">（「リビジョン 0」は出さない）</p>
+    </div></div>
+  </div>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>詳細タブの言葉を、開発者向けの言い方（クレデンシャル・keystore・master スイッチ・プロトコル・リビジョンなど）からふつうの言葉にする。英語の画面も同じ考えで直す</li>
+      <li>使われずに期限が切れた接続コードは一覧に出さない（データとしては残る。サーバ側は変えない）</li>
+      <li>「失効」は、状態タブの端末と同じ「外す」にそろえる。手で登録する入口と ID のコピーは「開発者向け」の折りたたみに入れる</li>
+      <li>aid と did は「開発者向けの識別子」に折りたたむ。相手に伝えるアドレスは画面の上にあるので、くり返さない</li>
+      <li>緊急停止の完了メッセージも「クレデンシャル {n} 件、トークン {n} 件」をやめ、「つながっていたパソコンや AI ツールを止めました」にする</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>この方向でよいか（推奨: この方向）</li>
+      <li>期限切れの接続コードを隠すか（推奨: 隠す。使われていないので、何もする必要がない）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
