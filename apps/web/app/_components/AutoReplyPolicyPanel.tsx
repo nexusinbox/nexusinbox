@@ -359,9 +359,6 @@ export function AutoReplyPolicyPanel({ agentId, masterEnabled }: Props) {
             >
               {t("agents.policyResetBtn")}
             </button>
-            <span className="item-sub">
-              {t("agents.policyRevisionLabel", { revision })}
-            </span>
             {query.data?.updated_at ? (
               <span className="item-sub">
                 {t("agents.policyUpdatedAt", {

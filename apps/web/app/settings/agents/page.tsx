@@ -47,68 +47,6 @@ type CreatedCredentialNotice = {
   dirName: string;
 };
 
-// Renders the Standard / Daemon-isolated pill next to a credential's
-// label in the settings list. Reads `key_holder` straight from the
-// API (migration 0014); pre-migration rows arrive as `"unknown"` and
-// surface as a muted "Standard" variant so legacy credentials don't
-// suddenly look abnormal. See docs/21 §4.5.
-function CredentialModeBadge({
-  keyHolder,
-}: {
-  keyHolder: "web_keystore" | "signer_daemon" | "unknown";
-}) {
-  const { t } = useTranslation();
-  const isDaemon = keyHolder === "signer_daemon";
-  const isUnknown = keyHolder === "unknown";
-  const label = isDaemon
-    ? t("agents.credModeDaemonIsolated")
-    : isUnknown
-      ? t("agents.credModeUnknown")
-      : t("agents.credModeStandard");
-  const tooltip = isDaemon
-    ? t("agents.credModeDaemonIsolatedTooltip")
-    : isUnknown
-      ? t("agents.credModeUnknownTooltip")
-      : t("agents.credModeStandardTooltip");
-  // Colour choices picked for both light and dark backgrounds — the
-  // pre-fix version used ~6% white which disappeared entirely on the
-  // light-mode inbox. Stronger tint + explicit border gives a visible
-  // shape either way without needing a theme-aware conditional.
-  const daemonStyle: CSSProperties = {
-    background: "rgba(66, 133, 244, 0.14)",
-    color: "var(--primary-text)",
-    border: "1px solid rgba(66, 133, 244, 0.28)",
-  };
-  const unknownStyle: CSSProperties = {
-    background: "rgba(128, 128, 128, 0.14)",
-    color: "var(--text-muted)",
-    border: "1px solid rgba(128, 128, 128, 0.28)",
-  };
-  const standardStyle: CSSProperties = {
-    background: "rgba(52, 168, 83, 0.14)",
-    color: "var(--ok)",
-    border: "1px solid rgba(52, 168, 83, 0.28)",
-  };
-  const style = isDaemon ? daemonStyle : isUnknown ? unknownStyle : standardStyle;
-  return (
-    <span
-      title={tooltip}
-      aria-label={`${label}: ${tooltip}`}
-      style={{
-        fontSize: "var(--fs-xs)",
-        fontWeight: 500,
-        padding: "1px 7px",
-        borderRadius: 999,
-        letterSpacing: 0.3,
-        whiteSpace: "nowrap",
-        ...style,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
 // Agent-level mode display (docs/21 §4.5). The helper lives in
 // `lib/agents/derive-mode.ts` with its own tests covering the priority
 // rules.
@@ -298,14 +236,10 @@ function AgentKeyWhereaboutsPanel({ did }: { did: string }) {
     };
   }, [did]);
 
-  const truncatedDid = did.length > 24 ? `${did.slice(0, 16)}…${did.slice(-8)}` : did;
 
   return (
     <div className="panel" style={{ marginTop: 10 }}>
       <p className="item-title">{t("agents.whereaboutsTitle")}</p>
-      <p className="item-sub" style={{ marginTop: 4, fontSize: "var(--fs-xs)" }}>
-        {t("agents.whereaboutsCaption", { did: truncatedDid })}
-      </p>
       <div style={{ marginTop: 8 }}>
         <WhereaboutsRow
           icon="🌐"
@@ -1031,53 +965,44 @@ export default function AgentsSettingsPage() {
 
                 <div className="panel" style={{ marginTop: 10 }}>
                   <p className="item-title">{t("agents.overviewTitle")}</p>
-                  {activeAgent.aid ? (
-                    <div style={{ marginTop: 6 }}>
-                      <p className="item-sub" style={{ wordBreak: "break-all" }}>
+                  <p className="item-sub">
+                    {[
+                      t("agents.createdAt", { date: new Date(activeAgent.created_at).toLocaleDateString() }),
+                      t("agents.unreadCount", { count: activeAgent.unread_count }),
+                      activeAgent.is_active ? t("agents.statusActive") : t("agents.statusStopped"),
+                    ].join(" · ")}
+                  </p>
+                  {/* The address people use is at the top of the page; these are for developers. */}
+                  <details className="item-sub" style={{ marginTop: 6 }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 700 }}>{t("agents.idsTitle")}</summary>
+                    {activeAgent.aid ? (
+                      <p style={{ margin: "6px 0 0", wordBreak: "break-all" }}>
                         {t("agents.agentId", { aid: activeAgent.aid })}
                       </p>
-                      <p className="item-sub" style={{ marginTop: 4 }}>
-                        {t("agents.agentIdHelp")}
-                      </p>
+                    ) : null}
+                    <p style={{ margin: "4px 0 0", wordBreak: "break-all" }}>
+                      {t("agents.currentDid", { did: activeAgent.did })}
+                    </p>
+                    <p style={{ margin: "4px 0 0" }}>{t("agents.idsHelp")}</p>
+                    <div className="row" style={{ gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                      {activeAgent.aid ? (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => copyValue(activeAgent.aid, t("agents.bannerAidCopied"))}
+                        >
+                          {t("agents.copyAgentId")}
+                        </button>
+                      ) : null}
                       <button
                         className="btn"
                         type="button"
-                        style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
-                        onClick={() =>
-                          copyValue(activeAgent.aid, t("agents.bannerAidCopied"))
-                        }
+                        onClick={() => copyValue(activeAgent.did, t("agents.bannerDidCopied"))}
                       >
-                        {t("agents.copyAgentId")}
+                        {t("agents.copyDid")}
                       </button>
                     </div>
-                  ) : null}
-                  <div style={{ marginTop: activeAgent.aid ? 10 : 6 }}>
-                    <p className="item-sub" style={{ wordBreak: "break-all" }}>
-                      {t("agents.currentDid", { did: activeAgent.did })}
-                    </p>
-                    <p className="item-sub" style={{ marginTop: 4 }}>
-                      {t("agents.currentDidHelp")}
-                    </p>
-                    <button
-                      className="btn"
-                      type="button"
-                      style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
-                      onClick={() =>
-                        copyValue(activeAgent.did, t("agents.bannerDidCopied"))
-                      }
-                    >
-                      {t("agents.copyDid")}
-                    </button>
-                  </div>
-                  <p className="item-sub">
-                    {t("agents.unreadCount", { count: activeAgent.unread_count })}
-                  </p>
-                  <p className="item-sub">
-                    {t("agents.createdAt", { date: new Date(activeAgent.created_at).toLocaleDateString() })}
-                  </p>
-                  <p className="item-sub">
-                    {activeAgent.is_active ? t("agents.statusActive") : t("agents.statusStopped")}
-                  </p>
+                  </details>
                 </div>
 
                 <AgentModePanel
@@ -1141,7 +1066,13 @@ export default function AgentsSettingsPage() {
                       (c) => c.aid === activeAgent.aid,
                     );
                     const isLive = (s: string) => s === "active" || s === "pending";
-                    const liveCreds = allForAgent.filter((c) => isLive(c.status));
+                    // A connect code that expired unused needs nothing done:
+                    // leave it out (docs/agent_details_tab_mock.html §1).
+                    const expiredCode = (c: (typeof allForAgent)[number]) =>
+                      c.status === "pending" &&
+                      !!c.enrollment_expires_at &&
+                      Date.parse(c.enrollment_expires_at) <= nowMs;
+                    const liveCreds = allForAgent.filter((c) => isLive(c.status) && !expiredCode(c));
                     const deadCreds = allForAgent.filter((c) => !isLive(c.status));
                     const visibleCreds = showRevoked
                       ? [...liveCreds, ...deadCreds]
@@ -1187,16 +1118,8 @@ export default function AgentsSettingsPage() {
                                   }}
                                 >
                                   <div style={{ minWidth: 0 }}>
-                                    <p className="card-title" style={{ margin: 0, fontSize: "var(--fs-sm)", display: "flex", alignItems: "center", gap: 6 }}>
-                                      <span>{cred.label}</span>
-                                      <CredentialModeBadge
-                                        keyHolder={cred.key_holder ?? "unknown"}
-                                      />
-                                    </p>
-                                    <p className="card-sub" style={{ margin: 0, fontSize: "var(--fs-xs)" }}>
-                                      {t("agents.credIdShort", {
-                                        id: cred.credential_id.slice(0, 8),
-                                      })}
+                                    <p className="card-title" style={{ margin: 0, fontSize: "var(--fs-sm)" }}>
+                                      {cred.label}
                                     </p>
                                     <p className="card-sub" style={{ margin: 0, fontSize: "var(--fs-xs)" }}>
                                       {cred.status === "active"
@@ -1212,19 +1135,6 @@ export default function AgentsSettingsPage() {
                                     </p>
                                   </div>
                                   <div className="row" style={{ gap: 6, flexShrink: 0 }}>
-                                    <button
-                                      className="btn"
-                                      type="button"
-                                      style={{ fontSize: "var(--fs-xs)" }}
-                                      onClick={() =>
-                                        copyValue(
-                                          cred.credential_id,
-                                          t("agents.bannerCredIdCopied"),
-                                        )
-                                      }
-                                    >
-                                      {t("agents.copy")}
-                                    </button>
                                     {!isDead ? (
                                       <button
                                         className="btn"
@@ -1343,6 +1253,32 @@ export default function AgentsSettingsPage() {
                     );
                   })()}
 
+                  {/* Registering by hand is for people running the Signer
+                      Daemon themselves; everyone else connects from the
+                      status tab (docs/agent_details_tab_mock.html §1). */}
+                  <details
+                    className="item-sub"
+                    style={{ marginTop: 10 }}
+                    open={createdCredential ? true : undefined}
+                  >
+                    <summary style={{ cursor: "pointer", fontWeight: 700 }}>{t("agents.credManualTitle")}</summary>
+                    <p style={{ margin: "6px 0 0" }}>{t("agents.credManualDesc")}</p>
+                    {(credentialsQuery.data?.credentials ?? [])
+                      .filter((c) => c.aid === activeAgent.aid && c.status === "active")
+                      .map((c) => (
+                        <div key={c.credential_id} className="row" style={{ gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                          <span style={{ wordBreak: "break-all" }}>
+                            {t("agents.credIdLine", { label: c.label, id: c.credential_id })}
+                          </span>
+                          <button
+                            className="btn"
+                            type="button"
+                            onClick={() => copyValue(c.credential_id, t("agents.bannerCredIdCopied"))}
+                          >
+                            {t("agents.copy")}
+                          </button>
+                        </div>
+                      ))}
                   <div style={{ marginTop: 10 }}>
                     <input
                       className="input"
@@ -1517,6 +1453,7 @@ export default function AgentsSettingsPage() {
                       </button>
                     </div>
                   ) : null}
+                  </details>
                 </div>
                 </div>
                 ) : null}
