@@ -506,12 +506,14 @@ paths:
 
   /agents/{id}/device-list:
     put:
-      summary: Store a device list the agent's root key signed
+      summary: Store a device list a browser of the agent signed
       description: |
-        Human session only (docs/40 §4.2). The list must be signed by the
-        agent's root key, name only active devices of the agent with the
-        encryption keys the server holds for them (1 to 10), and carry a
-        version above the latest stored one. Every version is kept.
+        Human session only (docs/40 §4.2, §17.3). The list must be signed
+        by a signer of the latest stored version (the agent's root key for
+        the first; a v1 list only by the root), name only active devices of
+        the agent with the encryption keys the server holds for them (1 to
+        10), and carry a version above the latest stored one. A v2 list's
+        `signers` must be browsers it names. Every version is kept.
       parameters:
         - name: id
           in: path
@@ -537,7 +539,7 @@ paths:
         '404':
           description: Not an agent of the caller
         '409':
-          description: The root key is not active, or a list with this or a later version is stored
+          description: The agent has no identity yet, or a list with this or a later version is stored
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -649,6 +651,47 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+
+  /recipients/device-lists:
+    get:
+      summary: An agent's device list versions after a given one
+      description: |
+        docs/40 §17.3. Oldest first, at most 200. Readers follow them from
+        the version they remember when the latest list is signed by a
+        signer they do not trust yet. Same callers as `/recipients/resolve`
+        (agents need `messages.send`).
+      parameters:
+        - name: aid
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: The versions after `after`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aid:
+                    type: string
+                  lists:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeviceListRef'
+                required: [aid, lists]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          description: Not an agent identifier, or a negative `after`
 
   /recipients/resolve:
     get:
@@ -1403,12 +1446,15 @@ components:
     DeviceListRef:
       type: object
       description: |
-        The latest device list the agent's root key (the browser key it
-        was created with, the agent's `did`) signed (docs/40 §4.2). Absent
-        until the root browser signs one. `jws` is a compact JWS, header
-        `{"alg":"EdDSA","typ":"nexusinbox-device-list","kid":<root DID>}`,
-        payload `{"v":1,"aid","root","version","issued_at","devices":[{"did","enc","kind"}]}`.
-        Clients check the signature themselves; the server cannot sign.
+        The latest device list of the agent (docs/40 §4.2). Absent until a
+        browser of the agent signs one. `jws` is a compact JWS, header
+        `{"alg":"EdDSA","typ":"nexusinbox-device-list","kid":<signer DID>}`,
+        payload `{"v":1,"aid","root","version","issued_at","devices":[{"did","enc","kind"}]}`
+        signed by the root (the browser key the agent was created with, its
+        `did`), or `{"v":2, ..., "signers":[<DID>]}` signed by a signer of
+        the previous version (docs/40 §17.3). Clients check the signatures
+        themselves, following `GET /recipients/device-lists` from the
+        version they remember; the server cannot sign.
       properties:
         version:
           type: integer

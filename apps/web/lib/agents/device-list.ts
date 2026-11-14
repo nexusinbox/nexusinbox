@@ -5,11 +5,12 @@
 // is noticed.
 
 import {
+  checkDeviceList as checkList,
+  pinFor,
   signDeviceList,
-  verifyDeviceList,
   type DeviceListPayload,
 } from "@nexusinbox/core/device-list";
-import { defaultApiClient } from "../api/client";
+import { defaultApiClient, deviceListHistory } from "../api/client";
 import type { Agent, AgentDevice } from "../api/types";
 import { getSigningPrivateKey } from "../crypto/signing-keyring";
 import { loadPin, savePin } from "./peer-pins";
@@ -30,23 +31,28 @@ export function loadSeenVersion(agent: Pick<Agent, "aid" | "did">): number {
   return pin && pin.root === agent.did ? pin.version : 0;
 }
 
-function saveSeenVersion(agent: Pick<Agent, "aid" | "did">, version: number): void {
-  if (version > loadSeenVersion(agent)) savePin(agent.aid, { root: agent.did, version });
+function saveSeen(agent: Pick<Agent, "aid" | "did">, list: DeviceListPayload): void {
+  const pin = loadPin(agent.aid, agent.did);
+  savePin(agent.aid, pinFor(pin && pin.root === agent.did ? pin : null, list));
 }
 
-/** Check the agent's latest list against its root and what this browser saw. */
+/**
+ * Check the agent's latest list against its root (`agents.did`) and what
+ * this browser saw: signed by a signer it trusts, or followed from there
+ * (docs/40 §17.3).
+ */
 export async function checkDeviceList(agent: Agent): Promise<ListStatus> {
   const pin = loadPin(agent.aid, agent.did);
   const seen = loadSeenVersion(agent);
   const ref = agent.device_list;
   if (!ref) return seen > 0 ? { kind: "broken", reason: "rollback" } : { kind: "none" };
-  const list = await verifyDeviceList(ref.jws, { aid: agent.aid, root: agent.did });
-  if (!list || list.version !== ref.version) return { kind: "broken", reason: "signature" };
   // The server now names another root for this agent than the one seen here.
   if (pin && pin.root !== agent.did) return { kind: "broken", reason: "signature" };
-  if (list.version < seen) return { kind: "broken", reason: "rollback" };
-  saveSeenVersion(agent, list.version);
-  return { kind: "ok", list };
+  const checked = await checkList({ aid: agent.aid, ref, pin, history: deviceListHistory });
+  if (!checked.ok) return { kind: "broken", reason: checked.reason === "rollback" ? "rollback" : "signature" };
+  if (checked.list.root !== agent.did) return { kind: "broken", reason: "signature" };
+  saveSeen(agent, checked.list);
+  return { kind: "ok", list: checked.list };
 }
 
 export function approvalOf(device: AgentDevice, status: ListStatus): Approval {
@@ -111,7 +117,7 @@ export async function storeDeviceList(agent: Agent, dids: Set<string>): Promise<
   if (!payload) throw new Error("no device to list");
   const jws = await signDeviceList(key, payload);
   await defaultApiClient.putDeviceList(agent.id, jws);
-  saveSeenVersion(agent, payload.version);
+  saveSeen(agent, payload);
 }
 
 /** Only the root browser itself: nothing to ask, so approve it quietly. */

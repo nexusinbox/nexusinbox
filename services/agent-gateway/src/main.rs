@@ -771,6 +771,28 @@ async fn resolve_recipient_identifier(
         .map_err(|e| format!("invalid resolve_recipient response: {}", e))
 }
 
+/// An agent's device list versions (`GET /recipients/device-lists`),
+/// fetched only when a list is signed by a signer not trusted yet
+/// (docs/40 §17.3). None when they cannot be fetched: the check stops.
+async fn fetch_device_list_history(
+    state: &GatewayState,
+    token: &str,
+    aid: &str,
+) -> Option<Vec<device_trust::ListRef>> {
+    let mut url =
+        reqwest::Url::parse(&format!("{}/recipients/device-lists", state.api_url)).ok()?;
+    url.query_pairs_mut()
+        .append_pair("aid", aid)
+        .append_pair("after", "0");
+    match api_get(state, url.as_ref(), token).await {
+        Ok(body) => serde_json::from_value(body.get("lists")?.clone()).ok(),
+        Err(e) => {
+            eprintln!("[WARN] could not fetch the device list history of {aid}: {e}");
+            None
+        }
+    }
+}
+
 /// Why a recipient was not used.
 #[derive(Debug)]
 enum CheckError {
@@ -791,7 +813,7 @@ impl CheckError {
             CheckError::Failed(e) => e.clone(),
             CheckError::Stop { reason, aid, root } => match reason {
                 RootChanged => format!(
-                    "Not sent: the device list of {aid} is now signed by another key ({}). Their key may have been replaced. Ask the person to confirm with them; if it is right, they run `nexusinbox trust {aid}` on this computer. [stopped: root_changed]",
+                    "Not sent: the device list of {aid} now names another key ({}). Their key may have been replaced. Ask the person to confirm with them; if it is right, they run `nexusinbox trust {aid}` on this computer. [stopped: root_changed]",
                     root.as_deref().unwrap_or("unknown")
                 ),
                 Signature => format!(
@@ -852,6 +874,12 @@ async fn check_recipient(
             encryption_public_key: d.encryption_public_key.clone(),
         })
         .collect();
+    let history = match resolution.device_list.as_ref() {
+        Some(list) if device_trust::needs_history(&aid, list, pin.as_ref(), None) => {
+            fetch_device_list_history(state, token, &aid).await
+        }
+        _ => None,
+    };
     let decision = device_trust::decide(
         &device_trust::Served {
             aid: &aid,
@@ -864,6 +892,7 @@ async fn check_recipient(
         known_aid.as_deref(),
         pin.as_ref(),
         None,
+        history.as_deref(),
     );
     let (targets, single) = match &decision {
         device_trust::Decision::Stop { reason, root } => {
@@ -933,6 +962,7 @@ async fn check_message_sender(
             None,
             signed_before,
             now,
+            None,
         ));
     };
     let resolved = match resolve_recipient_identifier(state, token, sender_aid).await {
@@ -953,6 +983,14 @@ async fn check_message_sender(
             changed_root: None,
         });
     }
+    let history = match resolved.as_ref().and_then(|r| r.device_list.as_ref()) {
+        Some(list)
+            if envelope_v2::sender_needs_history(content, sender_aid, list, pin.as_ref()) =>
+        {
+            fetch_device_list_history(state, token, sender_aid).await
+        }
+        _ => None,
+    };
     let check = envelope_v2::check_sender(
         content,
         &readers,
@@ -963,6 +1001,7 @@ async fn check_message_sender(
         pin.as_ref(),
         peers.signed.contains(sender_aid),
         now,
+        history.as_deref(),
     );
     let mut changed = false;
     // Seen signing: from now on a message from it without a signature is a
@@ -2137,13 +2176,9 @@ async fn confirm_own_root(state: Arc<GatewayState>) {
                     return;
                 }
                 let saved = state.peers.load().and_then(|mut peers| {
-                    peers.pins.insert(
-                        aid.clone(),
-                        device_trust::Pin {
-                            root: root.clone(),
-                            version: 0,
-                        },
-                    );
+                    peers
+                        .pins
+                        .insert(aid.clone(), device_trust::Pin::root(&root, 0));
                     state.peers.save(&peers)
                 });
                 if let Err(e) = saved {
@@ -2253,13 +2288,9 @@ fn run_trust(dir: &std::path::Path, target: &str) -> i32 {
         println!("Nothing changed.");
         return 1;
     }
-    peers.pins.insert(
-        aid.clone(),
-        device_trust::Pin {
-            root: new_root,
-            version: 0,
-        },
-    );
+    peers
+        .pins
+        .insert(aid.clone(), device_trust::Pin::root(&new_root, 0));
     peers.changed.remove(&aid);
     if let Err(e) = store.save(&peers) {
         eprintln!("[ERROR] {e}");
@@ -3570,13 +3601,9 @@ mod tests {
 
         // `nexusinbox trust` accepts it: the pin moves and sending works.
         let mut accepted = peers.clone();
-        accepted.pins.insert(
-            aid.clone(),
-            device_trust::Pin {
-                root: new_root.clone(),
-                version: 0,
-            },
-        );
+        accepted
+            .pins
+            .insert(aid.clone(), device_trust::Pin::root(&new_root, 0));
         accepted.changed.remove(&aid);
         state.peers.save(&accepted).unwrap();
         let resp = rpc(&state, "resolve_recipient", json!({ "identifier": aid })).await;

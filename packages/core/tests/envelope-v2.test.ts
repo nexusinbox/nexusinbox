@@ -53,6 +53,13 @@ describe("envelope signature v2 (docs/40 §14.2)", () => {
   });
 });
 
+type History = Array<{ version: number; jws: string }> | null | undefined;
+/** A case's history as GET /recipients/device-lists would answer it (docs/40 §17). */
+function historyOf(history: History) {
+  if (history === undefined) return undefined;
+  return async (_aid: string, after: number) => (history ? history.filter((h) => h.version > after) : null);
+}
+
 describe("checking the sender (docs/40 §14.5)", () => {
   const now = Date.parse(decisions.now);
   for (const c of decisions.cases) {
@@ -64,6 +71,7 @@ describe("checking the sender (docs/40 §14.5)", () => {
         pin: c.pin,
         signedBefore: c.signed_before ?? false,
         now: c.now ? Date.parse(c.now) : now,
+        history: historyOf(c.history),
       });
       expect(result.state).toBe(c.expected.state);
       expect(pinAfterCheck(c.pin, result)).toEqual(c.expected.pin_after);

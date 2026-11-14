@@ -19,9 +19,13 @@
  */
 
 import {
-  deviceListRoot,
+  checkDeviceList,
   ed25519KeyFromDidKey,
-  verifyDeviceList,
+  followVersions,
+  listSigners,
+  pinFor,
+  readDeviceList,
+  type DeviceListHistory,
   type DeviceListPayload,
   type DevicePin,
   type ServedAgent,
@@ -251,7 +255,9 @@ export function deliveredFields(content: DeliveredContent, sig: SignatureV2): En
  * for `content.signature_v2.sender_aid`, or null when the server has none;
  * `pin` what the reader remembers of the sender; `signedBefore` whether a
  * message from the sender's agent (by the DID it was sent from) verified
- * before, so a message without a signature is a warning (docs/40 §15.2).
+ * before, so a message without a signature is a warning (docs/40 §15.2);
+ * `history` fetches list versions when a signer has to be followed
+ * (docs/40 §17.3).
  */
 export async function checkSender(input: {
   content: DeliveredContent;
@@ -260,6 +266,7 @@ export async function checkSender(input: {
   pin: DevicePin | null;
   signedBefore?: boolean;
   now?: number;
+  history?: DeviceListHistory;
 }): Promise<SenderCheck> {
   const { content, sender, pin } = input;
   const sig = content.signature_v2;
@@ -281,30 +288,44 @@ export async function checkSender(input: {
   if (sender && sender.aid !== sig.sender_aid) return { state: "altered" };
   const ref = sender?.device_list;
   if (!ref) return { state: pin ? "broken" : "no_list" };
-  const root = deviceListRoot(ref.jws);
-  const list = root ? await verifyDeviceList(ref.jws, { aid: sig.sender_aid, root }) : null;
-  if (!list || list.version !== ref.version) return { state: "broken" };
-  if (pin && pin.root !== list.root) return { state: "root_changed" };
-  if (pin && list.version < pin.version) return { state: "broken" };
+  const checked = await checkDeviceList({ aid: sig.sender_aid, ref, pin, history: input.history });
+  if (!checked.ok) return { state: checked.reason === "root_changed" ? "root_changed" : "broken" };
+  const list = checked.list;
 
-  // The list as it was when the message was sent: same root, not newer.
+  // The list as it was when the message was sent: same root, not newer,
+  // signed by a signer the current list still trusts, or else followed
+  // from version 1 (its signer was removed since).
   let sentWith = list;
   const sentRef = content.sender_device_list;
   if (sentRef && sentRef.version !== list.version) {
-    const old = await verifyDeviceList(sentRef.jws, { aid: sig.sender_aid, root: list.root });
-    if (!old || old.version !== sentRef.version || old.version > list.version) return { state: "broken", list };
-    sentWith = old;
+    const old = await readDeviceList(sentRef.jws, sig.sender_aid);
+    if (!old || old.list.root !== list.root || old.list.version !== sentRef.version || old.list.version > list.version) {
+      return { state: "broken", list };
+    }
+    if (!listSigners(list).includes(old.signer) && !(await inChain(sig.sender_aid, list, sentRef, input.history))) {
+      return { state: "broken", list };
+    }
+    sentWith = old.list;
   }
   if (!sentWith.devices.some((d) => d.did === content.sender_did)) return { state: "not_listed", list };
   return { state: "verified", list };
 }
 
+/** Whether `sent` is the version the chain from version 1 to `current` holds. */
+async function inChain(
+  aid: string,
+  current: DeviceListPayload,
+  sent: { version: number; jws: string },
+  history: DeviceListHistory | undefined,
+): Promise<boolean> {
+  const chain = await followVersions(aid, current.root, null, current.version, history);
+  return chain !== null && chain[sent.version - 1]?.jws === sent.jws;
+}
+
 /** What to remember after a check (the pin only moves forward). */
 export function pinAfterCheck(pin: DevicePin | null, check: SenderCheck): DevicePin | null {
   if (!check.list || check.state === "root_changed") return pin;
-  const { root, version } = check.list;
-  if (pin && pin.root === root) return { root, version: Math.max(pin.version, version) };
-  return { root, version };
+  return pinFor(pin, check.list);
 }
 
 /** Why an automatic reply is left to the person (recorded as the skip reason). */

@@ -11,7 +11,7 @@ import {
   type SenderCheckState,
 } from "@nexusinbox/core/envelope-v2";
 import type { DevicePin } from "@nexusinbox/core/device-list";
-import { ApiError, defaultApiClient } from "../api/client";
+import { ApiError, defaultApiClient, deviceListHistory } from "../api/client";
 import type { Agent, MessageContentResponse, RecipientResolutionResponse } from "../api/types";
 import { loadAddressBook } from "../contacts/address-book";
 import {
@@ -85,13 +85,14 @@ export async function checkReceived(
     sender: sender ? { ...sender, encryption_public_key: sender.encryption_public_key ?? "" } : null,
     pin,
     signedBefore: knownSigner(sig.sender_aid),
+    history: deviceListHistory,
   });
   if (check.state === "verified") {
     rememberSigner(sig.sender_aid);
     if (content.sender_did) rememberDidAid(content.sender_did, sig.sender_aid);
   }
   const next = pinAfterCheck(pin, check);
-  if (next && check.state !== "root_changed" && (next.root !== local?.root || next.version !== local?.version)) {
+  if (next && check.state !== "root_changed" && JSON.stringify(next) !== JSON.stringify(local)) {
     savePin(sig.sender_aid, next);
   }
   return check.state;

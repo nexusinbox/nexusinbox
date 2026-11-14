@@ -535,7 +535,7 @@ struct Agent {
     /// (docs/38 stage 4). Agent lists only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     devices: Vec<AgentDevice>,
-    /// The latest device list the agent's root key signed (docs/40 §4.2).
+    /// The latest device list of the agent (docs/40 §4.2, §17.3).
     /// Agent lists only; absent until the root browser signs one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     device_list: Option<DeviceListRef>,
@@ -635,7 +635,8 @@ const MAX_DEVICE_LIST_JWS_LEN: usize = 16 * 1024;
 #[derive(Clone, Serialize)]
 struct DeviceListRef {
     version: i64,
-    /// Compact JWS (EdDSA) by the agent's root key over the list.
+    /// Compact JWS (EdDSA) over the list by its root, or by a signer of
+    /// the previous version (docs/40 §17.3).
     jws: String,
 }
 
@@ -648,6 +649,19 @@ struct DeviceListPayload {
     version: i64,
     issued_at: String,
     devices: Vec<DeviceListEntry>,
+    /// v2 only: the browsers that may sign the next version (docs/40 §17.3).
+    #[serde(default)]
+    signers: Option<Vec<String>>,
+}
+
+impl DeviceListPayload {
+    /// Who may sign the version after this one (a v1 list: its root).
+    fn next_signers(&self) -> Vec<String> {
+        match (&self.signers, self.v) {
+            (Some(signers), 2) => signers.clone(),
+            _ => vec![self.root.clone()],
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -675,6 +689,22 @@ struct PutDeviceListResponse {
     version: i64,
 }
 
+#[derive(Deserialize)]
+struct DeviceListHistoryQuery {
+    aid: Option<String>,
+    after: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct DeviceListHistoryResponse {
+    aid: String,
+    /// The versions after `after`, oldest first (at most 200).
+    lists: Vec<DeviceListRef>,
+}
+
+/// Most versions one history answer carries.
+const MAX_DEVICE_LIST_HISTORY: i64 = 200;
+
 #[derive(Clone, Serialize)]
 struct RecipientResolutionResponse {
     input: String,
@@ -688,7 +718,7 @@ struct RecipientResolutionResponse {
     /// Every device of the agent that can read, newest first (at most
     /// MAX_DEVICE_WRAPS). Senders wrap the content key for each.
     devices: Vec<DeviceKey>,
-    /// The latest device list the agent's root key signed (docs/40 §4.2).
+    /// The latest device list of the agent (docs/40 §4.2, §17.3).
     /// Senders that check it wrap only for devices it names.
     #[serde(skip_serializing_if = "Option::is_none")]
     device_list: Option<DeviceListRef>,
@@ -2522,12 +2552,20 @@ async fn latest_device_lists_in_db(
 /// a compact EdDSA JWS of type DEVICE_LIST_TYP by the agent's root key,
 /// naming that agent and root, with 1..=MAX_DEVICE_WRAPS distinct devices.
 /// Whether the devices are the agent's is the caller's check.
+/// Check a signed device list for the agent `aid` whose root is
+/// `root_did` (docs/40 §4.2, §17.3): the header, a signer among
+/// `allowed_signers` (the previous version's signers; the root for the
+/// first), its signature by the key `signer_keys` holds for it, and the
+/// shape. A v2 list's `signers` must be browsers it names that the server
+/// knows as browsers (`browsers`). Returns the list and its signer.
 fn verify_device_list_jws(
     jws: &str,
     aid: &str,
     root_did: &str,
-    root_signing_key: &str,
-) -> Result<DeviceListPayload, String> {
+    allowed_signers: &[String],
+    signer_keys: &HashMap<String, String>,
+    browsers: &std::collections::HashSet<String>,
+) -> Result<(DeviceListPayload, String), String> {
     if jws.len() > MAX_DEVICE_LIST_JWS_LEN {
         return Err("device list is too large".into());
     }
@@ -2545,11 +2583,14 @@ fn verify_device_list_jws(
     if header.alg != "EdDSA" || header.typ != DEVICE_LIST_TYP {
         return Err("device list header must be alg EdDSA, typ nexusinbox-device-list".into());
     }
-    if header.kid != root_did {
-        return Err("device list must be signed by the agent's root key".into());
+    if !allowed_signers.iter().any(|s| s == &header.kid) {
+        return Err("device list must be signed by a signer of the previous version".into());
     }
+    let Some(signer_key) = signer_keys.get(&header.kid) else {
+        return Err("device list signer is not an active device of this agent".into());
+    };
     let signing_input = format!("{header_b64}.{payload_b64}");
-    if !verify_envelope_signature(root_signing_key, signature_b64, &signing_input) {
+    if !verify_envelope_signature(signer_key, signature_b64, &signing_input) {
         return Err("device list signature does not verify".into());
     }
     let payload: DeviceListPayload = URL_SAFE_NO_PAD
@@ -2557,8 +2598,14 @@ fn verify_device_list_jws(
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .ok_or("device list payload is not valid")?;
-    if payload.v != 1 {
-        return Err("device list v must be 1".into());
+    match (payload.v, &payload.signers) {
+        (1, None) => {
+            if header.kid != root_did {
+                return Err("a v1 device list must be signed by the root".into());
+            }
+        }
+        (2, Some(_)) => {}
+        _ => return Err("device list must be v1, or v2 with signers".into()),
     }
     if payload.aid != aid || payload.root != root_did {
         return Err("device list names another agent or root".into());
@@ -2589,7 +2636,52 @@ fn verify_device_list_jws(
             return Err("device list names a device twice".into());
         }
     }
-    Ok(payload)
+    if let Some(signers) = &payload.signers {
+        let mut named = std::collections::HashSet::new();
+        if signers.is_empty() {
+            return Err("device list signers must name at least one browser".into());
+        }
+        for signer in signers {
+            let listed_browser = payload
+                .devices
+                .iter()
+                .any(|d| &d.did == signer && d.kind == "browser");
+            if !listed_browser || !browsers.contains(signer) {
+                return Err("device list signers must be browsers the list names".into());
+            }
+            if !named.insert(signer.as_str()) {
+                return Err("device list names a signer twice".into());
+            }
+        }
+    }
+    Ok((payload, header.kid))
+}
+
+/// Who may sign the next version after the latest stored list of `aid`
+/// (docs/40 §17.3): its signers, or the root when none is stored. The
+/// stored list was checked when it was put.
+async fn next_device_list_signers(
+    pool: &PgPool,
+    aid: &str,
+    root_did: &str,
+) -> Result<Vec<String>, String> {
+    let latest: Option<String> = sqlx::query_scalar(
+        "SELECT jws FROM agent_device_lists WHERE aid = $1 ORDER BY version DESC LIMIT 1",
+    )
+    .bind(aid)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("failed to read the latest device list: {error}"))?;
+    let Some(jws) = latest else {
+        return Ok(vec![root_did.to_string()]);
+    };
+    let payload: DeviceListPayload = jws
+        .split('.')
+        .nth(1)
+        .and_then(|b64| URL_SAFE_NO_PAD.decode(b64).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .ok_or("the stored device list is not readable")?;
+    Ok(payload.next_signers())
 }
 
 /// Shape check for a list of per-device wraps (docs/38 §5.3): at most
@@ -8612,10 +8704,56 @@ async fn get_auto_reply_policy(
     Ok(response)
 }
 
-/// `PUT /agents/{id}/device-list` — store a device list the agent's root
-/// browser signed (docs/40 §4.2). Human session only. The list must be
-/// signed by the root key (`agents.did`), name only active devices of the
-/// agent with the encryption keys the server holds for them, and carry a
+/// `GET /recipients/device-lists?aid=&after=` — an agent's device list
+/// versions after `after`, oldest first (docs/40 §17.3). Readers follow
+/// them from the version they remember when the latest is signed by a
+/// signer they do not trust yet. Same callers as `/recipients/resolve`.
+async fn device_list_history(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    Query(query): Query<DeviceListHistoryQuery>,
+) -> Result<Json<DeviceListHistoryResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let ctx = authenticated_context(&state, &headers, method.as_str(), uri.path()).await?;
+    ctx.require_scope("messages.send")?;
+    let aid = query.aid.unwrap_or_default();
+    if !aid.starts_with("aid:") || aid.len() > 128 {
+        return Err(validation_error("aid must be an agent identifier"));
+    }
+    let after = query.after.unwrap_or(0);
+    if after < 0 {
+        return Err(validation_error("after must not be negative"));
+    }
+    let pool = state
+        .database_pool()
+        .await
+        .map_err(|msg| internal_server_error(&msg))?
+        .ok_or_else(database_required_but_unavailable_error)?;
+    let lists = sqlx::query(
+        "SELECT version, jws FROM agent_device_lists WHERE aid = $1 AND version > $2 \
+         ORDER BY version ASC LIMIT $3",
+    )
+    .bind(&aid)
+    .bind(after)
+    .bind(MAX_DEVICE_LIST_HISTORY)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| internal_error("failed to read device lists", e))?
+    .into_iter()
+    .map(|row| DeviceListRef {
+        version: row.get("version"),
+        jws: row.get("jws"),
+    })
+    .collect();
+    Ok(Json(DeviceListHistoryResponse { aid, lists }))
+}
+
+/// `PUT /agents/{id}/device-list` — store a device list a browser of the
+/// agent signed (docs/40 §4.2, §17.3). Human session only. The list must
+/// be signed by a signer of the latest stored version (the root key,
+/// `agents.did`, for the first), name only active devices of the agent
+/// with the encryption keys the server holds for them, and carry a
 /// version above the latest stored one.
 async fn put_device_list(
     State(state): State<AppState>,
@@ -8632,38 +8770,55 @@ async fn put_device_list(
     let user_uuid = parse_user_uuid(&user_id)?;
     ensure_agent_owned_by_user(&pool, agent_id, user_uuid).await?;
 
+    // The root is the agent's identity (`agents.did`); its device may
+    // have been removed since (docs/40 §17.5).
     let root = sqlx::query(
         r#"
-        SELECT ai.aid, a.did, k.signing_public_key
+        SELECT ai.aid, a.did
         FROM agents a
         JOIN agent_identities ai ON ai.agent_id = a.id
-        JOIN agent_identity_keys k ON k.aid = ai.aid AND k.did = a.did
-        WHERE a.id = $1 AND k.status = 'active'
+        WHERE a.id = $1
         "#,
     )
     .bind(agent_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_error("failed to read the agent's root key", e))?
-    .ok_or_else(|| conflict_error("the agent's root key is not active"))?;
+    .map_err(|e| internal_error("failed to read the agent's root", e))?
+    .ok_or_else(|| conflict_error("the agent has no identity yet"))?;
     let aid: String = root.get("aid");
     let root_did: String = root.get("did");
-    let root_key: String = root.get("signing_public_key");
 
-    let list = verify_device_list_jws(payload.jws.trim(), &aid, &root_did, &root_key)
-        .map_err(|e| validation_error(&e))?;
-
-    let active: HashMap<String, String> = sqlx::query(
-        "SELECT did, encryption_public_key FROM agent_identity_keys \
+    let mut active: HashMap<String, String> = HashMap::new();
+    let mut signing_keys: HashMap<String, String> = HashMap::new();
+    for row in sqlx::query(
+        "SELECT did, signing_public_key, encryption_public_key FROM agent_identity_keys \
          WHERE aid = $1 AND status = 'active'",
     )
     .bind(&aid)
     .fetch_all(&pool)
     .await
     .map_err(|e| internal_error("failed to list devices", e))?
-    .into_iter()
-    .map(|row| (row.get("did"), row.get("encryption_public_key")))
-    .collect();
+    {
+        let did: String = row.get("did");
+        signing_keys.insert(did.clone(), row.get("signing_public_key"));
+        active.insert(did, row.get("encryption_public_key"));
+    }
+    // Browsers the server knows: the root's device.
+    let browsers: std::collections::HashSet<String> = std::iter::once(root_did.clone()).collect();
+    let allowed = next_device_list_signers(&pool, &aid, &root_did)
+        .await
+        .map_err(|e| internal_server_error(&e))?;
+
+    let (list, signer) = verify_device_list_jws(
+        payload.jws.trim(),
+        &aid,
+        &root_did,
+        &allowed,
+        &signing_keys,
+        &browsers,
+    )
+    .map_err(|e| validation_error(&e))?;
+
     if list
         .devices
         .iter()
@@ -8707,7 +8862,12 @@ async fn put_device_list(
         None,
         Some(aid),
         "device_list_signed",
-        serde_json::json!({ "version": version, "devices": list.devices.len() }),
+        serde_json::json!({
+            "version": version,
+            "devices": list.devices.len(),
+            "signer": signer,
+            "signers": list.next_signers().len(),
+        }),
     );
     Ok(Json(PutDeviceListResponse { version }))
 }
@@ -16765,6 +16925,7 @@ fn app_with_state(state: AppState) -> Router {
                 .delete(reset_contact_keys),
         )
         .route("/recipients/resolve", get(resolve_recipient))
+        .route("/recipients/device-lists", get(device_list_history))
         .route("/messages", get(list_messages).post(send_message))
         .route(
             "/.well-known/oauth-authorization-server",

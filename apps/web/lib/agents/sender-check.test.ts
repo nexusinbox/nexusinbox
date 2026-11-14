@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { resolveRecipient } = vi.hoisted(() => ({ resolveRecipient: vi.fn() }));
 vi.mock("../api/client", () => ({
   defaultApiClient: { resolveRecipient },
+  deviceListHistory: async () => null,
   ApiError: class ApiError extends Error {
     constructor(
       message: string,

@@ -999,6 +999,16 @@ export class NexusInboxApiClient {
     return this.request("GET", `/recipients/resolve?identifier=${encodeURIComponent(identifier)}`);
   }
 
+  /** An agent's device list versions after `after` (docs/40 §17.3). */
+  async deviceListHistory(aid: string, after: number): Promise<Array<{ version: number; jws: string }>> {
+    const query = new URLSearchParams({ aid, after: String(after) });
+    const response = await this.request<{ lists: Array<{ version: number; jws: string }> }>(
+      "GET",
+      `/recipients/device-lists?${query}`,
+    );
+    return response.lists;
+  }
+
   listMessages(params: { agentDid: string; folder?: string; status?: string }): Promise<MessageListResponse> {
     const query = new URLSearchParams({
       agent_did: params.agentDid,

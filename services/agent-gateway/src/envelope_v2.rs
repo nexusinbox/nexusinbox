@@ -361,7 +361,8 @@ fn parse_ms(at: &str) -> Option<i64> {
 /// are the agents this computer reads for; `sender` the sender's agent
 /// as resolved by `signature_v2.sender_aid`; `pin` what is remembered of
 /// it; `signed_before` whether the sender's agent was seen signing with v2;
-/// `now_ms` the clock.
+/// `now_ms` the clock; `history` the sender's list versions, fetched when
+/// `sender_needs_history` (docs/40 §17.3).
 pub fn check_sender(
     content: &Value,
     reader_aids: &[&str],
@@ -369,6 +370,7 @@ pub fn check_sender(
     pin: Option<&Pin>,
     signed_before: bool,
     now_ms: i64,
+    history: Option<&[ListRef]>,
 ) -> SenderCheck {
     let Some(sig) = content.get("signature_v2").filter(|v| v.is_object()) else {
         return SenderCheck::only(if signed_before {
@@ -406,34 +408,46 @@ pub fn check_sender(
             SenderState::NoList
         });
     };
-    let list = device_trust::list_root(&list_ref.jws).and_then(|root| {
-        device_trust::verify_device_list(&list_ref.jws, &fields.sender_aid, &root)
-    });
-    let Some(list) = list.filter(|l| l.version == list_ref.version) else {
-        return SenderCheck::only(SenderState::Broken);
-    };
-    if let Some(pin) = pin {
-        if pin.root != list.root {
+    let list = match device_trust::check_list(&fields.sender_aid, list_ref, pin, None, history) {
+        Ok(list) => list,
+        Err((device_trust::StopReason::RootChanged, root)) => {
             return SenderCheck {
                 state: SenderState::RootChanged,
                 list: None,
-                changed_root: Some(list.root),
-            };
+                changed_root: root,
+            }
         }
-        if list.version < pin.version {
-            return SenderCheck::only(SenderState::Broken);
-        }
-    }
+        Err(_) => return SenderCheck::only(SenderState::Broken),
+    };
 
-    // The list as it was when the message was sent: same root, not newer.
-    let sent_ref: Option<ListRef> = content
-        .get("sender_device_list")
-        .filter(|v| v.is_object())
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    // The list as it was when the message was sent: same root, not newer,
+    // signed by a signer the current list still trusts, or else followed
+    // from version 1 (its signer was removed since).
+    let sent_ref = sent_list_ref(content);
     let sent_with = match sent_ref {
         Some(r) if r.version != list.version => {
-            match device_trust::verify_device_list(&r.jws, &fields.sender_aid, &list.root) {
-                Some(old) if old.version == r.version && old.version <= list.version => old,
+            let old = device_trust::read_device_list(&r.jws, &fields.sender_aid).filter(
+                |(old, signer)| {
+                    old.root == list.root
+                        && old.version == r.version
+                        && old.version <= list.version
+                        && (list.signers.contains(signer)
+                            || device_trust::follow_versions(
+                                &fields.sender_aid,
+                                &list.root,
+                                None,
+                                list.version,
+                                history,
+                            )
+                            .is_some_and(|chain| {
+                                chain
+                                    .get(r.version as usize - 1)
+                                    .is_some_and(|(_, jws)| *jws == r.jws)
+                            }))
+                },
+            );
+            match old {
+                Some((old, _)) => old,
                 _ => {
                     return SenderCheck {
                         state: SenderState::Broken,
@@ -457,21 +471,42 @@ pub fn check_sender(
     }
 }
 
+fn sent_list_ref(content: &Value) -> Option<ListRef> {
+    content
+        .get("sender_device_list")
+        .filter(|v| v.is_object())
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+}
+
+/// Whether checking a delivered message's sender needs the sender's list
+/// history: its current list is signed by a signer the pin does not trust
+/// yet, or the list it was sent with by a signer the current list no
+/// longer names (docs/40 §17.3).
+pub fn sender_needs_history(
+    content: &Value,
+    sender_aid: &str,
+    current: &ListRef,
+    pin: Option<&Pin>,
+) -> bool {
+    if device_trust::needs_history(sender_aid, current, pin, None) {
+        return true;
+    }
+    let Some((list, _)) = device_trust::read_device_list(&current.jws, sender_aid) else {
+        return false;
+    };
+    match sent_list_ref(content) {
+        Some(r) if r.version != list.version => device_trust::read_device_list(&r.jws, sender_aid)
+            .is_some_and(|(_, signer)| !list.signers.contains(&signer)),
+        _ => false,
+    }
+}
+
 /// What to remember after a check (the pin only moves forward).
 pub fn pin_after_check(pin: Option<&Pin>, check: &SenderCheck) -> Option<Pin> {
     let Some(list) = check.list.as_ref() else {
         return pin.cloned();
     };
-    match pin {
-        Some(p) if p.root == list.root => Some(Pin {
-            root: list.root.clone(),
-            version: p.version.max(list.version),
-        }),
-        _ => Some(Pin {
-            root: list.root.clone(),
-            version: list.version,
-        }),
-    }
+    Some(device_trust::pin_for(pin, list))
 }
 
 /// None when an automatic reply may answer; otherwise the reason recorded.
@@ -628,6 +663,23 @@ mod tests {
             let pin: Option<Pin> = serde_json::from_value(c["pin"].clone()).unwrap();
             let case_now = c["now"].as_str().and_then(parse_ms).unwrap_or(now);
             let signed_before = c["signed_before"].as_bool().unwrap_or(false);
+            let history: Option<Vec<ListRef>> =
+                serde_json::from_value(c.get("history").cloned().unwrap_or_default()).unwrap();
+            // As the gateway does: fetch the history only when needed.
+            let history = list_ref
+                .as_ref()
+                .filter(|l| {
+                    c["content"]
+                        .get("signature_v2")
+                        .is_some_and(|s| s.is_object())
+                        && sender_needs_history(
+                            &c["content"],
+                            c["content"]["signature_v2"]["sender_aid"].as_str().unwrap(),
+                            l,
+                            pin.as_ref(),
+                        )
+                })
+                .and(history.as_deref());
             let check = check_sender(
                 &c["content"],
                 &readers,
@@ -635,6 +687,7 @@ mod tests {
                 pin.as_ref(),
                 signed_before,
                 case_now,
+                history,
             );
             assert_eq!(
                 check.state.code(),

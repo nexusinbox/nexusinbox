@@ -22,7 +22,7 @@ import {
   rememberDidAid,
   savePin,
 } from "../agents/peer-pins";
-import { defaultApiClient, type SendSigning } from "../api/client";
+import { defaultApiClient, deviceListHistory, type SendSigning } from "../api/client";
 import type { DeviceKey, KeyWrap, MessageContentResponse, RecipientResolutionResponse } from "../api/types";
 import { loadAddressBook, sealForSave } from "../contacts/address-book";
 import { isValidX25519PublicKeyB64Url, wrapContentKeyForRecipient } from "./keywrap";
@@ -126,7 +126,14 @@ async function decide(
   const contactRoot = contactForAid(served.aid)?.root ?? null;
   const pin: DevicePin | null = local ?? (contactRoot ? { root: contactRoot, version: 0 } : null);
   const knownAid = requested.startsWith("did:") ? knownAidFor(requested) : null;
-  const decision = await decideWrapTargets({ served, requested, knownAid, pin, acceptRoot });
+  const decision = await decideWrapTargets({
+    served,
+    requested,
+    knownAid,
+    pin,
+    acceptRoot,
+    history: deviceListHistory,
+  });
   if (decision.kind === "stop") return decision;
   if (requested.startsWith("did:")) rememberDidAid(requested, served.aid);
   const root = decision.list.root;
@@ -157,6 +164,7 @@ async function ownSide(
     requested: senderIdentifier,
     knownAid: knownAidFor(senderIdentifier),
     pin: loadPin(served.aid),
+    history: deviceListHistory,
   });
   if (decision.kind === "stop") {
     // The agent page and Messages already warn about the person's own

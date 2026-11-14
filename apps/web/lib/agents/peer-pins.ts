@@ -1,6 +1,7 @@
 // What this browser remembers of each agent's device list (docs/40 §12.4):
-// the root that signs it and the newest version seen. Senders stop when
-// a list comes back signed by another root or older than one seen.
+// the root it names, the newest version seen, and who may sign the next
+// one when that is not just the root (§17.3). Senders stop when a list
+// comes back for another root or older than one seen.
 //
 // Kept per browser in localStorage. For agents in the person's contacts
 // the root is also sealed into the contact, so the person's other
@@ -20,7 +21,11 @@ function parsePin(raw: string | null): DevicePin | null {
     const value = JSON.parse(raw) as Record<string, unknown>;
     if (typeof value.root !== "string" || !value.root.startsWith("did:key:")) return null;
     const version = Number(value.version);
-    return { root: value.root, version: Number.isSafeInteger(version) && version > 0 ? version : 0 };
+    const signers =
+      Array.isArray(value.signers) && value.signers.length > 0 && value.signers.every((d) => typeof d === "string")
+        ? { signers: value.signers as string[] }
+        : {};
+    return { root: value.root, version: Number.isSafeInteger(version) && version > 0 ? version : 0, ...signers };
   } catch {
     return null;
   }

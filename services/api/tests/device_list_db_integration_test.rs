@@ -395,3 +395,79 @@ async fn lists_the_root_did_not_sign_or_that_name_other_keys_are_refused() {
     let (status, body) = put_list(&app, &f, &other.auth, &good).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 }
+
+/// docs/40 §17.3: a v2 list names who may sign the next version; the
+/// server keeps every version and returns the ones after a given one.
+#[tokio::test]
+#[serial]
+async fn v2_lists_name_signers_and_old_versions_come_back() {
+    if !db_tests_enabled() {
+        eprintln!("skipping: set AGENT_INBOX_DB_TESTS=1 to run DB integration tests");
+        return;
+    }
+    ensure_db_env();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let f = seed(&pool, "v2", 41).await;
+    let computer = key(42);
+
+    let v1 = sign_list(&f.root, &f.root_did, &list_payload(&f, "v2", 1, true));
+    let (status, body) = put_list(&app, &f, &f.auth, &v1).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A computer cannot be a signer, even when the root signs the list.
+    let mut pc_signer = list_payload(&f, "v2", 2, true);
+    pc_signer["v"] = json!(2);
+    pc_signer["signers"] = json!([f.root_did, f.pc_did]);
+    let jws = sign_list(&f.root, &f.root_did, &pc_signer);
+    let (status, body) = put_list(&app, &f, &f.auth, &jws).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+    // Nor can a key the previous version does not name sign the next one.
+    let mut by_pc = list_payload(&f, "v2", 2, true);
+    by_pc["v"] = json!(2);
+    by_pc["signers"] = json!([f.root_did]);
+    let jws = sign_list(&computer, &f.pc_did, &by_pc);
+    let (status, body) = put_list(&app, &f, &f.auth, &jws).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+    // signers on a v1 list, or a v2 list without them, are refused.
+    let mut v1_with_signers = list_payload(&f, "v2", 2, true);
+    v1_with_signers["signers"] = json!([f.root_did]);
+    let jws = sign_list(&f.root, &f.root_did, &v1_with_signers);
+    let (status, body) = put_list(&app, &f, &f.auth, &jws).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    let mut v2_without = list_payload(&f, "v2", 2, true);
+    v2_without["v"] = json!(2);
+    let jws = sign_list(&f.root, &f.root_did, &v2_without);
+    let (status, body) = put_list(&app, &f, &f.auth, &jws).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+    // A v2 list the root signs, naming itself the signer, is stored.
+    let mut v2 = list_payload(&f, "v2", 2, false);
+    v2["v"] = json!(2);
+    v2["signers"] = json!([f.root_did]);
+    let v2_jws = sign_list(&f.root, &f.root_did, &v2);
+    let (status, body) = put_list(&app, &f, &f.auth, &v2_jws).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Old versions come back after the one asked for, oldest first.
+    let uri = |after: i64| {
+        format!(
+            "/recipients/device-lists?aid={}&after={after}",
+            f.aid.replace(':', "%3A")
+        )
+    };
+    let (status, body) = call(&app, "GET", &uri(0), &f.auth, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["aid"], json!(f.aid));
+    assert_eq!(
+        body["lists"],
+        json!([{ "version": 1, "jws": v1 }, { "version": 2, "jws": v2_jws }])
+    );
+    let (_, body) = call(&app, "GET", &uri(1), &f.auth, Value::Null).await;
+    assert_eq!(body["lists"], json!([{ "version": 2, "jws": v2_jws }]));
+    let (status, _) = call(&app, "GET", &uri(-1), &f.auth, Value::Null).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}

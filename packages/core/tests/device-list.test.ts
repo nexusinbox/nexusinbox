@@ -3,6 +3,8 @@ import { createEd25519KeyPair, deriveDidKeyFromPublicKey } from "../src/index";
 import {
   deviceListVersion,
   ed25519KeyFromDidKey,
+  listSigners,
+  readDeviceList,
   signDeviceList,
   verifyDeviceList,
   type DeviceListPayload,
@@ -87,6 +89,58 @@ describe("device lists (docs/40 §4.2)", () => {
   });
 });
 
+describe("lists with a second signer (docs/40 §17.3)", () => {
+  async function v2(signers: (root: string, phone: string) => string[], kind: "browser" | "computer" = "browser") {
+    const r = await root();
+    const phone = await root();
+    const list: DeviceListPayload = {
+      v: 2,
+      aid: "aid:ai:one",
+      root: r.did,
+      version: 2,
+      issued_at: "2026-11-14T10:00:00Z",
+      devices: [
+        { did: r.did, enc: "ROOT_ENC", kind: "browser" },
+        { did: phone.did, enc: "PHONE_ENC", kind },
+      ],
+      signers: signers(r.did, phone.did),
+    };
+    return { r, phone, list };
+  }
+
+  it("reads a v2 list signed by a signer it names, and who may sign the next one", async () => {
+    const { r, phone, list } = await v2((root, p) => [root, p]);
+    const jws = await signDeviceList(phone.pair.privateKey, list, phone.did);
+    const read = await readDeviceList(jws, "aid:ai:one");
+    expect(read).toEqual({ list, signer: phone.did });
+    expect(listSigners(read!.list)).toEqual([r.did, phone.did]);
+    // Signed by the phone: not the root alone, but a signer the caller trusts.
+    expect(await verifyDeviceList(jws, { aid: "aid:ai:one", root: r.did })).toBeNull();
+    expect(await verifyDeviceList(jws, { aid: "aid:ai:one", root: r.did, signers: [phone.did] })).toEqual(list);
+  });
+
+  it("refuses signers that are not browsers on the list, or named twice, or none", async () => {
+    for (const bad of [
+      await v2((_r, p) => [p], "computer"),
+      await v2(() => ["did:key:z6MkNotOnTheList"]),
+      await v2((root) => [root, root]),
+      await v2(() => []),
+    ]) {
+      const jws = await signDeviceList(bad.r.pair.privateKey, bad.list);
+      expect(await readDeviceList(jws, "aid:ai:one")).toBeNull();
+    }
+  });
+
+  it("refuses a v1 list signed by anyone but its root, and signers on a v1 list", async () => {
+    const r = await root();
+    const other = await root();
+    const list = payload("aid:ai:one", r.did);
+    expect(await readDeviceList(await signDeviceList(other.pair.privateKey, list, other.did), "aid:ai:one")).toBeNull();
+    const withSigners = { ...list, signers: [r.did] };
+    expect(await readDeviceList(await signDeviceList(r.pair.privateKey, withSigners), "aid:ai:one")).toBeNull();
+  });
+});
+
 describe("whom senders wrap for (docs/40 §12.3)", () => {
   it("matches the shared vectors", async () => {
     const { readFileSync } = await import("node:fs");
@@ -102,6 +156,11 @@ describe("whom senders wrap for (docs/40 §12.3)", () => {
         knownAid: c.knownAid,
         pin: c.pin,
         acceptRoot: c.acceptRoot,
+        history:
+          c.history === undefined
+            ? undefined
+            : async (_aid: string, after: number) =>
+                c.history ? c.history.filter((h: { version: number }) => h.version > after) : null,
       });
       const got =
         decision.kind === "stop"

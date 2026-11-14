@@ -8,7 +8,12 @@
 //! returns, with the listed keys, keeps it from adding a device or swapping
 //! a key. The gateway remembers each agent's root and the newest version
 //! seen (`peers.json` in the agent's directory) and stops when a list comes
-//! back signed by another root, older, or gone.
+//! back for another root, older, or gone.
+//!
+//! Signers (docs/40 §17.3): a v1 list is signed by the root. A v2 list names
+//! `signers`, and each version is signed by a signer of the version before,
+//! so a list signed by a signer the pin does not trust yet is followed from
+//! the pinned version through the history (`GET /recipients/device-lists`).
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,11 +29,31 @@ pub const DEVICE_LIST_TYP: &str = "nexusinbox-device-list";
 pub const MAX_LIST_DEVICES: usize = 10;
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
-/// What is remembered of an agent: its root and the newest list version seen.
+/// What is remembered of an agent: its root, the newest list version seen,
+/// and who may sign the next one when that is not just the root.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pin {
     pub root: String,
     pub version: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signers: Option<Vec<String>>,
+}
+
+impl Pin {
+    /// A pin for a root alone (v1 lists).
+    pub fn root(root: &str, version: u64) -> Self {
+        Pin {
+            root: root.to_string(),
+            version,
+            signers: None,
+        }
+    }
+
+    fn trusted(&self) -> Vec<String> {
+        self.signers
+            .clone()
+            .unwrap_or_else(|| vec![self.root.clone()])
+    }
 }
 
 /// `device_list` as `GET /recipients/resolve` returns it.
@@ -89,6 +114,7 @@ impl StopReason {
 pub struct ListDevice {
     pub did: String,
     pub enc: String,
+    pub browser: bool,
 }
 
 /// A checked list.
@@ -97,6 +123,8 @@ pub struct DeviceList {
     pub root: String,
     pub version: u64,
     pub devices: Vec<ListDevice>,
+    /// Who may sign the next version (a v1 list: its root).
+    pub signers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,12 +160,6 @@ fn json_part(part: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
     }
 }
 
-/// The root a list's header names (`kid`), unchecked.
-pub fn list_root(jws: &str) -> Option<String> {
-    let header = json_part(jws.split('.').next()?)?;
-    header.get("kid")?.as_str().map(str::to_string)
-}
-
 fn list_device(value: &serde_json::Value) -> Option<ListDevice> {
     let d = value.as_object()?;
     if d.len() != 3 {
@@ -155,25 +177,25 @@ fn list_device(value: &serde_json::Value) -> Option<ListDevice> {
     Some(ListDevice {
         did: did.to_string(),
         enc: enc.to_string(),
+        browser: kind == "browser",
     })
 }
 
-/// Check a signed list against the agent and the root the caller trusts.
-/// Version ordering is the caller's check.
-pub fn verify_device_list(jws: &str, aid: &str, root: &str) -> Option<DeviceList> {
+/// Read a signed list for `aid`: the header, the signature by the key it
+/// names (`kid`), and the shape. Returns the list and its signer; whether
+/// that signer may sign it is the caller's check.
+pub fn read_device_list(jws: &str, aid: &str) -> Option<(DeviceList, String)> {
     let mut parts = jws.split('.');
     let (header_b64, payload_b64, signature_b64) = (parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some() {
         return None;
     }
     let header = json_part(header_b64)?;
-    if header.get("alg")?.as_str()? != "EdDSA"
-        || header.get("typ")?.as_str()? != DEVICE_LIST_TYP
-        || header.get("kid")?.as_str()? != root
-    {
+    if header.get("alg")?.as_str()? != "EdDSA" || header.get("typ")?.as_str()? != DEVICE_LIST_TYP {
         return None;
     }
-    let key = VerifyingKey::from_bytes(&did_key_ed25519(root)?).ok()?;
+    let signer = header.get("kid")?.as_str()?.to_string();
+    let key = VerifyingKey::from_bytes(&did_key_ed25519(&signer)?).ok()?;
     let signature: [u8; 64] = URL_SAFE_NO_PAD
         .decode(signature_b64)
         .ok()?
@@ -186,10 +208,12 @@ pub fn verify_device_list(jws: &str, aid: &str, root: &str) -> Option<DeviceList
     .ok()?;
 
     let payload = json_part(payload_b64)?;
-    if payload.len() != 6
-        || payload.get("v")?.as_u64()? != 1
+    let v2 = payload.get("v")?.as_u64()? == 2;
+    let root = payload.get("root")?.as_str()?.to_string();
+    if payload.len() != if v2 { 7 } else { 6 }
+        || !(v2 || payload.get("v")?.as_u64()? == 1)
         || payload.get("aid")?.as_str()? != aid
-        || payload.get("root")?.as_str()? != root
+        || !root.starts_with("did:key:z")
         || !payload.get("issued_at")?.is_string()
     {
         return None;
@@ -207,11 +231,148 @@ pub fn verify_device_list(jws: &str, aid: &str, root: &str) -> Option<DeviceList
     if dids.len() != devices.len() {
         return None;
     }
-    Some(DeviceList {
-        root: root.to_string(),
-        version,
-        devices,
-    })
+    let signers = if v2 {
+        // Browsers the list names, at least one, none twice.
+        let named: Vec<String> = payload
+            .get("signers")?
+            .as_array()?
+            .iter()
+            .map(|v| v.as_str().map(str::to_string))
+            .collect::<Option<_>>()?;
+        let unique: HashSet<&str> = named.iter().map(String::as_str).collect();
+        let all_browsers = named
+            .iter()
+            .all(|d| devices.iter().any(|x| &x.did == d && x.browser));
+        if named.is_empty() || unique.len() != named.len() || !all_browsers {
+            return None;
+        }
+        named
+    } else {
+        if signer != root {
+            return None;
+        }
+        vec![root.clone()]
+    };
+    Some((
+        DeviceList {
+            root,
+            version,
+            devices,
+            signers,
+        },
+        signer,
+    ))
+}
+
+/// The versions after `pin` (or from version 1) up to `upto`, each signed
+/// by a signer of the one before (version 1 by the root), out of
+/// `history` (any versions the server returned). None if any is missing or
+/// does not hold.
+pub fn follow_versions(
+    aid: &str,
+    root: &str,
+    pin: Option<&Pin>,
+    upto: u64,
+    history: Option<&[ListRef]>,
+) -> Option<Vec<(DeviceList, String)>> {
+    let history = history?;
+    let after = pin.map_or(0, |p| p.version);
+    if upto <= after {
+        return None;
+    }
+    let mut allowed = pin.map_or_else(|| vec![root.to_string()], Pin::trusted);
+    let mut out = Vec::new();
+    for version in after + 1..=upto {
+        let mut found = history.iter().filter(|r| r.version == version);
+        let (Some(r), None) = (found.next(), found.next()) else {
+            return None;
+        };
+        let (list, signer) = read_device_list(&r.jws, aid)?;
+        if list.root != root || list.version != version || !allowed.contains(&signer) {
+            return None;
+        }
+        allowed = list.signers.clone();
+        out.push((list, r.jws.clone()));
+    }
+    Some(out)
+}
+
+/// Check an agent's current list against what is remembered (core
+/// `checkDeviceList`). A list signed by a signer the pin trusts (or, seen
+/// for the first time, by its root) is checked directly; any other signer
+/// is followed through `history`.
+pub fn check_list(
+    aid: &str,
+    list_ref: &ListRef,
+    pin: Option<&Pin>,
+    accept_root: Option<&str>,
+    history: Option<&[ListRef]>,
+) -> Result<DeviceList, (StopReason, Option<String>)> {
+    let Some((list, signer)) = read_device_list(&list_ref.jws, aid) else {
+        return Err((StopReason::Signature, None));
+    };
+    if list.version != list_ref.version {
+        return Err((StopReason::Signature, None));
+    }
+    let mut pin = pin;
+    if let Some(p) = pin {
+        if p.root != list.root {
+            if accept_root != Some(list.root.as_str()) {
+                return Err((StopReason::RootChanged, Some(list.root)));
+            }
+            pin = None;
+        }
+    }
+    if pin.is_some_and(|p| list.version < p.version) {
+        return Err((StopReason::Rollback, None));
+    }
+    let trusted = pin.map_or_else(|| vec![list.root.clone()], Pin::trusted);
+    if trusted.contains(&signer) {
+        return Ok(list);
+    }
+    match follow_versions(aid, &list.root, pin, list.version, history) {
+        Some(chain) if chain.last().is_some_and(|(_, jws)| *jws == list_ref.jws) => Ok(list),
+        _ => Err((StopReason::Signature, None)),
+    }
+}
+
+/// Whether checking `list_ref` needs the version history: it is signed by
+/// a signer the pin does not trust yet (docs/40 §17.3).
+pub fn needs_history(
+    aid: &str,
+    list_ref: &ListRef,
+    pin: Option<&Pin>,
+    accept_root: Option<&str>,
+) -> bool {
+    let Some((list, signer)) = read_device_list(&list_ref.jws, aid) else {
+        return false;
+    };
+    let pin = match pin {
+        Some(p) if p.root != list.root => {
+            if accept_root != Some(list.root.as_str()) {
+                return false;
+            }
+            None
+        }
+        other => other,
+    };
+    !pin.map_or_else(|| vec![list.root.clone()], Pin::trusted)
+        .contains(&signer)
+}
+
+/// The pin to keep after `list` checked (it only moves forward).
+pub fn pin_for(pin: Option<&Pin>, list: &DeviceList) -> Pin {
+    if let Some(p) = pin {
+        if p.root == list.root && p.version > list.version {
+            return p.clone();
+        }
+    }
+    let only_root = list.signers.len() == 1 && list.signers[0] == list.root;
+    Pin {
+        root: list.root.clone(),
+        version: list.version,
+        signers: (!only_root).then(|| list.signers.clone()),
+    }
 }
 
 fn stop(reason: StopReason) -> Decision {
@@ -222,13 +383,14 @@ fn stop(reason: StopReason) -> Decision {
 /// `requested` is what the sender asked to resolve (an AID or a DID);
 /// `known_aid` the agent a requested DID was seen under before; `pin` what
 /// is remembered of this agent; `accept_root` a new root the person has
-/// accepted.
+/// accepted; `history` the list versions, fetched when `needs_history`.
 pub fn decide(
     served: &Served,
     requested: &str,
     known_aid: Option<&str>,
     pin: Option<&Pin>,
     accept_root: Option<&str>,
+    history: Option<&[ListRef]>,
 ) -> Decision {
     // A DID belongs to one agent for good: the server may not move it.
     if requested.starts_with("aid:") && requested != served.aid {
@@ -255,27 +417,10 @@ pub fn decide(
         });
     };
 
-    let Some(list) = list_root(&list_ref.jws)
-        .and_then(|root| verify_device_list(&list_ref.jws, served.aid, &root))
-    else {
-        return stop(StopReason::Signature);
+    let list = match check_list(served.aid, list_ref, pin, accept_root, history) {
+        Ok(list) => list,
+        Err((reason, root)) => return Decision::Stop { reason, root },
     };
-    if list.version != list_ref.version {
-        return stop(StopReason::Signature);
-    }
-
-    if let Some(pin) = pin {
-        if pin.root != list.root {
-            if accept_root != Some(list.root.as_str()) {
-                return Decision::Stop {
-                    reason: StopReason::RootChanged,
-                    root: Some(list.root),
-                };
-            }
-        } else if list.version < pin.version {
-            return stop(StopReason::Rollback);
-        }
-    }
 
     let active_dids: HashSet<&str> = active.iter().map(|d| d.did.as_str()).collect();
     let targets: Vec<Target> = list
@@ -308,16 +453,7 @@ pub fn pin_after(pin: Option<&Pin>, decision: &Decision) -> Option<Pin> {
     let Decision::Listed { list, .. } = decision else {
         return pin.cloned();
     };
-    match pin {
-        Some(pin) if pin.root == list.root => Some(Pin {
-            root: list.root.clone(),
-            version: pin.version.max(list.version),
-        }),
-        _ => Some(Pin {
-            root: list.root.clone(),
-            version: list.version,
-        }),
-    }
+    Some(pin_for(pin, list))
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +577,9 @@ mod tests {
         pin: Option<Pin>,
         #[serde(default, rename = "acceptRoot")]
         accept_root: Option<String>,
+        /// What `GET /recipients/device-lists` returns (null: nothing).
+        #[serde(default)]
+        history: Option<Vec<ListRef>>,
         expect: serde_json::Value,
     }
 
@@ -481,7 +620,7 @@ mod tests {
             "/../../tests/vectors/device_list_decisions.json"
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(vectors.cases.len(), 17);
+        assert_eq!(vectors.cases.len(), 24);
         for case in &vectors.cases {
             let served = Served {
                 aid: &case.served.aid,
@@ -490,12 +629,25 @@ mod tests {
                 devices: &case.served.devices,
                 device_list: case.served.device_list.as_ref(),
             };
+            // As the gateway does: fetch the history only when needed.
+            let history = served
+                .device_list
+                .filter(|l| {
+                    needs_history(
+                        served.aid,
+                        l,
+                        case.pin.as_ref(),
+                        case.accept_root.as_deref(),
+                    )
+                })
+                .and(case.history.as_deref());
             let decision = decide(
                 &served,
                 &case.requested,
                 case.known_aid.as_deref(),
                 case.pin.as_ref(),
                 case.accept_root.as_deref(),
+                history,
             );
             assert_eq!(
                 expected(&decision, case.pin.as_ref()),
@@ -527,6 +679,7 @@ mod tests {
             Pin {
                 root: "did:key:zRoot".into(),
                 version: 3,
+                signers: Some(vec!["did:key:zPhone".into()]),
             },
         );
         store.save(&peers).unwrap();

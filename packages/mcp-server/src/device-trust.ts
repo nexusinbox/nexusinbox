@@ -9,7 +9,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { MessageContentResponse, RecipientResolution } from "@nexusinbox/core";
-import { decideWrapTargets, pinAfter, type DevicePin, type StopReason } from "@nexusinbox/core/device-list";
+import {
+  decideWrapTargets,
+  deviceListRoot,
+  pinAfter,
+  type DeviceListHistory,
+  type DevicePin,
+  type StopReason,
+} from "@nexusinbox/core/device-list";
 import {
   checkSender,
   pinAfterCheck,
@@ -35,7 +42,7 @@ export class SendStoppedError extends Error {
   ) {
     super(
       reason === "root_changed"
-        ? `Not sent: the device list of ${aid} is now signed by another key (${root}). Their key may have been replaced; ask the person to confirm with them. [stopped: root_changed]`
+        ? `Not sent: the device list of ${aid} now names another key (${root}). Their key may have been replaced; ask the person to confirm with them. [stopped: root_changed]`
         : reason === "no_list"
           ? `Not sent: ${aid} has no signed device list yet. It is made when they open NexusInbox. Ask the person to try again later. [stopped: no_list]`
           : `Not sent: the device list of ${aid} does not check out. Ask the person to look at it in the NexusInbox app. [stopped: ${reason}]`,
@@ -81,13 +88,15 @@ export function senderCheckResult(state: SenderCheckState | "unchecked"): Sender
 /**
  * Check who sent a delivered message (docs/40 §14.5) and remember the
  * sender's root, as the gateway does. `resolve` is the API's
- * `GET /recipients/resolve` (null when the agent is not found).
+ * `GET /recipients/resolve` (null when the agent is not found);
+ * `history` its `GET /recipients/device-lists` (docs/40 §17.3).
  */
 export async function checkMessageSender(
   content: MessageContentResponse,
   readerAid: string,
   resolve: (aid: string) => Promise<RecipientResolution | null>,
   peersFile: string,
+  history?: DeviceListHistory,
 ): Promise<SenderCheckResult> {
   const delivered = content as DeliveredContent;
   const senderAid = content.signature_v2?.sender_aid;
@@ -114,6 +123,7 @@ export async function checkMessageSender(
     sender: sender ? { ...sender, encryption_public_key: sender.encryption_public_key ?? "" } : null,
     pin,
     signedBefore: peers.signed.includes(senderAid),
+    history,
   });
   if (check.state === "verified" && (!peers.signed.includes(senderAid) || (content.sender_did && peers.dids[content.sender_did] !== senderAid))) {
     if (!peers.signed.includes(senderAid)) peers.signed.push(senderAid);
@@ -121,12 +131,12 @@ export async function checkMessageSender(
     await save(peersFile, peers).catch(() => undefined);
   }
   if (check.state === "root_changed" && sender?.device_list) {
-    const root = JSON.parse(Buffer.from(sender.device_list.jws.split(".")[0], "base64url").toString()).kid;
-    if (typeof root === "string") peers.changed[senderAid] = root;
+    const root = deviceListRoot(sender.device_list.jws);
+    if (root) peers.changed[senderAid] = root;
     await save(peersFile, peers).catch(() => undefined);
   } else {
     const next = pinAfterCheck(pin, check);
-    if (next && (next.root !== pin?.root || next.version !== pin?.version)) {
+    if (next && JSON.stringify(next) !== JSON.stringify(pin)) {
       peers.pins[senderAid] = next;
       delete peers.changed[senderAid];
       await save(peersFile, peers).catch(() => undefined);
@@ -139,12 +149,14 @@ export async function checkMessageSender(
  * Check `served` (what the API resolved `requested` to) and return it with
  * only what may be wrapped for: `devices` the listed devices the server
  * still returns, with the listed keys, and `did` / `encryption_public_key`
- * the one `encrypted_key` goes to. Throws SendStoppedError.
+ * the one `encrypted_key` goes to. Throws SendStoppedError. `history`
+ * fetches list versions when a new signer has to be followed (§17.3).
  */
 export async function checkRecipient(
   served: RecipientResolution,
   requested: string,
   peersFile: string,
+  history?: DeviceListHistory,
 ): Promise<RecipientResolution> {
   const peers = await load(peersFile);
   const pin = peers.pins[served.aid] ?? null;
@@ -153,6 +165,7 @@ export async function checkRecipient(
     requested,
     knownAid: requested.startsWith("did:") ? peers.dids[requested] : null,
     pin,
+    history,
   });
   if (decision.kind === "stop") {
     if (decision.root) {

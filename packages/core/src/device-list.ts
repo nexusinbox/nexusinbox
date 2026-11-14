@@ -9,8 +9,14 @@
  * devices the person approved.
  *
  * Format: compact JWS, header {"alg":"EdDSA","typ":DEVICE_LIST_TYP,
- * "kid":<root DID>}, payload DeviceListPayload. The server checks the
+ * "kid":<signer DID>}, payload DeviceListPayload. The server checks the
  * same things in services/api verify_device_list_jws.
+ *
+ * Signers (docs/40 §17.3): a v1 list is signed by the root. A v2 list
+ * names `signers` (browsers among its devices), and version N is signed
+ * by one of the signers of version N-1, so a reader follows the versions
+ * from the one it remembers (or from version 1, which the root signs).
+ * The root stays the agent's identity even after its device is removed.
  *
  * Kept free of runtime imports so the Web UI can import it without the
  * Node-only API client.
@@ -31,13 +37,20 @@ export type DeviceListDevice = {
 };
 
 export type DeviceListPayload = {
-  v: 1;
+  v: 1 | 2;
   aid: string;
   root: string;
   version: number;
   issued_at: string;
   devices: DeviceListDevice[];
+  /** v2 only: the devices that may sign the next version. */
+  signers?: string[];
 };
+
+/** Who may sign the version after this one (a v1 list: its root). */
+export function listSigners(list: DeviceListPayload): string[] {
+  return list.v === 2 && list.signers ? list.signers : [list.root];
+}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -98,16 +111,20 @@ export function ed25519KeyFromDidKey(did: string): Uint8Array | null {
   return decoded.slice(2);
 }
 
-/** Sign a device list with the root's private key (Ed25519). */
+/**
+ * Sign a device list (Ed25519). `signerDid` is the signing device, by
+ * default the root; it must be a signer of the version before.
+ */
 export async function signDeviceList(
-  rootPrivateKey: CryptoKey,
+  signerPrivateKey: CryptoKey,
   payload: DeviceListPayload,
+  signerDid: string = payload.root,
 ): Promise<string> {
-  const header = { alg: "EdDSA", typ: DEVICE_LIST_TYP, kid: payload.root };
+  const header = { alg: "EdDSA", typ: DEVICE_LIST_TYP, kid: signerDid };
   const input = `${toBase64Url(encoder.encode(JSON.stringify(header)))}.${toBase64Url(
     encoder.encode(JSON.stringify(payload)),
   )}`;
-  const signature = await crypto.subtle.sign("Ed25519", rootPrivateKey, asArrayBuffer(encoder.encode(input)));
+  const signature = await crypto.subtle.sign("Ed25519", signerPrivateKey, asArrayBuffer(encoder.encode(input)));
   return `${input}.${toBase64Url(new Uint8Array(signature))}`;
 }
 
@@ -125,15 +142,15 @@ function isDevice(value: unknown): value is DeviceListDevice {
 }
 
 /**
- * Check a signed device list against the agent and the root the caller
- * trusts. Returns the list, or null if anything does not hold: the
- * header, the signature by `root`, the agent, the shape, or a DID named
- * twice. Version ordering is the caller's check.
+ * Read a signed device list for `aid`: the header, the signature by the
+ * key it names (`kid`), and the shape. Returns the list and its signer,
+ * or null. Whether that signer may sign it is the caller's check
+ * (`verifyDeviceList`, `checkDeviceList`).
  */
-export async function verifyDeviceList(
+export async function readDeviceList(
   jws: string,
-  expected: { aid: string; root: string },
-): Promise<DeviceListPayload | null> {
+  aid: string,
+): Promise<{ list: DeviceListPayload; signer: string } | null> {
   const parts = jws.split(".");
   if (parts.length !== 3) return null;
   const [headerB64, payloadB64, signatureB64] = parts;
@@ -148,14 +165,15 @@ export async function verifyDeviceList(
   } catch {
     return null;
   }
-  if (header.alg !== "EdDSA" || header.typ !== DEVICE_LIST_TYP || header.kid !== expected.root) return null;
+  if (header.alg !== "EdDSA" || header.typ !== DEVICE_LIST_TYP || typeof header.kid !== "string") return null;
+  const signer = header.kid;
 
-  const rootKey = ed25519KeyFromDidKey(expected.root);
+  const signerKey = ed25519KeyFromDidKey(signer);
   const signature = fromBase64Url(signatureB64);
-  if (!rootKey || !signature || signature.length !== 64) return null;
+  if (!signerKey || !signature || signature.length !== 64) return null;
   let valid = false;
   try {
-    const key = await crypto.subtle.importKey("raw", asArrayBuffer(rootKey), { name: "Ed25519" }, false, ["verify"]);
+    const key = await crypto.subtle.importKey("raw", asArrayBuffer(signerKey), { name: "Ed25519" }, false, ["verify"]);
     valid = await crypto.subtle.verify(
       "Ed25519",
       key,
@@ -167,11 +185,13 @@ export async function verifyDeviceList(
   }
   if (!valid) return null;
 
+  const v2 = payload.v === 2;
   if (
-    Object.keys(payload).length !== 6 ||
-    payload.v !== 1 ||
-    payload.aid !== expected.aid ||
-    payload.root !== expected.root ||
+    Object.keys(payload).length !== (v2 ? 7 : 6) ||
+    (payload.v !== 1 && !v2) ||
+    payload.aid !== aid ||
+    typeof payload.root !== "string" ||
+    !payload.root.startsWith("did:key:z") ||
     typeof payload.version !== "number" ||
     !Number.isSafeInteger(payload.version) ||
     payload.version < 1 ||
@@ -185,7 +205,37 @@ export async function verifyDeviceList(
   }
   const devices = payload.devices as DeviceListDevice[];
   if (new Set(devices.map((d) => d.did)).size !== devices.length) return null;
-  return payload as unknown as DeviceListPayload;
+  if (v2) {
+    // Signers are browsers the list names, at least one, none twice.
+    const signers = payload.signers;
+    const browsers = new Set(devices.filter((d) => d.kind === "browser").map((d) => d.did));
+    if (
+      !Array.isArray(signers) ||
+      signers.length < 1 ||
+      !signers.every((d) => typeof d === "string" && browsers.has(d)) ||
+      new Set(signers).size !== signers.length
+    ) {
+      return null;
+    }
+  } else if (signer !== payload.root) {
+    return null;
+  }
+  return { list: payload as unknown as DeviceListPayload, signer };
+}
+
+/**
+ * Check a signed device list against the agent, the root the caller
+ * trusts, and who may sign it (`signers`, by default the root alone).
+ * Returns the list, or null. Version ordering is the caller's check.
+ */
+export async function verifyDeviceList(
+  jws: string,
+  expected: { aid: string; root: string; signers?: string[] },
+): Promise<DeviceListPayload | null> {
+  const read = await readDeviceList(jws, expected.aid);
+  if (!read || read.list.root !== expected.root) return null;
+  if (!(expected.signers ?? [expected.root]).includes(read.signer)) return null;
+  return read.list;
 }
 
 /** Read a list's version without checking it (to pick the next one). */
@@ -206,8 +256,98 @@ export function deviceListVersion(jws: string): number | null {
 // that the server still returns: the server can take devices away, but
 // cannot add one or swap a key.
 
-/** What a sender remembers of an agent: its root and the newest list version seen. */
-export type DevicePin = { root: string; version: number };
+/**
+ * What a sender remembers of an agent: its root, the newest list version
+ * seen, and who may sign the next one when that is not just the root
+ * (docs/40 §17.3).
+ */
+export type DevicePin = { root: string; version: number; signers?: string[] };
+
+/**
+ * The agent's list versions after `after`, oldest first, as the server
+ * returns them (`GET /recipients/device-lists`), or null if it cannot.
+ */
+export type DeviceListHistory = (
+  aid: string,
+  after: number,
+) => Promise<Array<{ version: number; jws: string }> | null>;
+
+export type ListCheck =
+  | { ok: true; list: DeviceListPayload }
+  | { ok: false; reason: "signature" | "root_changed" | "rollback"; root?: string };
+
+/**
+ * Check an agent's current list (`ref`) against what the caller
+ * remembers (`pin`). A list signed by a signer the pin trusts (or, seen
+ * for the first time, by the root it names) is checked directly; any
+ * other signer is followed version by version from the pin (or from
+ * version 1) through `history`. `acceptRoot` is a new root the person
+ * has just accepted (§12.5).
+ */
+export async function checkDeviceList(input: {
+  aid: string;
+  ref: { version: number; jws: string };
+  pin: DevicePin | null;
+  acceptRoot?: string;
+  history?: DeviceListHistory;
+}): Promise<ListCheck> {
+  const read = await readDeviceList(input.ref.jws, input.aid);
+  if (!read || read.list.version !== input.ref.version) return { ok: false, reason: "signature" };
+  const { list, signer } = read;
+
+  let pin = input.pin;
+  if (pin && pin.root !== list.root) {
+    if (input.acceptRoot !== list.root) return { ok: false, reason: "root_changed", root: list.root };
+    pin = null;
+  }
+  if (pin && list.version < pin.version) return { ok: false, reason: "rollback" };
+
+  const trusted = pin ? (pin.signers ?? [pin.root]) : [list.root];
+  if (trusted.includes(signer)) return { ok: true, list };
+
+  const chain = await followVersions(input.aid, list.root, pin, list.version, input.history);
+  if (!chain || chain[chain.length - 1].jws !== input.ref.jws) return { ok: false, reason: "signature" };
+  return { ok: true, list };
+}
+
+/**
+ * The versions after `pin` (or from version 1) up to `upto`, each signed
+ * by a signer of the one before (version 1 by the root). Null if any is
+ * missing or does not hold.
+ */
+export async function followVersions(
+  aid: string,
+  root: string,
+  pin: DevicePin | null,
+  upto: number,
+  history: DeviceListHistory | undefined,
+): Promise<Array<{ list: DeviceListPayload; jws: string }> | null> {
+  if (!history) return null;
+  const after = pin ? pin.version : 0;
+  if (upto <= after) return null;
+  const fetched = await history(aid, after).catch(() => null);
+  if (!fetched) return null;
+  const wanted = fetched.filter((r) => r.version > after && r.version <= upto).sort((a, b) => a.version - b.version);
+  if (wanted.length !== upto - after) return null;
+  let allowed = pin ? (pin.signers ?? [pin.root]) : [root];
+  const out: Array<{ list: DeviceListPayload; jws: string }> = [];
+  for (let i = 0; i < wanted.length; i += 1) {
+    const read = await readDeviceList(wanted[i].jws, aid);
+    if (!read || read.list.root !== root || read.list.version !== after + i + 1) return null;
+    if (read.list.version !== wanted[i].version || !allowed.includes(read.signer)) return null;
+    allowed = listSigners(read.list);
+    out.push({ list: read.list, jws: wanted[i].jws });
+  }
+  return out;
+}
+
+/** The pin to keep after `list` checked (it only moves forward). */
+export function pinFor(pin: DevicePin | null, list: DeviceListPayload): DevicePin {
+  if (pin && pin.root === list.root && pin.version > list.version) return pin;
+  const signers = listSigners(list);
+  const onlyRoot = signers.length === 1 && signers[0] === list.root;
+  return { root: list.root, version: list.version, ...(onlyRoot ? {} : { signers }) };
+}
 
 /** The part of a resolved agent (`GET /recipients/resolve`) the decision reads. */
 export type ServedAgent = {
@@ -239,13 +379,13 @@ export type WrapDecision =
   | { kind: "listed"; list: DeviceListPayload; targets: WrapTarget[]; single: WrapTarget }
   | { kind: "stop"; reason: StopReason; root?: string };
 
-/** The root (`kid`) a list says it is signed by, unchecked. */
+/** The root a list names, unchecked. */
 export function deviceListRoot(jws: string): string | null {
-  const headerBytes = fromBase64Url(jws.split(".")[0] ?? "");
-  if (!headerBytes) return null;
+  const payloadBytes = fromBase64Url(jws.split(".")[1] ?? "");
+  if (!payloadBytes) return null;
   try {
-    const kid = JSON.parse(decoder.decode(headerBytes)).kid;
-    return typeof kid === "string" ? kid : null;
+    const root = JSON.parse(decoder.decode(payloadBytes)).root;
+    return typeof root === "string" ? root : null;
   } catch {
     return null;
   }
@@ -256,7 +396,9 @@ export function deviceListRoot(jws: string): string | null {
  * `requested` is what the sender asked to resolve (an AID or a DID);
  * `knownAid` the agent a requested DID was seen under before, if any;
  * `pin` what it remembers of this agent; `acceptRoot` a new root the
- * person has just accepted (§12.5).
+ * person has just accepted (§12.5); `history` how to fetch the versions
+ * between, when the list is signed by a signer the pin does not trust
+ * yet (§17.3).
  */
 export async function decideWrapTargets(input: {
   served: ServedAgent;
@@ -264,6 +406,7 @@ export async function decideWrapTargets(input: {
   knownAid?: string | null;
   pin: DevicePin | null;
   acceptRoot?: string;
+  history?: DeviceListHistory;
 }): Promise<WrapDecision> {
   const { served, requested, pin } = input;
   // A DID belongs to one agent for good: the server may not move it.
@@ -276,15 +419,17 @@ export async function decideWrapTargets(input: {
   const ref = served.device_list;
   if (!ref) return { kind: "stop", reason: pin ? "removed" : "no_list" };
 
-  const root = deviceListRoot(ref.jws);
-  const list = root ? await verifyDeviceList(ref.jws, { aid: served.aid, root }) : null;
-  if (!list || list.version !== ref.version) return { kind: "stop", reason: "signature" };
-
-  if (pin && pin.root !== list.root) {
-    if (input.acceptRoot !== list.root) return { kind: "stop", reason: "root_changed", root: list.root };
-  } else if (pin && list.version < pin.version) {
-    return { kind: "stop", reason: "rollback" };
+  const checked = await checkDeviceList({
+    aid: served.aid,
+    ref,
+    pin,
+    acceptRoot: input.acceptRoot,
+    history: input.history,
+  });
+  if (!checked.ok) {
+    return { kind: "stop", reason: checked.reason, ...(checked.root ? { root: checked.root } : {}) };
   }
+  const list = checked.list;
 
   const activeDids = new Set(active.map((d) => d.did));
   const targets = list.devices
@@ -299,7 +444,5 @@ export async function decideWrapTargets(input: {
 /** What to remember after a decision (the pin only moves forward). */
 export function pinAfter(pin: DevicePin | null, decision: WrapDecision): DevicePin | null {
   if (decision.kind !== "listed") return pin;
-  const { root, version } = decision.list;
-  if (pin && pin.root === root) return { root, version: Math.max(pin.version, version) };
-  return { root, version };
+  return pinFor(pin, decision.list);
 }

@@ -650,6 +650,15 @@ export class NexusInboxApiClient {
     return this.request<RecipientResolutionResponse>("/recipients/resolve?" + params.toString());
   }
 
+  /** An agent's device list versions after `after` (docs/40 §17.3). */
+  async deviceListHistory(aid: string, after: number): Promise<Array<{ version: number; jws: string }>> {
+    const params = new URLSearchParams({ aid, after: String(after) });
+    const response = await this.request<{ lists: Array<{ version: number; jws: string }> }>(
+      "/recipients/device-lists?" + params.toString(),
+    );
+    return response.lists;
+  }
+
   async createContact(payload: { did: string; sealed: string }): Promise<CreateContactResponse> {
     return this.request<CreateContactResponse>("/contacts", {
       method: "POST",
@@ -857,6 +866,14 @@ export class NexusInboxApiClient {
 }
 
 export const defaultApiClient = new NexusInboxApiClient();
+
+/**
+ * Device list versions for the checks in core (docs/40 §17.3), fetched only
+ * when a list is signed by a signer not trusted yet. Null when they cannot
+ * be fetched: the check then stops.
+ */
+export const deviceListHistory = (aid: string, after: number) =>
+  defaultApiClient.deviceListHistory(aid, after).catch(() => null);
 
 // Produce a friendly display for a participant. Falls back to a
 // short prefix of the DID so the inbox is never dominated by raw

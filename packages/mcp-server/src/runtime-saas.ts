@@ -125,8 +125,10 @@ function buildRuntime(
   // What this runtime remembers of other agents' device lists, next to
   // the keystore (docs/40 §13.2).
   const peersFile = credential.keystorePath.replace(/\.json$/, "") + ".peers.json";
+  // List versions, when a new signer has to be followed (docs/40 §17.3).
+  const history = (aid: string, after: number) => client.deviceListHistory(aid, after).catch(() => null);
   const resolveChecked = async (identifier: string) =>
-    checkRecipient(await client.resolveRecipient(identifier), identifier, peersFile);
+    checkRecipient(await client.resolveRecipient(identifier), identifier, peersFile, history);
   return {
     async listMyAgents(): Promise<{ agents: AgentSummary[] }> {
       // In Standard mode a single keystore = a single aid, so "my agents" is
@@ -175,6 +177,7 @@ function buildRuntime(
         credential.aid,
         (aid) => client.resolveRecipient(aid).catch((e: unknown) => (isNotFound(e) ? null : Promise.reject(e))),
         peersFile,
+        history,
       );
       audit({
         tool_name: "read_message",
@@ -431,7 +434,11 @@ async function sendViaClient(
   // message still goes out with the single sender copy.
   const senderDevices = await client
     .resolveRecipient(credential.did)
-    .then((me) => checkRecipient(me, credential.did, peersFile))
+    .then((me) =>
+      checkRecipient(me, credential.did, peersFile, (aid, after) =>
+        client.deviceListHistory(aid, after).catch(() => null),
+      ),
+    )
     .then((me) => me.devices)
     .catch(() => undefined);
   const response = await client.sendTextMessage({
