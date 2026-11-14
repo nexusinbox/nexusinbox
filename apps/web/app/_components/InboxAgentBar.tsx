@@ -57,7 +57,7 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
           data-testid="inbox-auto-reply-note"
           style={{
             margin: "6px 16px 4px",
-            fontSize: 13,
+            fontSize: "var(--fs-sm)",
             color: "var(--ok)",
             background: "var(--ok-soft)",
             borderRadius: 10,

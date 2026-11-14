@@ -116,13 +116,13 @@ export function BlockSenderPanel({
       <div>
         <p
           className="item-title"
-          style={{ margin: 0, fontSize: 13, fontWeight: 700 }}
+          style={{ margin: 0, fontSize: "var(--fs-sm)", fontWeight: 700 }}
         >
           {t("inbox.blockPanelTitle")}
         </p>
         <p
           className="item-sub"
-          style={{ margin: "4px 0 0 0", fontSize: 12 }}
+          style={{ margin: "4px 0 0 0", fontSize: "var(--fs-xs)" }}
         >
           {t("inbox.blockPanelDesc")}
         </p>
@@ -150,12 +150,12 @@ export function BlockSenderPanel({
             color: "var(--danger)",
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700 }}>
+          <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700 }}>
             {t("inbox." + labelKey)}
           </span>
           <span
             className="item-sub"
-            style={{ margin: 0, fontSize: 11, color: "inherit", opacity: 0.8 }}
+            style={{ margin: 0, fontSize: "var(--fs-xs)", color: "inherit", opacity: 0.8 }}
           >
             {t("inbox." + descKey)}
           </span>
@@ -175,12 +175,12 @@ export function BlockSenderPanel({
           className="btn-premium outline"
           onClick={onClose}
           disabled={blockMutation.isPending}
-          style={{ fontSize: 12, padding: "6px 12px" }}
+          style={{ fontSize: "var(--fs-xs)", padding: "6px 12px" }}
         >
           {t("inbox.blockCancel")}
         </button>
         {blockMutation.isPending ? (
-          <span className="item-sub" style={{ fontSize: 11 }}>
+          <span className="item-sub" style={{ fontSize: "var(--fs-xs)" }}>
             {t("inbox.blockBusy")}
           </span>
         ) : null}
@@ -248,7 +248,7 @@ export function MessageUnavailableCard({
         ) : null}
         {title}
       </h4>
-      <p className="item-sub" style={{ margin: "0 0 16px 0", fontSize: "0.9rem" }}>
+      <p className="item-sub" style={{ margin: "0 0 16px 0", fontSize: "var(--fs-sm)" }}>
         {body}
       </p>
 
@@ -278,7 +278,7 @@ export function MessageUnavailableCard({
           <Link
             href="/help#help-modes"
             className="btn-premium outline"
-            style={{ marginLeft: "auto", padding: "4px 10px", fontSize: "11px" }}
+            style={{ marginLeft: "auto", padding: "4px 10px", fontSize: "var(--fs-xs)" }}
           >
             {t("inbox.seeModesHelp")}
           </Link>
@@ -367,7 +367,7 @@ function CopyValueButton({
           setTimeout(() => setCopied(false), 1600);
         });
       }}
-      style={{ padding: "4px 10px", fontSize: "11px" }}
+      style={{ padding: "4px 10px", fontSize: "var(--fs-xs)" }}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />

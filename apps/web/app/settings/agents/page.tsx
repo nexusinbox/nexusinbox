@@ -95,7 +95,7 @@ function CredentialModeBadge({
       title={tooltip}
       aria-label={`${label}: ${tooltip}`}
       style={{
-        fontSize: 10,
+        fontSize: "var(--fs-xs)",
         fontWeight: 500,
         padding: "1px 7px",
         borderRadius: 999,
@@ -167,7 +167,7 @@ function AgentModePanel({
         </p>
         <span
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             fontWeight: 500,
             padding: "2px 8px",
             borderRadius: 999,
@@ -186,7 +186,7 @@ function AgentModePanel({
         href="/help#help-modes"
         className="item-sub"
         style={{
-          fontSize: 12,
+          fontSize: "var(--fs-xs)",
           textDecoration: "underline",
           color: "var(--primary-text)",
         }}
@@ -243,19 +243,19 @@ function WhereaboutsRow({
         borderTop: "1px solid var(--line)",
       }}
     >
-      <span style={{ width: 22, fontSize: 16, lineHeight: 1.4 }} aria-hidden="true">
+      <span style={{ width: 22, fontSize: "var(--fs-md)", lineHeight: 1.4 }} aria-hidden="true">
         {icon}
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontWeight: 500, fontSize: 13 }}>{label}</span>
-        <p className="item-sub" style={{ margin: "2px 0 0", fontSize: 12 }}>
+        <span style={{ fontWeight: 500, fontSize: "var(--fs-sm)" }}>{label}</span>
+        <p className="item-sub" style={{ margin: "2px 0 0", fontSize: "var(--fs-xs)" }}>
           {message}
         </p>
       </span>
       <span
         style={{
           color: indicator.color,
-          fontSize: 14,
+          fontSize: "var(--fs-sm)",
           fontWeight: 600,
           minWidth: 16,
           textAlign: "right",
@@ -303,7 +303,7 @@ function AgentKeyWhereaboutsPanel({ did }: { did: string }) {
   return (
     <div className="panel" style={{ marginTop: 10 }}>
       <p className="item-title">{t("agents.whereaboutsTitle")}</p>
-      <p className="item-sub" style={{ marginTop: 4, fontSize: 12 }}>
+      <p className="item-sub" style={{ marginTop: 4, fontSize: "var(--fs-xs)" }}>
         {t("agents.whereaboutsCaption", { did: truncatedDid })}
       </p>
       <div style={{ marginTop: 8 }}>
@@ -403,12 +403,12 @@ function StatCell({
         border: "1px solid var(--line)",
       }}
     >
-      <div style={{ fontSize: 18, fontWeight: 600, color, lineHeight: 1.2 }}>
+      <div style={{ fontSize: "var(--fs-lg)", fontWeight: 600, color, lineHeight: 1.2 }}>
         {count}
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: "var(--fs-xs)",
           color: "var(--text-muted)",
           marginTop: 2,
           textTransform: "lowercase",
@@ -456,28 +456,28 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
   return (
     <div className="panel" style={{ marginTop: 10 }}>
       <p className="item-title">{t("agents.autoReplyVisibilityTitle")}</p>
-      <p className="item-sub" style={{ marginTop: 4, fontSize: 12 }}>
+      <p className="item-sub" style={{ marginTop: 4, fontSize: "var(--fs-xs)" }}>
         {t("agents.autoReplyVisibilityCaption")}
       </p>
 
       {auditQuery.isPending ? (
         <p
           className="item-sub"
-          style={{ marginTop: 10, fontSize: 12 }}
+          style={{ marginTop: 10, fontSize: "var(--fs-xs)" }}
         >
           {t("agents.autoReplyVisibilityLoading")}
         </p>
       ) : auditQuery.isError ? (
         <p
           className="item-sub"
-          style={{ marginTop: 10, fontSize: 12, color: "var(--danger)" }}
+          style={{ marginTop: 10, fontSize: "var(--fs-xs)", color: "var(--danger)" }}
         >
           {t("agents.autoReplyVisibilityError")}
         </p>
       ) : total === 0 ? (
         <p
           className="item-sub"
-          style={{ marginTop: 10, fontSize: 12 }}
+          style={{ marginTop: 10, fontSize: "var(--fs-xs)" }}
         >
           {t("agents.autoReplyVisibilityNoData")}
         </p>
@@ -522,7 +522,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
 
           {latest.length > 0 ? (
             <div style={{ marginTop: 14 }}>
-              <p className="item-sub" style={{ fontSize: 11, fontWeight: 600 }}>
+              <p className="item-sub" style={{ fontSize: "var(--fs-xs)", fontWeight: 600 }}>
                 {t("agents.autoReplyVisibilityLatest", {
                   count: String(latest.length),
                 })}
@@ -550,7 +550,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                       style={{
                         padding: "8px 0",
                         borderTop: "1px solid var(--line)",
-                        fontSize: 12,
+                        fontSize: "var(--fs-xs)",
                       }}
                     >
                       <div
@@ -563,7 +563,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                       >
                         <code
                           style={{
-                            fontSize: 12,
+                            fontSize: "var(--fs-xs)",
                             fontWeight: 600,
                             padding: "1px 6px",
                             borderRadius: 4,
@@ -587,7 +587,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                           className="item-sub"
                           style={{
                             margin: 0,
-                            fontSize: 11,
+                            fontSize: "var(--fs-xs)",
                             color: "var(--text-muted)",
                           }}
                         >
@@ -596,7 +596,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
                       </div>
                       <p
                         className="item-sub"
-                        style={{ margin: "4px 0 0", fontSize: 11 }}
+                        style={{ margin: "4px 0 0", fontSize: "var(--fs-xs)" }}
                       >
                         {t("agents.autoReplyDecisionFrom", { sender })}
                         {reason
@@ -620,7 +620,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
           {total > latest.length ? (
             <p
               className="item-sub"
-              style={{ marginTop: 10, fontSize: 11 }}
+              style={{ marginTop: 10, fontSize: "var(--fs-xs)" }}
             >
               {t("agents.autoReplyShowingLatest", {
                 limit: String(latest.length),
@@ -635,7 +635,7 @@ function AutoReplyVisibilityPanel({ aid }: { aid: string }) {
             style={{
               display: "inline-block",
               marginTop: 10,
-              fontSize: 12,
+              fontSize: "var(--fs-xs)",
               textDecoration: "underline",
               color: "var(--primary-text)",
             }}
@@ -1042,7 +1042,7 @@ export default function AgentsSettingsPage() {
                       <button
                         className="btn"
                         type="button"
-                        style={{ marginTop: 6, fontSize: 12 }}
+                        style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
                         onClick={() =>
                           copyValue(activeAgent.aid, t("agents.bannerAidCopied"))
                         }
@@ -1061,7 +1061,7 @@ export default function AgentsSettingsPage() {
                     <button
                       className="btn"
                       type="button"
-                      style={{ marginTop: 6, fontSize: 12 }}
+                      style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
                       onClick={() =>
                         copyValue(activeAgent.did, t("agents.bannerDidCopied"))
                       }
@@ -1187,18 +1187,18 @@ export default function AgentsSettingsPage() {
                                   }}
                                 >
                                   <div style={{ minWidth: 0 }}>
-                                    <p className="card-title" style={{ margin: 0, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                                    <p className="card-title" style={{ margin: 0, fontSize: "var(--fs-sm)", display: "flex", alignItems: "center", gap: 6 }}>
                                       <span>{cred.label}</span>
                                       <CredentialModeBadge
                                         keyHolder={cred.key_holder ?? "unknown"}
                                       />
                                     </p>
-                                    <p className="card-sub" style={{ margin: 0, fontSize: 11 }}>
+                                    <p className="card-sub" style={{ margin: 0, fontSize: "var(--fs-xs)" }}>
                                       {t("agents.credIdShort", {
                                         id: cred.credential_id.slice(0, 8),
                                       })}
                                     </p>
-                                    <p className="card-sub" style={{ margin: 0, fontSize: 11 }}>
+                                    <p className="card-sub" style={{ margin: 0, fontSize: "var(--fs-xs)" }}>
                                       {cred.status === "active"
                                         ? t("agents.credStatusActive")
                                         : cred.status === "pending"
@@ -1215,7 +1215,7 @@ export default function AgentsSettingsPage() {
                                     <button
                                       className="btn"
                                       type="button"
-                                      style={{ fontSize: 12 }}
+                                      style={{ fontSize: "var(--fs-xs)" }}
                                       onClick={() =>
                                         copyValue(
                                           cred.credential_id,
@@ -1230,7 +1230,7 @@ export default function AgentsSettingsPage() {
                                         className="btn"
                                         type="button"
                                         style={{
-                                          fontSize: 12,
+                                          fontSize: "var(--fs-xs)",
                                           borderColor: "rgba(220, 38, 38, 0.4)",
                                           color: "var(--danger)",
                                         }}
@@ -1266,7 +1266,7 @@ export default function AgentsSettingsPage() {
                                             return (
                                               <span
                                                 className="item-sub"
-                                                style={{ fontSize: 11, opacity: 0.8 }}
+                                                style={{ fontSize: "var(--fs-xs)", opacity: 0.8 }}
                                               >
                                                 {t("agents.credPurgePendingGrace", {
                                                   days: Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
@@ -1279,7 +1279,7 @@ export default function AgentsSettingsPage() {
                                               className="btn"
                                               type="button"
                                               style={{
-                                                fontSize: 12,
+                                                fontSize: "var(--fs-xs)",
                                                 borderColor: "rgba(220, 38, 38, 0.7)",
                                                 color: "var(--danger)",
                                               }}
@@ -1330,7 +1330,7 @@ export default function AgentsSettingsPage() {
                             <button
                               type="button"
                               className="btn"
-                              style={{ fontSize: 11 }}
+                              style={{ fontSize: "var(--fs-xs)" }}
                               onClick={() => setShowRevoked((prev) => !prev)}
                             >
                               {showRevoked
@@ -1349,7 +1349,7 @@ export default function AgentsSettingsPage() {
                       value={credLabel}
                       onChange={(e) => setCredLabel(e.target.value)}
                       placeholder={t("agents.credNewPlaceholder")}
-                      style={{ fontSize: 13 }}
+                      style={{ fontSize: "var(--fs-sm)" }}
                     />
                     <div className="row" style={{ marginTop: 6, gap: 8 }}>
                       <button
@@ -1402,21 +1402,21 @@ export default function AgentsSettingsPage() {
                         borderRadius: 6,
                       }}
                     >
-                      <p className="item-title" style={{ fontSize: 12 }}>
+                      <p className="item-title" style={{ fontSize: "var(--fs-xs)" }}>
                         {t("agents.enrollmentTitle")}
                       </p>
                       <div style={{ marginTop: 6 }}>
-                        <p className="item-sub" style={{ fontSize: 11 }}>
+                        <p className="item-sub" style={{ fontSize: "var(--fs-xs)" }}>
                           {t("agents.enrollmentAid", { aid: createdCredential.aid })}
                         </p>
-                        <p className="item-sub" style={{ fontSize: 11, marginTop: 6 }}>
+                        <p className="item-sub" style={{ fontSize: "var(--fs-xs)", marginTop: 6 }}>
                           {t("agents.enrollmentCredentialId")}
                         </p>
                         <code
                           style={{
                             display: "block",
                             wordBreak: "break-all",
-                            fontSize: 12,
+                            fontSize: "var(--fs-xs)",
                             marginTop: 4,
                             userSelect: "all",
                           }}
@@ -1426,7 +1426,7 @@ export default function AgentsSettingsPage() {
                         <button
                           className="btn"
                           type="button"
-                          style={{ marginTop: 6, fontSize: 12 }}
+                          style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
                           onClick={() =>
                             copyValue(
                               createdCredential.credentialId,
@@ -1436,14 +1436,14 @@ export default function AgentsSettingsPage() {
                         >
                           {t("agents.copyCredentialId")}
                         </button>
-                        <p className="item-sub" style={{ fontSize: 11, marginTop: 10 }}>
+                        <p className="item-sub" style={{ fontSize: "var(--fs-xs)", marginTop: 10 }}>
                           {t("agents.enrollmentSecretLabel")}
                         </p>
                         <code
                           style={{
                             display: "block",
                             wordBreak: "break-all",
-                            fontSize: 12,
+                            fontSize: "var(--fs-xs)",
                             marginTop: 4,
                             userSelect: "all",
                           }}
@@ -1453,7 +1453,7 @@ export default function AgentsSettingsPage() {
                         <button
                           className="btn"
                           type="button"
-                          style={{ marginTop: 6, fontSize: 12 }}
+                          style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
                           onClick={() =>
                             copyValue(
                               createdCredential.enrollmentSecret,
@@ -1463,7 +1463,7 @@ export default function AgentsSettingsPage() {
                         >
                           {t("agents.copyEnrollmentSecret")}
                         </button>
-                        <p className="item-sub" style={{ fontSize: 11, marginTop: 10 }}>
+                        <p className="item-sub" style={{ fontSize: "var(--fs-xs)", marginTop: 10 }}>
                           {t("agents.enrollmentCommandLabel")}
                         </p>
                         <code
@@ -1471,7 +1471,7 @@ export default function AgentsSettingsPage() {
                             display: "block",
                             whiteSpace: "pre-wrap",
                             wordBreak: "break-all",
-                            fontSize: 12,
+                            fontSize: "var(--fs-xs)",
                             marginTop: 4,
                             userSelect: "all",
                           }}
@@ -1481,7 +1481,7 @@ export default function AgentsSettingsPage() {
                         <button
                           className="btn"
                           type="button"
-                          style={{ marginTop: 6, fontSize: 12 }}
+                          style={{ marginTop: 6, fontSize: "var(--fs-xs)" }}
                           onClick={() =>
                             copyValue(
                               daemonEnrollCommand(createdCredential.credentialId, createdCredential.dirName),
@@ -1491,7 +1491,7 @@ export default function AgentsSettingsPage() {
                         >
                           {t("agents.copyEnrollCommand")}
                         </button>
-                        <p className="item-sub" style={{ fontSize: 11, marginTop: 10 }}>
+                        <p className="item-sub" style={{ fontSize: "var(--fs-xs)", marginTop: 10 }}>
                           {t("agents.enrollmentStartLabel")}
                         </p>
                         <code
@@ -1499,7 +1499,7 @@ export default function AgentsSettingsPage() {
                             display: "block",
                             whiteSpace: "pre-wrap",
                             wordBreak: "break-all",
-                            fontSize: 12,
+                            fontSize: "var(--fs-xs)",
                             marginTop: 4,
                             userSelect: "all",
                           }}
@@ -1510,7 +1510,7 @@ export default function AgentsSettingsPage() {
                       <button
                         className="btn"
                         type="button"
-                        style={{ marginTop: 8, fontSize: 12 }}
+                        style={{ marginTop: 8, fontSize: "var(--fs-xs)" }}
                         onClick={() => setCreatedCredential(null)}
                       >
                         {t("agents.enrollmentClose")}

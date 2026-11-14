@@ -1,12 +1,13 @@
 :root {
   /* docs/35 §3: the design foundation. Component styles read these. */
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+  /* The type scale (docs/type_scale_mock.html): every font size is one of these. */
   --fs-xs: 13px;
-  --fs-sm: 14px;
-  --fs-md: 15px;
-  --fs-lg: 17px;
-  --fs-xl: 20px;
-  --fs-2xl: 24px;
+  --fs-sm: 15px;
+  --fs-md: 17px;
+  --fs-lg: 19px;
+  --fs-xl: 23px;
+  --fs-2xl: 27px;
   --radius: 16px;
 
   --bg: #ffffff;
@@ -84,8 +85,12 @@ html, body {
   background: var(--surface);
   font-family: var(--font);
   font-size: var(--fs-md);
-  line-height: 1.5;
+  line-height: 1.65;
   overflow: hidden;
+}
+/* Japanese breaks between phrases, not mid-word (needs <html lang="ja">). */
+html:lang(ja) {
+  word-break: auto-phrase;
 }
 
 a {
@@ -167,7 +172,7 @@ button, input, textarea, select {
 .x-count {
   background: var(--primary);
   color: var(--on-primary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   border-radius: 999px;
   min-width: 20px;
@@ -409,7 +414,7 @@ button, input, textarea, select {
     gap: 2px;
     min-width: 64px;
     min-height: 44px;
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
   }
   .x-tab.active {
@@ -421,7 +426,7 @@ button, input, textarea, select {
     top: -4px;
     left: 50%;
     margin-left: 6px;
-    font-size: 11px;
+    font-size: var(--fs-xs);
     min-width: 18px;
     line-height: 16px;
   }
@@ -1128,7 +1133,7 @@ button, input, textarea, select {
 .dm-av.lg .dm-bot {
   width: 26px;
   height: 26px;
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 
 /* Agent profile */
@@ -1728,7 +1733,7 @@ button, input, textarea, select {
   padding: 0 16px;
   color: var(--primary-text);
   font-weight: 500;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1767,7 +1772,7 @@ button, input, textarea, select {
   border: 1px solid #404040;
   border-radius: 12px;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   cursor: pointer;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1808,14 +1813,14 @@ button, input, textarea, select {
 
 .login-card .title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 .login-card .subtitle {
   margin: 8px 0 0;
   color: var(--text-muted);
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
 }
 
 .login-card .world-id-btn {
@@ -1856,7 +1861,7 @@ button, input, textarea, select {
   background: rgba(197, 34, 31, 0.08);
   color: var(--danger);
   border-top: 1px solid rgba(197, 34, 31, 0.2);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .mail-resizer {
@@ -1893,7 +1898,7 @@ button, input, textarea, select {
   border-bottom: 1px solid var(--line);
   cursor: pointer;
   gap: 12px;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
 }
 
 .thread-item:hover {
@@ -1943,7 +1948,7 @@ button, input, textarea, select {
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0.85;
-  font-size: 0.84rem;
+  font-size: var(--fs-sm);
 }
 
 .thread-time {
@@ -1951,7 +1956,7 @@ button, input, textarea, select {
   text-align: right;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
 }
 
 /* ============================================================
@@ -1983,7 +1988,7 @@ button, input, textarea, select {
 
 .display-name-title {
   margin: 0 0 8px;
-  font-size: 1.2rem;
+  font-size: var(--fs-xl);
   font-weight: 600;
   color: var(--text);
 }
@@ -1991,7 +1996,7 @@ button, input, textarea, select {
 .display-name-lead {
   margin: 0 0 18px;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   line-height: 1.55;
 }
 
@@ -2003,7 +2008,7 @@ button, input, textarea, select {
 .display-name-error {
   margin: 0;
   color: var(--danger);
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
 }
 
 .compose-scroll {
@@ -2040,7 +2045,7 @@ button, input, textarea, select {
   background: var(--warn-soft);
   border-bottom: 1px solid var(--line);
   color: var(--text-muted);
-  font-size: 0.84rem;
+  font-size: var(--fs-sm);
 }
 
 .compose-body {
@@ -2058,13 +2063,13 @@ button, input, textarea, select {
 }
 
 .field-label {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text);
 }
 
 .field-help {
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
@@ -2129,7 +2134,7 @@ button, input, textarea, select {
   background: var(--surface-alt);
   border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .attachment-name {
@@ -2144,7 +2149,7 @@ button, input, textarea, select {
 
 .attachment-size {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   flex-shrink: 0;
 }
 
@@ -2155,7 +2160,7 @@ button, input, textarea, select {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
 }
 
 .attachment-remove:hover {
@@ -2173,7 +2178,7 @@ button, input, textarea, select {
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -2193,7 +2198,7 @@ button, input, textarea, select {
 .form-status {
   padding: 12px 14px;
   border-radius: 10px;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   line-height: 1.5;
 }
 
@@ -2236,7 +2241,7 @@ button, input, textarea, select {
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
   cursor: pointer;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   background: var(--surface);
 }
 
@@ -2261,7 +2266,7 @@ button, input, textarea, select {
 .card-item .card-sub {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   word-break: break-all;
   max-width: 100%;
 }
@@ -2269,7 +2274,7 @@ button, input, textarea, select {
 .card-item .card-meta {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -2298,7 +2303,7 @@ button, input, textarea, select {
 
 .reader-subject {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--fs-2xl);
   font-weight: 400;
   color: var(--text);
   line-height: 1.3;
@@ -2319,25 +2324,25 @@ button, input, textarea, select {
   display: grid;
   place-items: center;
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: var(--fs-lg);
 }
 
 .reader-meta-text h3 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
 .reader-meta-text p {
   margin: 2px 0 0;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 .reader-body {
   padding: 0 24px 24px;
   line-height: 1.6;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text);
 }
 
@@ -2397,7 +2402,7 @@ button, input, textarea, select {
 .conversation-message-body {
   padding: 20px;
   line-height: 1.7;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--surface);
 }
@@ -2432,7 +2437,7 @@ button, input, textarea, select {
 }
 .conversation-message-head .reader-meta-text h3 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
@@ -2466,14 +2471,14 @@ button, input, textarea, select {
 
 .conversation-message-head .reader-meta-text p {
   margin: 2px 0 0 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
 .conversation-message-body {
   padding: 16px 20px;
   line-height: 1.6;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text);
 }
 
@@ -2497,11 +2502,11 @@ button, input, textarea, select {
   gap: 10px;
   margin: 0 0 12px 0 !important;
   color: var(--text);
-  font-size: 1.05rem !important;
+  font-size: var(--fs-lg) !important;
 }
 
 .unavailable-badge {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   padding: 2px 10px;
   border-radius: 20px;
@@ -2525,7 +2530,7 @@ button, input, textarea, select {
   gap: 8px;
   padding: 8px 16px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2605,7 +2610,7 @@ button, input, textarea, select {
   border: 1px solid var(--line);
   background: var(--surface-alt);
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -2623,7 +2628,7 @@ button, input, textarea, select {
   cursor: default;
 }
 .attachment-chip-icon {
-  font-size: 1rem;
+  font-size: var(--fs-md);
 }
 .attachment-chip-name {
   max-width: 160px;
@@ -2633,11 +2638,11 @@ button, input, textarea, select {
 }
 .attachment-chip-size {
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
 }
 .attachment-chip-status {
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   margin-left: 4px;
 }
 
@@ -2651,7 +2656,7 @@ button, input, textarea, select {
   padding: 48px 24px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   gap: 12px;
   min-height: 160px;
@@ -2678,7 +2683,7 @@ button, input, textarea, select {
   flex: 1;
   min-height: 200px;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .reader-pane .empty-state::before {
@@ -2729,7 +2734,7 @@ button, input, textarea, select {
 }
 
 .agent-switcher-label {
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -2739,7 +2744,7 @@ button, input, textarea, select {
 .agent-switcher-select {
   flex: 1;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   background: transparent;
   border: none;
   outline: none;
@@ -2795,7 +2800,7 @@ button, input, textarea, select {
 
 .settings-card-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.01em;
@@ -2803,7 +2808,7 @@ button, input, textarea, select {
 
 .settings-card-desc {
   margin: 2px 0 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: 1.55;
 }
@@ -2821,7 +2826,7 @@ button, input, textarea, select {
   flex-wrap: wrap;
   gap: 6px 12px;
   align-items: baseline;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 .settings-meta-label {
   color: var(--text-muted);
@@ -2834,7 +2839,7 @@ button, input, textarea, select {
 }
 .settings-meta-value code {
   font-family: "SFMono-Regular", ui-monospace, monospace;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   background: var(--surface-alt);
   padding: 2px 6px;
@@ -2876,19 +2881,19 @@ button, input, textarea, select {
 }
 .integration-row-title {
   margin: 0 0 4px;
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text);
 }
 .integration-row-desc {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: 1.55;
 }
 .integration-row-detail {
   margin: 6px 0 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   font-family: "SFMono-Regular", ui-monospace, monospace;
 }
@@ -2903,7 +2908,7 @@ button, input, textarea, select {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 12px;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   font-weight: 500;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -2948,7 +2953,7 @@ button, input, textarea, select {
 }
 
 .help-hero-subtitle {
-  font-size: 1.05rem;
+  font-size: var(--fs-lg);
   color: var(--text-muted);
   margin: 0;
   max-width: 600px;
@@ -3072,7 +3077,7 @@ details[open] .help-accordion-chevron {
 
 .help-card-title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--fs-xl);
   font-weight: 600;
   color: var(--text);
   letter-spacing: -0.01em;
@@ -3080,7 +3085,7 @@ details[open] .help-accordion-chevron {
 
 .help-card-desc {
   margin: 0 0 24px;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
   line-height: 1.6;
 }
@@ -3114,7 +3119,7 @@ details[open] .help-accordion-chevron {
   background: var(--primary);
   color: var(--on-primary);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3124,13 +3129,13 @@ details[open] .help-accordion-chevron {
 .help-step-title {
   margin: 0;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text);
 }
 
 .help-step-body {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: 1.55;
   flex-grow: 1;
@@ -3139,7 +3144,7 @@ details[open] .help-accordion-chevron {
 .help-step-link {
   display: inline-flex;
   align-items: center;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--primary-text);
   text-decoration: none;
@@ -3174,14 +3179,14 @@ details[open] .help-accordion-chevron {
 
 .help-glossary-term {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text);
   margin-bottom: 6px;
 }
 
 .help-glossary-desc {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: 1.6;
 }
@@ -3195,14 +3200,14 @@ details[open] .help-accordion-chevron {
 
 .help-code-title {
   margin: 0 0 6px;
-  font-size: 1rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text);
 }
 
 .help-code-desc {
   margin: 0 0 12px;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: 1.6;
 }
@@ -3240,7 +3245,7 @@ details[open] .help-accordion-chevron {
   background: transparent;
   color: #cdd6f4;
   font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   overflow-x: auto;
   white-space: pre;
@@ -3262,7 +3267,7 @@ details[open] .help-accordion-chevron {
   .help-card-accordion[open] { padding-bottom: 20px; }
   .help-accordion-summary { padding: 20px 16px; }
   .help-accordion-content { padding: 0 16px; }
-  .help-pre { font-size: 0.75rem; padding: 16px; }
+  .help-pre { font-size: var(--fs-xs); padding: 16px; }
   .help-steps { grid-template-columns: 1fr; }
   .help-glossary-list { grid-template-columns: 1fr; }
 }
@@ -3270,7 +3275,7 @@ details[open] .help-accordion-chevron {
 .item-title {
   margin: 0 0 8px;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -3278,8 +3283,9 @@ details[open] .help-accordion-chevron {
 
 .item-sub {
   margin: 4px 0;
+  max-width: 40em; /* about 40 Japanese characters a line */
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .badge {
@@ -3287,7 +3293,7 @@ details[open] .help-accordion-chevron {
   align-items: center;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   background: var(--surface-hover);
   color: var(--text-muted);
@@ -3517,9 +3523,16 @@ details[open] .help-accordion-chevron {
   align-items: center;
   gap: 10px;
   letter-spacing: 0.28em;
-  font-size: 11px;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   color: #9aa7d9;
+}
+@media (max-width: 420px) {
+  /* Larger type: tighten the spacing so the line still fits a phone. */
+  .ai-login-brand {
+    letter-spacing: 0.12em;
+  }
 }
 .ai-login-brand .dot {
   width: 8px;
@@ -3603,7 +3616,7 @@ details[open] .help-accordion-chevron {
 .ai-login-subtitle {
   margin: 0;
   color: #9aa7d9;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.55;
   letter-spacing: 0.04em;
 }
@@ -3618,7 +3631,7 @@ details[open] .help-accordion-chevron {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(140, 160, 255, 0.12);
   font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #8ea0d6;
 }
 .ai-login-meta code {
@@ -3652,7 +3665,7 @@ details[open] .help-accordion-chevron {
   color: #04060e;
   font-weight: 700;
   letter-spacing: 0.08em;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   text-transform: uppercase;
   cursor: pointer;
   background: linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%);
@@ -3746,7 +3759,7 @@ details[open] .help-accordion-chevron {
   height: auto;
   border: none;
   font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.18em;
   color: #8190c4;
   text-transform: uppercase;
@@ -3828,14 +3841,14 @@ details[open] .help-accordion-chevron {
   filter: drop-shadow(0 0 18px rgba(125, 215, 255, 0.22));
 }
 @media (max-width: 480px) {
-  .ai-concept-hero-slogan { font-size: 20px; }
+  .ai-concept-hero-slogan { font-size: var(--fs-xl); }
 }
 
 .ai-concept-hero-sub {
   margin: 14px auto 0;
   max-width: 480px;
   color: #9aa7d9;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   letter-spacing: 0.02em;
 }
@@ -3875,7 +3888,7 @@ details[open] .help-accordion-chevron {
 
 .ai-concept-section-title {
   margin: 0 0 10px;
-  font-size: 18px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   letter-spacing: 0.01em;
   background: linear-gradient(135deg, #ffffff 0%, #a9b8ff 60%, #7dd7ff 100%);
@@ -3888,7 +3901,7 @@ details[open] .help-accordion-chevron {
 .ai-concept-section-body {
   margin: 0;
   color: #b0bad8;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.75;
   letter-spacing: 0.01em;
 }
@@ -3915,7 +3928,7 @@ details[open] .help-accordion-chevron {
   border-radius: 20px;
   background: rgba(120, 140, 255, 0.08);
   border: 1px solid rgba(140, 160, 255, 0.18);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
   color: #c0c8e8;
   font-family: "SFMono-Regular", "JetBrains Mono", ui-monospace, monospace;
@@ -3936,7 +3949,7 @@ details[open] .help-accordion-chevron {
 }
 .ai-concept-cta-lead {
   color: #9aa7d9;
-  font-size: 15px;
+  font-size: var(--fs-md);
   margin: 0 0 20px;
   letter-spacing: 0.04em;
 }
@@ -3952,7 +3965,7 @@ details[open] .help-accordion-chevron {
   text-align: center;
   padding: 20px 0 40px;
   border-top: 1px solid rgba(140, 160, 255, 0.1);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #5a6590;
   letter-spacing: 0.05em;
 }
@@ -3963,7 +3976,7 @@ details[open] .help-accordion-chevron {
 }
 .ai-concept-footer-link {
   color: #5a6590;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   text-decoration: none;
   letter-spacing: 0.04em;
   transition: color 0.2s;
@@ -3996,7 +4009,7 @@ details[open] .help-accordion-chevron {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: #b0bad8;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -4013,7 +4026,7 @@ details[open] .help-accordion-chevron {
   .ai-concept-section { padding: 20px 20px 18px; }
   .ai-concept-hero .ai-login-title { font-size: 30px; }
   .ai-concept-pills { gap: 8px; }
-  .ai-concept-pill { font-size: 10px; padding: 6px 12px; }
+  .ai-concept-pill { font-size: var(--fs-xs); padding: 6px 12px; }
 }
 
 /* ===== Legal pages (Privacy Policy / Terms of Service) ===== */
@@ -4031,7 +4044,7 @@ details[open] .help-accordion-chevron {
   display: inline-block;
   margin-bottom: 20px;
   color: #7d8ab8;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   text-decoration: none;
   letter-spacing: 0.03em;
   transition: color 0.2s;
@@ -4055,7 +4068,7 @@ details[open] .help-accordion-chevron {
 .ai-legal-updated {
   margin: 0;
   color: #5a6590;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   letter-spacing: 0.03em;
 }
 
@@ -4084,7 +4097,7 @@ details[open] .help-accordion-chevron {
 
 .ai-legal-heading {
   margin: 0 0 12px;
-  font-size: 17px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: #e0e6ff;
   letter-spacing: 0.01em;
@@ -4092,7 +4105,7 @@ details[open] .help-accordion-chevron {
 
 .ai-legal-subheading {
   margin: 16px 0 8px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: #a9b8ff;
   letter-spacing: 0.01em;
@@ -4101,7 +4114,7 @@ details[open] .help-accordion-chevron {
 .ai-legal-body {
   margin: 0 0 6px;
   color: #b0bad8;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.8;
   letter-spacing: 0.01em;
 }
@@ -4116,7 +4129,7 @@ details[open] .help-accordion-chevron {
   border: 1px solid rgba(140, 160, 255, 0.2);
   background: rgba(120, 140, 255, 0.08);
   color: #a9b8ff;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   text-decoration: none;
   letter-spacing: 0.02em;
@@ -4137,7 +4150,7 @@ details[open] .help-accordion-chevron {
 
 .ai-legal-footer-link {
   color: #7d8ab8;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   text-decoration: none;
   letter-spacing: 0.03em;
   transition: color 0.2s;
@@ -4154,10 +4167,10 @@ details[open] .help-accordion-chevron {
 
 @media (max-width: 560px) {
   .ai-legal-scroll { max-width: 100%; }
-  .ai-legal-title { font-size: 22px; }
+  .ai-legal-title { font-size: var(--fs-2xl); }
   .ai-legal-section { padding: 18px 16px 14px; }
-  .ai-legal-heading { font-size: 15px; }
-  .ai-legal-body { font-size: 13px; }
+  .ai-legal-heading { font-size: var(--fs-md); }
+  .ai-legal-body { font-size: var(--fs-sm); }
 }
 
 /* ==================================================================
@@ -4195,7 +4208,7 @@ details[open] .help-accordion-chevron {
 .public-help-brand {
   font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: var(--fs-lg);
   letter-spacing: 0.02em;
   text-decoration: none;
   color: var(--text);
@@ -4218,7 +4231,7 @@ details[open] .help-accordion-chevron {
   background: var(--surface);
   color: var(--text);
   font-weight: 600;
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
   padding: 6px 10px;
   border-radius: 8px;
@@ -4238,7 +4251,7 @@ details[open] .help-accordion-chevron {
   background: var(--primary);
   color: var(--on-primary);
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   text-decoration: none;
   transition: background 0.2s, transform 0.15s;
 }
@@ -4255,7 +4268,7 @@ details[open] .help-accordion-chevron {
 .public-help-footer {
   padding: 24px 32px 36px;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   border-top: 1px solid var(--line);
   display: flex;
@@ -4274,7 +4287,7 @@ details[open] .help-accordion-chevron {
 @media (max-width: 640px) {
   .public-help-header { padding: 14px 18px; }
   .public-help-footer { padding: 20px 18px 28px; flex-wrap: wrap; }
-  .public-help-signin { padding: 8px 14px; font-size: 0.82rem; }
+  .public-help-signin { padding: 8px 14px; font-size: var(--fs-sm); }
 }
 
 /* ==================================================================
@@ -4288,7 +4301,7 @@ details[open] .help-accordion-chevron {
   margin-top: 28px;
 }
 .help-group-title {
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -4299,7 +4312,7 @@ details[open] .help-accordion-chevron {
   color: #7c4dff;
 }
 .help-group-desc {
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
   line-height: 1.6;
   margin: 0;
@@ -4309,7 +4322,7 @@ details[open] .help-accordion-chevron {
 /* WELCOME tag shown on the public hero. */
 .help-hero-tag {
   display: inline-block;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.22em;
   color: var(--primary-text);
@@ -4319,7 +4332,7 @@ details[open] .help-accordion-chevron {
   margin-bottom: 12px;
 }
 .help-hero-public-body {
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
   line-height: 1.7;
   margin: 14px 0 0;
@@ -4335,7 +4348,7 @@ details[open] .help-accordion-chevron {
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   border: 1px solid var(--line);
@@ -4361,7 +4374,7 @@ details[open] .help-accordion-chevron {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
   line-height: 1.6;
 }
@@ -4378,7 +4391,7 @@ details[open] .help-accordion-chevron {
   background: var(--primary);
   color: var(--on-primary);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   text-decoration: none;
   margin-top: 4px;
   transition: background 0.2s, transform 0.15s;
@@ -4659,12 +4672,12 @@ details[open] .help-accordion-chevron {
   border: 1px solid rgba(140, 160, 255, 0.14);
   backdrop-filter: blur(14px) saturate(130%);
   -webkit-backdrop-filter: blur(14px) saturate(130%);
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.55;
 }
 .lgx-who {
   color: #8f9bcc;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .lgx-bubble {
   max-width: 84%;
@@ -4691,18 +4704,18 @@ details[open] .help-accordion-chevron {
 .lgx-cta .ai-login-cta {
   letter-spacing: 0.04em;
   text-transform: none;
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 .lgx-note {
   margin: 12px 0 0;
   color: #9aa7d9;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .lgx-status {
   min-height: 1.6em;
   margin: 8px 0 0;
   color: #9aa7d9;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .lgx-status[data-kind="error"] {
   color: #ff9ea8;
@@ -4728,7 +4741,7 @@ details[open] .help-accordion-chevron {
   background: rgba(120, 140, 255, 0.06);
   border: 1px solid rgba(140, 160, 255, 0.14);
   color: #c0c8e8;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 .lgx-points .marker {
@@ -4745,7 +4758,7 @@ details[open] .help-accordion-chevron {
 .lgx-points li > span:last-child {
   grid-column: 2;
   color: #9aa7d9;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .lgx-slogan {
   white-space: pre-line;
@@ -4893,7 +4906,7 @@ details[open] .help-accordion-chevron {
   height: 22px;
   margin-top: 1px;
   border-radius: 50%;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 800;
   line-height: 1;
 }
@@ -5075,7 +5088,7 @@ details[open] .help-accordion-chevron {
   place-items: center;
   background: var(--primary-soft);
   color: var(--primary-text);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 800;
 }
 .connect-step-title {
@@ -5105,7 +5118,7 @@ details[open] .help-accordion-chevron {
   border-radius: 12px;
   border: 1px solid rgba(140, 160, 255, 0.35);
   color: #dfe3ff;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   text-decoration: none;
 }
@@ -5115,13 +5128,13 @@ details[open] .help-accordion-chevron {
 .ai-error-code {
   margin: 14px 0 0;
   color: #8190c4;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.1em;
 }
 .ai-error-details {
   margin-top: 14px;
   color: #8190c4;
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .ai-error-details summary {
   cursor: pointer;

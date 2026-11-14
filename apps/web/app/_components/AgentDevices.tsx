@@ -332,7 +332,7 @@ export function AgentDevices({
             data-testid="agent-device"
             style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0" }}
           >
-            <span aria-hidden style={{ fontSize: 18, lineHeight: "22px" }}>
+            <span aria-hidden style={{ fontSize: "var(--fs-lg)", lineHeight: "22px" }}>
               {d.kind === "computer" ? "💻" : "🌐"}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -515,7 +515,7 @@ function Pill({ color, background, text }: { color: string; background: string; 
         display: "inline-block",
         whiteSpace: "nowrap",
         marginLeft: 6,
-        fontSize: 11,
+        fontSize: "var(--fs-xs)",
         fontWeight: 700,
         borderRadius: 6,
         padding: "1px 7px",

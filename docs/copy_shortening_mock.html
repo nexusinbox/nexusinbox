@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>長い説明文を短くする（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.65 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); word-break: auto-phrase; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 30px 0 8px; }
+  .lead { color: var(--muted); font-size: 15px; margin: 0 0 14px; }
+  .rules { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; font-size: 15px; }
+  .rules li { margin: 3px 0; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-top: 1px solid var(--line); }
+  th { background: #f1f3f6; font-size: 13px; color: var(--muted); border-top: 0; }
+  td.where { width: 15%; color: var(--muted); font-size: 13px; }
+  td.now { width: 40%; color: var(--muted); }
+  td.new { width: 40%; }
+  td.n { width: 5%; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .notes { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 15px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>長い説明文を短くする（案）</h1>
+  <p class="lead">毎日使う画面の説明文のうち、長いものから順に。ヘルプ・規約・紹介ページ（読むための文書）は対象外。字数は「いま → 案」。</p>
+  <ul class="rules">
+    <li>1 つの説明はスマホで 2 行まで（およそ 45 字）を目安にする</li>
+    <li>ボタンや題で言っていることは、説明でくり返さない</li>
+    <li>理由は 1 つだけ書く。くわしい理由はヘルプに任せる</li>
+    <li>安全にかかわる警告（すり替えのおそれ・送っていない）は、短くしても必ず残す</li>
+  </ul>
+
+  <h2>エージェント画面</h2>
+  <table>
+    <tr><th>場所</th><th>いま</th><th>案</th><th>字数</th></tr>
+    <tr><td class="where">届かないときの箱</td><td class="now">受け取る端末がまだ決まっていないためです。下の端末がすべてあなたのものなら、「この 2 台に届ける」を押してください。知らない端末があれば、先に「外す」を押してください。</td><td class="new">下がすべてあなたの端末なら「この 2 台に届ける」を、知らない端末があれば先に「外す」を押してください。</td><td class="n">87→50</td></tr>
+    <tr><td class="where">アドレスの説明</td><td class="now">このアドレスを相手に伝えると、このエージェントにメッセージが届きます。パソコンやブラウザを足したり外したりしても、アドレスは変わりません。</td><td class="new">相手に伝えると、このエージェントにメッセージが届きます。端末を足しても外しても変わりません。</td><td class="n">69→45</td></tr>
+    <tr><td class="where">「ブラウザを閉じても動くようにする」の下</td><td class="now">あなたのパソコンで NexusInbox を動かします。ブラウザを閉じていても自動で返信でき、ChatGPT などのクラウドの AI からも使えます。</td><td class="new">ブラウザを閉じていても自動で返信でき、ChatGPT などクラウドの AI からも使えます。</td><td class="n">75→42</td></tr>
+    <tr><td class="where">つなぐ前の確認</td><td class="now">つないだあとも、このブラウザで読み書きできます。パソコンは、ブラウザを閉じている間も自動返信や AI との連携を続けます。</td><td class="new">つないだあとも、このブラウザで読み書きできます。</td><td class="n">61→24</td></tr>
+    <tr><td class="where">再開する方法</td><td class="now">Mac なら、`nexusinbox autostart on` でログインしたときに自動で動くようにできます（パスフレーズを macOS のキーチェーンに保存します）。</td><td class="new">Mac なら <code>nexusinbox autostart on</code> で、ログインしたときに自動で動きます（合言葉はキーチェーンに保存）。</td><td class="n">85→55</td></tr>
+    <tr><td class="where">クラウドの AI（オフのとき）</td><td class="now">Meta の Muse や Claude など、クラウドで動く AI から、このエージェントの受信箱を読んで下書きを作れるようにします。送信はできません。</td><td class="new">Muse や Claude などクラウドの AI が、受信箱を読んで下書きを作れます。送信はできません。</td><td class="n">77→46</td></tr>
+    <tr><td class="where">クラウドの AI（つなぐ前）</td><td class="now">AI に渡した本文は、その AI の事業者（Meta や Anthropic など）が読めます。運営者（NexusInbox）は通り道を用意するだけで、中身は見えません。</td><td class="new">AI に渡した本文は、その AI の会社（Meta や Anthropic など）が読めます。運営は中身を見られません。</td><td class="n">85→51</td></tr>
+    <tr><td class="where">緊急停止</td><td class="now">緊急停止: このエージェントにつながっているパソコンと AI ツール、クラウドの AI を、すべて即座に止めます。つなぎ直すには、もう一度登録が必要です。</td><td class="new">つながっているパソコン・AI ツール・クラウドの AI を、すべてすぐに止めます。また使うには、つなぎ直します。</td><td class="n">77→52</td></tr>
+    <tr><td class="where">ブラウザを外す確認</td><td class="now">「{name}」を外しますか？ 外すと、そのブラウザではメッセージを読めなくなり、端末の追加・削除もできなくなります。エージェントのアドレスと確認番号は変わらないので、相手に知らせが出ることはありません。外すには World ID でもう一度確かめます。</td><td class="new">「{name}」を外しますか？ そのブラウザでは読めなくなります。アドレスは変わらず、相手に知らせも出ません。World ID でもう一度確かめます。</td><td class="n">127→70</td></tr>
+  </table>
+
+  <h2>受信箱・会話</h2>
+  <table>
+    <tr><th>場所</th><th>いま</th><th>案</th><th>字数</th></tr>
+    <tr><td class="where">はじめての受信箱</td><td class="now">あなたの代わりにメッセージをやり取りする AI エージェントの受信箱です。内容は暗号化され、運営も読めません。まずは最初のエージェントを作りましょう。</td><td class="new">AI エージェントがあなたの代わりにやり取りする受信箱です。中身は暗号化され、運営も読めません。</td><td class="n">75→46</td></tr>
+    <tr><td class="where">はじめての受信箱（手順 2）</td><td class="now">紹介リンクを送ると、相手はそこから NexusInbox に入って、あなたのエージェントに連絡できます。リンクは、エージェントを作ったあとに出せます。</td><td class="new">紹介リンクを送ると、相手はそこからあなたのエージェントに連絡できます。</td><td class="n">75→35</td></tr>
+    <tr><td class="where">足す前に届いたメッセージ</td><td class="now">このメッセージは、このブラウザを足す前に届きました。届いたときに、このブラウザには鍵が渡っていないため読めません。前からあるブラウザで読めます。</td><td class="new">このブラウザを足す前に届いたため、ここでは読めません。前からあるブラウザで読めます。</td><td class="n">72→42</td></tr>
+    <tr><td class="where">下書きが読めない</td><td class="now">「{agent}」の下書きは、このブラウザでは読めません。下書きは、そのエージェントにメッセージが届く端末でだけ読めます。エージェントを作ったブラウザか、「スマホなどでも使えるようにする」で足したブラウザで開いてください。</td><td class="new">「{agent}」の下書きは、このブラウザでは読めません。エージェントを作ったブラウザか、足したブラウザで開いてください。</td><td class="n">111→56</td></tr>
+  </table>
+
+  <h2>送る・招く</h2>
+  <table>
+    <tr><th>場所</th><th>いま</th><th>案</th><th>字数</th></tr>
+    <tr><td class="where">まだコンタクトがいない</td><td class="now">NexusInbox には名前で人を探す名簿がありません。相手から紹介リンクをもらうか、あなたの紹介リンクを送って招いてください。相手のリンクを開くと、ここに相手が出ます。</td><td class="new">名前で人を探す名簿はありません。紹介リンクを送るか、相手のリンクを開くと、ここに出ます。</td><td class="n">95→44</td></tr>
+    <tr><td class="where">紹介リンクのスイッチ</td><td class="now">エージェントの名前・ひと言・あなたの表示名が、リンクを知っている人に見えます。オフにすると、1 分ほどでリンクは開けなくなります。</td><td class="new">リンクを知る人に、名前・ひと言・あなたの表示名が見えます。オフにすると 1 分ほどで閉じます。</td><td class="n">65→46</td></tr>
+    <tr><td class="where">送れるエージェントがない</td><td class="now">このブラウザから送れるエージェントがありません。パソコンで動くエージェントは、パソコンの AI ツールかクラウドの AI から送ります。</td><td class="new">このブラウザから送れるエージェントがありません。パソコンの AI ツールか、クラウドの AI から送ってください。</td><td class="n">68→52</td></tr>
+    <tr><td class="where">送るのを止めたとき（端末が未定）</td><td class="now">{name} は、まだメッセージを受け取る端末を決めていません。決まっていない相手に送ると、運営のサーバが足した端末にも届いてしまうおそれがあります。相手が NexusInbox を開くと決まり、送れるようになります。メッセージはまだ送っていません。</td><td class="new">{name} の受け取る端末がまだ決まっていないため、送るのを止めました（知らない端末に届くおそれがあるため）。相手が NexusInbox を開くと送れます。</td><td class="n">125→72</td></tr>
+    <tr><td class="where">送るのを止めたとき（鍵が違う）</td><td class="now">前に送ったときと、相手のエージェントの鍵が違います。いまの NexusInbox では、鍵が正当に変わることはありません。運営のサーバか、だれかが別の相手にすり替えようとしている可能性があります。メッセージはまだ送っていません。</td><td class="new">前に送ったときと相手の鍵が違うため、送るのを止めました。鍵がふつうに変わることはなく、すり替えのおそれがあります。</td><td class="n">114→58</td></tr>
+    <tr><td class="where">確認番号</td><td class="now">あなたの「{own}」と、{name} の鍵から作った番号です。相手の画面にも同じ番号が出ます。会うか電話で読み合わせてください。違っていたら、運営のサーバかだれかが鍵をすり替えています。</td><td class="new">相手の画面にも同じ番号が出ます。会うか電話で読み合わせてください。違っていたら、すり替えられています。</td><td class="n">94→51</td></tr>
+  </table>
+
+  <h2>ブラウザを足す</h2>
+  <table>
+    <tr><th>場所</th><th>いま</th><th>案</th><th>字数</th></tr>
+    <tr><td class="where">足したあと</td><td class="now">これから届くメッセージを読めます。前に届いたメッセージは、このブラウザでは読めません（届いたときに、このブラウザには鍵が渡っていないため）。</td><td class="new">これから届くメッセージを読めます。前に届いたものは、前からのブラウザで読めます。</td><td class="n">70→40</td></tr>
+    <tr><td class="where">リンクが見つからない</td><td class="now">リンクが見つからないか、期限が切れています。いまのブラウザで「スマホなどでも使えるようにする」からやり直してください。同じ World ID でログインしているかも確かめてください。</td><td class="new">リンクが見つからないか、期限切れです。元のブラウザでもう一度リンクを出してください（同じ World ID でログイン）。</td><td class="n">91→55</td></tr>
+  </table>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>上の 21 か所を、案の文に置きかえる（英語の画面も同じ考えで短くする）</li>
+      <li>安全にかかわる警告は、「すり替えのおそれ」「送るのを止めた」を必ず残す。理由の説明だけを削る</li>
+      <li>入れたあと、それぞれの画面をスマホで見て、2 行前後に収まっているかを確かめる</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>この案で置きかえてよいか（推奨: 置きかえる）</li>
+      <li>エージェント画面の「詳細」タブにある開発者向けの文（credential・keystore・runtime などの言葉）を、ふつうの言葉にする作業を続けるか（推奨: 続ける。次の画面案で出す）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

@@ -30,13 +30,13 @@ const card: React.CSSProperties = {
   borderRadius: 16,
   padding: "22px 24px",
 };
-const muted: React.CSSProperties = { color: "var(--text-muted)", fontSize: 13 };
+const muted: React.CSSProperties = { color: "var(--text-muted)", fontSize: "var(--fs-sm)" };
 const permRow: React.CSSProperties = {
   display: "flex",
   gap: 8,
   padding: "7px 0",
   borderTop: "1px solid var(--line)",
-  fontSize: 14,
+  fontSize: "var(--fs-sm)",
 };
 
 function Consent() {
@@ -83,8 +83,8 @@ function Consent() {
   if (error) {
     return (
       <div style={card} data-testid="oauth-error">
-        <h1 style={{ fontSize: 18, margin: "0 0 8px" }}>{t("oauthConsent.errorTitle")}</h1>
-        <p style={{ margin: "0 0 8px", fontSize: 14 }}>{t("oauthConsent.errorBody")}</p>
+        <h1 style={{ fontSize: "var(--fs-lg)", margin: "0 0 8px" }}>{t("oauthConsent.errorTitle")}</h1>
+        <p style={{ margin: "0 0 8px", fontSize: "var(--fs-sm)" }}>{t("oauthConsent.errorBody")}</p>
         <p style={muted}>{error}</p>
       </div>
     );
@@ -104,7 +104,7 @@ function Consent() {
 
   return (
     <div style={card} data-testid="oauth-consent">
-      <h1 style={{ fontSize: 19, margin: "0 0 6px" }}>
+      <h1 style={{ fontSize: "var(--fs-xl)", margin: "0 0 6px" }}>
         {t("oauthConsent.title", { app: info.client_name, agent: info.agent_label })}
       </h1>
       <p style={{ ...muted, margin: "0 0 10px" }}>
@@ -140,7 +140,7 @@ function Consent() {
           color: "var(--warn)",
           borderRadius: 10,
           padding: "8px 12px",
-          fontSize: 13,
+          fontSize: "var(--fs-sm)",
           margin: "10px 0",
         }}
       >

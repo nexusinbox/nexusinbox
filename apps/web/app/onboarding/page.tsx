@@ -581,7 +581,7 @@ function DoneInvite({ agent, onLater }: { agent: Agent; onLater: () => void }) {
 function StepHeading({ title, desc }: { title: string; desc: string }) {
   return (
     <>
-      <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
+      <h2 style={{ margin: 0, fontSize: "var(--fs-lg)" }}>{title}</h2>
       <p className="item-sub" style={{ marginTop: 6 }}>
         {desc}
       </p>

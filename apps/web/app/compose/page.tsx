@@ -873,7 +873,7 @@ function ComposePageInner() {
                       <button
                         type="button"
                         className="btn"
-                        style={{ fontSize: 12, padding: "2px 8px" }}
+                        style={{ fontSize: "var(--fs-xs)", padding: "2px 8px" }}
                         onClick={() => setRecipientDid("")}
                       >
                         {t("compose.toChange")}
@@ -906,7 +906,7 @@ function ComposePageInner() {
                       return (
                         <div key={kind}>
                           <div
-                            style={{ padding: "6px 10px 2px", fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}
+                            style={{ padding: "6px 10px 2px", fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-muted)" }}
                           >
                             {kind === "contact" ? t("compose.toGroupContacts") : t("compose.toGroupOwn")}
                           </div>
@@ -922,7 +922,7 @@ function ComposePageInner() {
                                 border: 0,
                                 background: "transparent",
                                 padding: "6px 10px",
-                                fontSize: 14,
+                                fontSize: "var(--fs-sm)",
                                 cursor: "pointer",
                               }}
                             >
@@ -947,7 +947,7 @@ function ComposePageInner() {
                     marginTop: 6,
                     padding: "8px 10px",
                     borderRadius: 6,
-                    fontSize: 12,
+                    fontSize: "var(--fs-xs)",
                     lineHeight: 1.45,
                     background: "rgba(66, 133, 244, 0.08)",
                     border: "1px solid rgba(66, 133, 244, 0.28)",
@@ -962,7 +962,7 @@ function ComposePageInner() {
                   data-state="recipient-standard"
                   style={{
                     marginTop: 6,
-                    fontSize: 12,
+                    fontSize: "var(--fs-xs)",
                     color: "var(--ok)",
                   }}
                 >
@@ -1181,7 +1181,7 @@ function AIDraftBanner({
         background: bg,
         border: `1px solid ${border}`,
         color,
-        fontSize: 12,
+        fontSize: "var(--fs-xs)",
         display: "flex",
         gap: 12,
         alignItems: "flex-start",
@@ -1205,7 +1205,7 @@ function AIDraftBanner({
           type="button"
           className="btn"
           onClick={onOpenSettings}
-          style={{ fontSize: 12 }}
+          style={{ fontSize: "var(--fs-xs)" }}
         >
           {t("compose.aiDraftOpenSettings")}
         </button>
@@ -1250,7 +1250,7 @@ function AIDraftToolbar({
         alignItems: "center",
       }}
     >
-      <span style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 4 }}>
+      <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)", marginRight: 4 }}>
         {t("compose.aiDraftTone.label")}
       </span>
       {tones.map((tone) => {
@@ -1266,7 +1266,7 @@ function AIDraftToolbar({
             style={{
               padding: "4px 10px",
               borderRadius: 999,
-              fontSize: 12,
+              fontSize: "var(--fs-xs)",
               border: selected
                 ? "1px solid var(--primary)"
                 : "1px solid var(--line-strong)",
@@ -1288,7 +1288,7 @@ function AIDraftToolbar({
         style={{
           padding: "4px 10px",
           borderRadius: 999,
-          fontSize: 12,
+          fontSize: "var(--fs-xs)",
           border: "1px solid var(--line-strong)",
           background: "transparent",
           color: "var(--text)",
@@ -1300,7 +1300,7 @@ function AIDraftToolbar({
       </button>
       {bodyEdited ? (
         <span
-          style={{ fontSize: 11, color: "var(--warn)" }}
+          style={{ fontSize: "var(--fs-xs)", color: "var(--warn)" }}
           data-testid="compose-ai-draft-toolbar-edited-hint"
         >
           {t("compose.aiDraftEditedHint")}

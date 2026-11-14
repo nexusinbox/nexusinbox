@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字の大きさ（案）</title>
+<style>
+  :root { --page: #eef0f3; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --warn: #8a5300; --warn-soft: #fff6e5; --warn-line: #f0c36d; --ok: #00875a; --ok-soft: #e6f4ea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .cols { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .col h2 { font-size: 15px; margin: 0 0 2px; }
+  .col .spec { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  /* One phone screen; the scale comes from the column's variables. */
+  .phone { width: 375px; background: var(--card); border: 1px solid #d5d9df; border-radius: 26px; overflow: hidden; font-size: var(--md); line-height: var(--lh); word-break: auto-phrase; }
+  .now  { --xs: 11px; --sm: 13px; --md: 15px; --lg: 17px; --xl: 20px; --lh: 1.5; }
+  .a    { --xs: 12px; --sm: 14px; --md: 16px; --lg: 18px; --xl: 21px; --lh: 1.6; }
+  .b    { --xs: 13px; --sm: 15px; --md: 17px; --lg: 19px; --xl: 23px; --lh: 1.65; }
+  .bar { padding: 12px 16px; font-size: var(--xl); font-weight: 800; border-bottom: 1px solid var(--line); }
+  .card { margin: 10px 12px; border-radius: 14px; border: 1px solid var(--warn-line); background: var(--warn-soft); }
+  .head { display: flex; gap: 10px; padding: 10px 14px; align-items: flex-start; }
+  .icon { flex: none; width: 1.4em; height: 1.4em; border-radius: 50%; display: grid; place-items: center; background: #f7d58a; color: #6b3f00; font-size: var(--sm); font-weight: 800; margin-top: 2px; }
+  .head b { display: block; font-size: var(--md); }
+  .head .sub { font-size: var(--sm); color: var(--muted); }
+  .later { margin-left: auto; font-size: var(--sm); color: var(--muted); font-weight: 700; white-space: nowrap; }
+  /* Same as the app on a phone: name over why, the action on the right. */
+  .row { display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 8px; padding: 8px 14px; border-top: 1px solid rgba(0,0,0,.06); }
+  .row .l { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .row .n { font-weight: 700; font-size: var(--sm); }
+  .row .w { font-size: var(--sm); color: var(--muted); }
+  .row .l { color: var(--primary); font-weight: 700; font-size: var(--sm); white-space: nowrap; }
+  .msg { display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .av { flex: none; width: 2.6em; height: 2.6em; border-radius: 50%; background: #3b6fd8; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: var(--sm); }
+  .msg .top { display: flex; gap: 6px; align-items: baseline; }
+  .msg .from { font-weight: 700; }
+  .msg .time { margin-left: auto; font-size: var(--xs); color: var(--muted); white-space: nowrap; }
+  .msg .subj { font-size: var(--sm); font-weight: 600; }
+  .msg .prev { font-size: var(--sm); color: var(--muted); }
+  .pill { display: inline-block; white-space: nowrap; font-size: var(--xs); font-weight: 700; border-radius: 6px; padding: 0 7px; margin-left: 6px; color: var(--warn); background: var(--warn-soft); }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); }
+  .sec { padding: 12px 16px; border-top: 1px solid var(--line); }
+  .sec .k { font-size: var(--sm); color: var(--muted); margin-bottom: 4px; }
+  .sec .d { font-size: var(--sm); color: var(--muted); margin-top: 2px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 16px; border-radius: 999px; background: var(--primary); color: #fff; font-weight: 700; font-size: var(--sm); margin-top: 8px; }
+  .notes { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+  table { border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; }
+  td, th { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>文字の大きさ（案）</h1>
+  <p class="lead">同じ画面（受信箱の知らせ・メッセージ一覧・エージェントの端末）を、スマホの幅で 3 通りの大きさで並べた。パソコンの画面でも同じ大きさになる。</p>
+
+  <div class="cols">
+    <div class="col now"><h2>いま</h2><p class="spec">本文 15 / 説明 13 / 時刻・印 11px、行間 1.5</p>
+      <div class="phone">
+        <div class="bar">メッセージ</div>
+        <div class="card"><div class="head"><span class="icon">!</span><div><b>「second secretary」に、メッセージが届いていません</b><span class="sub">受け取る端末がまだ決まっていないためです。</span></div><span class="later">あとで</span></div>
+          <div class="row"><span class="n">second secretary</span><span class="w">受け取る端末が未定</span><span class="l">端末を決める →</span></div></div>
+        <div class="msg"><span class="av">A</span><div style="flex:1;min-width:0"><div class="top"><span class="from">アレックスさんの秘書</span><span class="time">14:05</span></div><div class="subj">来週の打ち合わせについて</div><div class="prev">木曜 14:00 か金曜 10:00 はいかがですか？ 場所はオンラインで…</div></div></div>
+        <div class="msg"><span class="av" style="background:#2f8f6b">M</span><div style="flex:1;min-width:0"><div class="top"><span class="from">Muse</span><span class="time">昨日</span></div><div class="subj">下書きを作りました</div><div class="prev">返事の下書きを 1 件作りました。確認して送ってください。</div></div></div>
+        <div class="sec"><div class="k">端末</div><div><b>パソコン（自宅の Mac）</b><span class="pill">止まっています</span></div><div class="d">4月28日 につないだ · 20 日前まで動いていた</div><span class="btn">つなぎ直す</span></div>
+      </div></div>
+
+    <div class="col a"><h2>案 A: 一回り大きく</h2><p class="spec">本文 16 / 説明 14 / 時刻・印 12px、行間 1.6</p>
+      <div class="phone">
+        <div class="bar">メッセージ</div>
+        <div class="card"><div class="head"><span class="icon">!</span><div><b>「second secretary」に、メッセージが届いていません</b><span class="sub">受け取る端末がまだ決まっていないためです。</span></div><span class="later">あとで</span></div>
+          <div class="row"><span class="n">second secretary</span><span class="w">受け取る端末が未定</span><span class="l">端末を決める →</span></div></div>
+        <div class="msg"><span class="av">A</span><div style="flex:1;min-width:0"><div class="top"><span class="from">アレックスさんの秘書</span><span class="time">14:05</span></div><div class="subj">来週の打ち合わせについて</div><div class="prev">木曜 14:00 か金曜 10:00 はいかがですか？ 場所はオンラインで…</div></div></div>
+        <div class="msg"><span class="av" style="background:#2f8f6b">M</span><div style="flex:1;min-width:0"><div class="top"><span class="from">Muse</span><span class="time">昨日</span></div><div class="subj">下書きを作りました</div><div class="prev">返事の下書きを 1 件作りました。確認して送ってください。</div></div></div>
+        <div class="sec"><div class="k">端末</div><div><b>パソコン（自宅の Mac）</b><span class="pill">止まっています</span></div><div class="d">4月28日 につないだ · 20 日前まで動いていた</div><span class="btn">つなぎ直す</span></div>
+      </div></div>
+
+    <div class="col b"><h2>案 B: 二回り大きく（推奨）</h2><p class="spec">本文 17 / 説明 15 / 時刻・印 13px、行間 1.65</p>
+      <div class="phone">
+        <div class="bar">メッセージ</div>
+        <div class="card"><div class="head"><span class="icon">!</span><div><b>「second secretary」に、メッセージが届いていません</b><span class="sub">受け取る端末がまだ決まっていないためです。</span></div><span class="later">あとで</span></div>
+          <div class="row"><span class="n">second secretary</span><span class="w">受け取る端末が未定</span><span class="l">端末を決める →</span></div></div>
+        <div class="msg"><span class="av">A</span><div style="flex:1;min-width:0"><div class="top"><span class="from">アレックスさんの秘書</span><span class="time">14:05</span></div><div class="subj">来週の打ち合わせについて</div><div class="prev">木曜 14:00 か金曜 10:00 はいかがですか？ 場所はオンラインで…</div></div></div>
+        <div class="msg"><span class="av" style="background:#2f8f6b">M</span><div style="flex:1;min-width:0"><div class="top"><span class="from">Muse</span><span class="time">昨日</span></div><div class="subj">下書きを作りました</div><div class="prev">返事の下書きを 1 件作りました。確認して送ってください。</div></div></div>
+        <div class="sec"><div class="k">端末</div><div><b>パソコン（自宅の Mac）</b><span class="pill">止まっています</span></div><div class="d">4月28日 につないだ · 20 日前まで動いていた</div><span class="btn">つなぎ直す</span></div>
+      </div></div>
+  </div>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>文字の大きさを 6 段にまとめ、すべての画面でこの段だけを使う（いまは 10〜15px の細かい大きさが 30 種類近く混ざっている）</li>
+    </ul>
+    <table>
+      <tr><th>段</th><th>使うところ</th><th>いま</th><th>案 A</th><th>案 B（推奨）</th></tr>
+      <tr><td>小</td><td>時刻・印・件数</td><td>10〜12px</td><td>12px</td><td>13px</td></tr>
+      <tr><td>説明</td><td>補足の文・一覧の 2 行目・ボタン</td><td>13〜14px</td><td>14px</td><td>15px</td></tr>
+      <tr><td>本文</td><td>メッセージ本文・名前・入力欄</td><td>15px</td><td>16px</td><td>17px</td></tr>
+      <tr><td>小見出し</td><td>カードの題</td><td>17px</td><td>18px</td><td>19px</td></tr>
+      <tr><td>見出し</td><td>画面の題</td><td>20px</td><td>21px</td><td>23px</td></tr>
+      <tr><td>大見出し</td><td>はじめての画面の題</td><td>24px</td><td>25px</td><td>27px</td></tr>
+    </table>
+    <ul>
+      <li>行間を広げる（1.5 → 1.65）。日本語の長い説明が詰まって見えないように</li>
+      <li>説明文は 1 行が長くなりすぎないよう、横幅に上限を付ける（パソコンで 1 行 40 字程度まで）</li>
+      <li>入れたあと、受信箱・会話・エージェント・コンタクト・はじめての設定・ヘルプを、パソコンとスマホの両方で見て、はみ出しや重なりを直す</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>大きさ（推奨: 案 B。スマホで読みやすいとされる 16〜17px を本文に。説明文も 15px あれば読み流せる）</li>
+      <li>長い説明文を短くする作業も別に進めるか（推奨: 進める。文字を大きくすると長さがさらに目立つので、大きさを入れたあとで画面ごとに「1 つの説明は 2 行まで」を目安に削る案を出す）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

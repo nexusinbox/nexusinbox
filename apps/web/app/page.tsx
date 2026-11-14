@@ -120,7 +120,7 @@ function WelcomeNoAgents({
 }) {
   return (
     <InboxWelcomeFrame>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
+      <h2 style={{ margin: 0, fontSize: "var(--fs-2xl)", fontWeight: 600 }}>
         {t("inbox.welcomeTitle")}
       </h2>
       <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>
@@ -137,7 +137,7 @@ function WelcomeNoAgents({
       >
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep1Title")}</p>
-          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)" }}>
             {t("inbox.welcomeStep1Desc")}
           </p>
           <button
@@ -151,13 +151,13 @@ function WelcomeNoAgents({
         </div>
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep2Title")}</p>
-          <p style={{ margin: "4px 0 0 0", color: "var(--text-muted)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 0 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)" }}>
             {t("inbox.welcomeStep2Desc")}
           </p>
         </div>
         <div>
           <p style={{ margin: 0, fontWeight: 600 }}>{t("inbox.welcomeStep3Title")}</p>
-          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: 14 }}>
+          <p style={{ margin: "4px 0 10px 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)" }}>
             {t("inbox.welcomeStep3Desc")}
           </p>
           <button
@@ -193,7 +193,7 @@ function WelcomeNoMessages({
   const name = useInviteName(agent);
   return (
     <InboxWelcomeFrame>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
+      <h2 style={{ margin: 0, fontSize: "var(--fs-xl)", fontWeight: 600 }}>
         {t("inbox.noMessagesTitle")}
       </h2>
       <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: 1.6 }}>

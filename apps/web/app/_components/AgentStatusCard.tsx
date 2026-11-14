@@ -151,7 +151,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
       data-testid="agent-status"
       style={{ border: "1.5px solid var(--primary)", marginBottom: 12 }}
     >
-      <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{t("agentStatus.title")}</h3>
+      <h3 style={{ margin: "0 0 4px", fontSize: "var(--fs-md)" }}>{t("agentStatus.title")}</h3>
 
       <Row label={t("agentStatus.devices")}>
         <AgentDevices agent={agent} now={now} onReconnect={() => setConnectStage("pairing")} />
@@ -249,7 +249,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
                   background: "none",
                   color: "var(--primary)",
                   cursor: "pointer",
-                  fontSize: 13,
+                  fontSize: "var(--fs-sm)",
                   padding: 0,
                 }}
                 data-testid="agent-status-change"
@@ -309,7 +309,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
             data-testid="agent-status-recent"
           >
             {replies.map((reply) => (
-              <li key={reply.messageId} style={{ fontSize: 14 }}>
+              <li key={reply.messageId} style={{ fontSize: "var(--fs-sm)" }}>
                 {reply.at !== null ? (
                   <time
                     className="item-sub"
@@ -328,7 +328,7 @@ export function AgentStatusCard({ agent }: { agent: Agent }) {
   );
 }
 
-const LIST: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 20, fontSize: 14 };
+const LIST: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 20, fontSize: "var(--fs-sm)" };
 
 /** The cloud-AI row (docs/33 §12): off, on, and the URL to give an AI app. */
 function CloudAccess({
@@ -459,7 +459,7 @@ function CloudAccess({
           background: "none",
           color: "var(--primary)",
           cursor: "pointer",
-          fontSize: 13,
+          fontSize: "var(--fs-sm)",
           padding: 0,
           display: "block",
         }}

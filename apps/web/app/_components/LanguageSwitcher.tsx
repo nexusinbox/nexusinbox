@@ -21,7 +21,7 @@ export function LanguageSwitcher() {
       onClick={toggle}
       aria-label={locale === "en" ? "日本語に切り替え" : "Switch to English"}
       title={locale === "en" ? "日本語" : "English"}
-      style={{ fontSize: 13, fontWeight: 600, minWidth: 32, letterSpacing: 0 }}
+      style={{ fontSize: "var(--fs-sm)", fontWeight: 600, minWidth: 32, letterSpacing: 0 }}
     >
       {locale === "en" ? "JP" : "EN"}
     </button>

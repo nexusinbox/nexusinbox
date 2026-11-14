@@ -65,7 +65,7 @@ export function NewVersionNotice() {
         background: "var(--text)",
         color: "var(--bg)",
         boxShadow: "var(--shadow-md)",
-        fontSize: 14,
+        fontSize: "var(--fs-sm)",
       }}
     >
       <span>{t("appVersion.notice")}</span>

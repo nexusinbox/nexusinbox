@@ -76,7 +76,7 @@ export function ChoiceCard({
               marginLeft: 8,
               padding: "1px 8px",
               borderRadius: 999,
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               fontWeight: 600,
               background: "var(--surface-alt)",
               border: "1px solid var(--line)",
@@ -126,7 +126,7 @@ export function CommandLine({ command, testId }: { command: string; testId?: str
           minWidth: 0,
           overflowX: "auto",
           whiteSpace: "nowrap",
-          fontSize: 13,
+          fontSize: "var(--fs-sm)",
         }}
         data-testid={testId}
       >

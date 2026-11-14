@@ -93,7 +93,7 @@ const BOX: React.CSSProperties = {
   borderRadius: 12,
   padding: "10px 14px",
   margin: "8px 0",
-  fontSize: 14,
+  fontSize: "var(--fs-sm)",
   lineHeight: 1.6,
 };
 
@@ -113,7 +113,7 @@ export default function HelpPage() {
               key={id}
               href={`#help-${id}`}
               style={{
-                fontSize: 13,
+                fontSize: "var(--fs-sm)",
                 color: "var(--primary)",
                 background: "var(--surface-alt)",
                 borderRadius: 999,
@@ -153,10 +153,10 @@ export default function HelpPage() {
       <Section id="ai">
         <Para k="guide.ai.body" />
         <Terms prefix="ai" keys={["can", "cannot"]} />
-        <h3 style={{ fontSize: 16, margin: "18px 0 4px" }}>{t("guide.ai.cloudTitle")}</h3>
+        <h3 style={{ fontSize: "var(--fs-md)", margin: "18px 0 4px" }}>{t("guide.ai.cloudTitle")}</h3>
         <Para k="guide.ai.cloudNeedsComputer" />
         <Steps prefix="ai" count={4} />
-        <h3 style={{ fontSize: 15, margin: "16px 0 4px" }}>{t("guide.ai.appsTitle")}</h3>
+        <h3 style={{ fontSize: "var(--fs-md)", margin: "16px 0 4px" }}>{t("guide.ai.appsTitle")}</h3>
         <Para k="guide.ai.muse" />
         <div style={{ ...BOX, background: "var(--surface-alt)" }} data-testid="help-muse-phrase">
           {t("guide.ai.musePhrase")}
@@ -167,7 +167,7 @@ export default function HelpPage() {
         <div style={{ ...BOX, background: "var(--warn-soft)", color: "var(--warn)" }}>
           <RichText text={t("guide.ai.provider")} />
         </div>
-        <h3 style={{ fontSize: 16, margin: "18px 0 4px" }}>{t("guide.ai.localTitle")}</h3>
+        <h3 style={{ fontSize: "var(--fs-md)", margin: "18px 0 4px" }}>{t("guide.ai.localTitle")}</h3>
         <p className="help-card-desc" style={{ margin: "6px 0" }}>
           {t("guide.ai.localBody")}{" "}
           <Link href="/help/developers" className="help-step-link">

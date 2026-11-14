@@ -60,7 +60,7 @@ export default function GlobalError({
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               letterSpacing: "0.18em",
               textTransform: "uppercase",
               color: "#8190c4",
@@ -102,7 +102,7 @@ export default function GlobalError({
           <p
             style={{
               color: "#b0bad8",
-              fontSize: 14,
+              fontSize: "var(--fs-sm)",
               lineHeight: 1.6,
               margin: "16px 0 24px",
             }}
@@ -123,7 +123,7 @@ export default function GlobalError({
               background:
                 "linear-gradient(135deg, rgba(125, 215, 255, 0.25) 0%, rgba(212, 158, 255, 0.25) 100%)",
               color: "#e8ecff",
-              fontSize: 14,
+              fontSize: "var(--fs-sm)",
               fontWeight: 600,
               letterSpacing: "0.02em",
               cursor: "pointer",

@@ -344,7 +344,7 @@ function GoogleCalendarCard() {
           )}
           {error ? (
             <span
-              style={{ color: "var(--danger)", fontSize: 12 }}
+              style={{ color: "var(--danger)", fontSize: "var(--fs-xs)" }}
               data-testid="integrations-gcal-error"
             >
               {error}
@@ -430,17 +430,17 @@ function AIAssistantCard() {
         />
       </div>
       <p className="settings-card-desc">{t("integrations.aiDesc")}</p>
-      <p className="settings-card-desc" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+      <p className="settings-card-desc" style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
         {t("integrations.aiPrivacyNote")}
       </p>
 
       {connected ? (
         <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
             {t("integrations.aiKeyFingerprint", { fingerprint: fingerprint! })}
           </span>
           {model ? (
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
               {t("integrations.aiModel", { model })}
             </span>
           ) : null}
@@ -480,7 +480,7 @@ function AIAssistantCard() {
               padding: "6px 10px",
               borderRadius: 4,
               border: "1px solid var(--line-strong)",
-              fontSize: 13,
+              fontSize: "var(--fs-sm)",
               fontFamily: "ui-monospace, SFMono-Regular, monospace",
             }}
           />
@@ -509,7 +509,7 @@ function AIAssistantCard() {
               </button>
             ) : null}
             {error ? (
-              <span style={{ color: "var(--danger)", fontSize: 12 }} data-testid="integrations-llm-error">
+              <span style={{ color: "var(--danger)", fontSize: "var(--fs-xs)" }} data-testid="integrations-llm-error">
                 {error}
               </span>
             ) : null}
