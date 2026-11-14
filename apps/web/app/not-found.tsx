@@ -4,10 +4,8 @@ import Link from "next/link";
 import { useTranslation } from "../lib/i18n";
 
 /**
- * 404 — styled to match the /login and /concept stages so every
- * pre-auth / out-of-shell page shares the same dark animated identity.
- * Uses the existing `.ai-login-*` CSS so there's no new selector to
- * maintain; only the card content differs.
+ * 404 — the /login stage look, with plain words: what happened and where
+ * to go next (docs/error_pages_mock.html §1).
  */
 export default function NotFound() {
   const { t } = useTranslation();
@@ -19,37 +17,25 @@ export default function NotFound() {
       <div className="ai-login-grid" aria-hidden="true" />
       <div className="ai-login-stars" aria-hidden="true" />
 
-      {/* Corner HUD glyphs, same as /login for visual continuity. */}
+      {/* Corner glyphs only, as on /login; no words in them. */}
       <div className="ai-login-hud" aria-hidden="true">
         <span />
         <span />
         <span />
         <span />
-        <span className="tag">
-          <span className="marker" />
-          {t("errors.notFoundLabel")}
-        </span>
       </div>
 
       <section className="ai-login-card" role="dialog" aria-labelledby="ai-notfound-title">
         <div className="ai-login-brand">
           <span className="dot" />
-          <span>{t("errors.notFoundLabel")}</span>
+          <span>NexusInbox</span>
         </div>
 
-        <h1 id="ai-notfound-title" className="ai-login-title">
-          <span className="glitch" data-text={t("errors.notFoundTitle1")}>
-            {t("errors.notFoundTitle1")}
-          </span>
-          <br />
-          <span className="glitch" data-text={t("errors.notFoundTitle2")}>
-            {t("errors.notFoundTitle2")}
-          </span>
+        <h1 id="ai-notfound-title" className="ai-login-title ai-error-title">
+          {t("errors.notFoundTitle")}
         </h1>
 
-        <p className="ai-login-subtitle" style={{ whiteSpace: "pre-line" }}>
-          {t("errors.notFoundSubtitle")}
-        </p>
+        <p className="ai-login-subtitle">{t("errors.notFoundSubtitle")}</p>
 
         <div className="ai-login-cta-wrap">
           <Link className="ai-login-cta" href="/">
@@ -69,6 +55,10 @@ export default function NotFound() {
             <span>{t("errors.backToInbox")}</span>
           </Link>
         </div>
+        <Link className="ai-error-secondary" href="/help">
+          {t("errors.openHelp")}
+        </Link>
+        <p className="ai-error-code">404</p>
       </section>
     </main>
   );

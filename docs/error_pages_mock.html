@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>見つからないページ・エラー・アドレスの説明（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); word-break: auto-phrase; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 4px; }
+  .lead, .why { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .cols { grid-template-columns: 1fr; } }
+  .col h3 { font-size: 14px; margin: 0 0 6px; color: var(--muted); }
+  /* The dark stage shared with /login. */
+  .stage { background: radial-gradient(circle at 50% 30%, #1a2050, #0a0c18 70%); border-radius: 14px; padding: 40px 20px; min-height: 340px; display: grid; place-items: center; color: #e8ecff; position: relative; overflow: hidden; }
+  .stage::after { content: ""; position: absolute; inset: auto 0 0 0; height: 45%; background: repeating-linear-gradient(90deg, rgba(120,140,255,.12) 0 1px, transparent 1px 40px), repeating-linear-gradient(0deg, rgba(120,140,255,.12) 0 1px, transparent 1px 40px); transform: perspective(300px) rotateX(55deg); transform-origin: bottom; }
+  .hud { position: absolute; top: 12px; right: 16px; font-size: 10px; letter-spacing: .15em; color: #8b93c9; }
+  .card { position: relative; z-index: 1; width: min(360px, 100%); background: rgba(16,20,42,.85); border: 1px solid rgba(140,150,255,.25); border-radius: 16px; padding: 22px 22px 20px; }
+  .kicker { font-size: 11px; letter-spacing: .14em; color: #8b93c9; display: flex; align-items: center; gap: 6px; }
+  .kicker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #5ee39b; }
+  .big { font-size: 34px; font-weight: 800; line-height: 1.1; margin: 10px 0 6px; letter-spacing: .02em; }
+  .jtitle { font-size: 22px; font-weight: 800; margin: 10px 0 6px; }
+  .code { font-size: 12px; color: #8b93c9; letter-spacing: .1em; }
+  .sub { color: #b9c0ea; font-size: 13.5px; margin: 0 0 16px; }
+  .cta { display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 12px; background: linear-gradient(90deg, #8fb4ff, #c8a8ff); color: #10142a; font-weight: 800; font-size: 14px; }
+  .ghost { display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: 12px; border: 1px solid rgba(140,150,255,.35); color: #dfe3ff; font-weight: 700; font-size: 13px; margin-top: 8px; }
+  .meta { font: 11px ui-monospace, monospace; color: #8b93c9; background: rgba(0,0,0,.25); border-radius: 8px; padding: 6px 8px; margin: 0 0 14px; }
+  details { color: #8b93c9; font-size: 12px; margin-top: 12px; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 4px; vertical-align: 1px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .addr { font: 12px ui-monospace, monospace; background: #f1f3f6; border-radius: 8px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; }
+  .btn { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid #c9ced6; font-size: 12px; font-weight: 700; color: var(--primary); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .notes { margin-top: 30px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>見つからないページ・エラー・アドレスの説明（案）</h1>
+  <p class="lead">左がいま、右が案。<span class="new">新</span> が変わるところ。暗い背景と光る線（ログイン画面と同じ見た目）は残し、言葉だけを日本語のふつうの言い方にする。</p>
+
+  <h2>1. 見つからないページ（404）</h2>
+  <p class="why">「SIGNAL LOST · NET-0」「404 NOT FOUND」と英語の飾り言葉が大きく、何が起きたか・次に何をすればいいかが小さい。題字は文字がぶれる演出つき。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="stage"><span class="hud">SIGNAL LOST · NET-0</span><div class="card">
+      <div class="kicker">SIGNAL LOST · NET-0</div>
+      <div class="big">404<br>NOT FOUND</div>
+      <p class="sub">お探しのページは見つかりませんでした。<br>URLを確認するか、受信箱に戻ってください。</p>
+      <div class="cta">← 受信箱に戻る</div>
+    </div></div></div>
+    <div class="col"><h3>案</h3><div class="stage"><div class="card">
+      <div class="kicker">NexusInbox <span class="new">新</span></div>
+      <div class="jtitle">ページが見つかりません <span class="new">新</span></div>
+      <p class="sub">リンクが古いか、アドレスが少し違うようです。</p>
+      <div class="cta">受信箱に戻る</div>
+      <div class="ghost">ヘルプを見る <span class="new">新</span></div>
+      <div class="code" style="margin-top:12px">404</div>
+    </div></div></div>
+  </div>
+
+  <h2>2. 思わぬエラーのページ</h2>
+  <p class="why">「ERROR UNCAUGHT」「RUNTIME FAULT · NET-0」と、プログラムの中の英語の文（error.message）をそのまま見せている。利用者には意味がなく、どうすればいいかも分からない。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="stage"><span class="hud">RUNTIME FAULT · NET-0</span><div class="card">
+      <div class="kicker">RUNTIME FAULT · NET-0</div>
+      <div class="big">ERROR<br>UNCAUGHT</div>
+      <p class="sub">処理中に予期しないエラーが発生しました。</p>
+      <div class="meta">TypeError: Cannot read properties of undefined (reading 'did') ▌</div>
+      <div class="cta">再試行</div>
+    </div></div></div>
+    <div class="col"><h3>案</h3><div class="stage"><div class="card">
+      <div class="kicker">NexusInbox</div>
+      <div class="jtitle">うまく表示できませんでした <span class="new">新</span></div>
+      <p class="sub">一時的な問題かもしれません。もう一度読み込んでください。続くときは、受信箱からやり直してください。</p>
+      <div class="cta">もう一度読み込む</div>
+      <div class="ghost">受信箱に戻る <span class="new">新</span></div>
+      <details><summary>問い合わせるときの情報 <span class="new">新</span></summary>TypeError: Cannot read properties of undefined (reading 'did')</details>
+    </div></div></div>
+  </div>
+
+  <h2>3. エージェントのアドレスの説明</h2>
+  <p class="why">「鍵を作り直しても変わりません」は、鍵が何か分からない人には意味が取れない。言いたいのは「端末を足したり外したりしても、アドレスは同じ」。</p>
+  <div class="cols">
+    <div class="col"><h3>いま</h3><div class="panel">
+      <div class="addr">aid:ai:01M7CJNMK30J0G0SD0CRZGN45Z <span class="btn">コピー</span></div>
+      <p class="muted">このアドレスを相手に伝えると、このエージェント宛てにメッセージが届きます。鍵を作り直しても変わりません。</p>
+    </div></div>
+    <div class="col"><h3>案</h3><div class="panel">
+      <div class="addr">aid:ai:01M7CJNMK30J0G0SD0CRZGN45Z <span class="btn">コピー</span></div>
+      <p class="muted">このアドレスを相手に伝えると、このエージェントにメッセージが届きます。パソコンやブラウザを足したり外したりしても、アドレスは変わりません。 <span class="new">新</span></p>
+    </div></div>
+  </div>
+
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>見た目（暗い背景・光る線・カード）はログイン画面とそろえたまま残す。角の英語の飾り文字と、題字のぶれる演出はやめる</li>
+      <li>カードの上の小さな文字は「NexusInbox」。題は日本語で、何が起きたかを書く。「404」は下に小さく残す（問い合わせのときの手がかり）</li>
+      <li>次にすることをボタンで示す。見つからないとき:「受信箱に戻る」「ヘルプを見る」。エラーのとき:「もう一度読み込む」「受信箱に戻る」</li>
+      <li>プログラムの英語のエラー文は、折りたたみ「問い合わせるときの情報」の中にだけ出す</li>
+      <li>英語の画面も同じ考えで直す（"Page not found" / "Something went wrong" など）</li>
+    </ul>
+    <b>決めてほしいこと</b>
+    <ul>
+      <li>この方向でよいか（推奨: この方向。見た目は残し、言葉とボタンだけ変える）</li>
+      <li>404 に「ヘルプを見る」を足すか（推奨: 足す。迷ったときの行き先がもう 1 つあると安心できる）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

@@ -504,7 +504,7 @@
     "save": "保存",
     "cancel": "キャンセル",
     "overviewTitle": "技術情報",
-    "addressDesc": "このアドレスを相手に伝えると、このエージェント宛てにメッセージが届きます。鍵を作り直しても変わりません。",
+    "addressDesc": "このアドレスを相手に伝えると、このエージェントにメッセージが届きます。パソコンやブラウザを足したり外したりしても、アドレスは変わりません。",
     "openInbox": "受信箱を開く",
     "approvalQueueNote": "信頼度がとても低い送信者からのメッセージや、迷惑メッセージと判定されたものは、受信箱ではなく「承認待ち」に入ります。",
     "agentId": "エージェントID: {aid}",
@@ -1411,18 +1411,14 @@
     }
   },
   "errors": {
-    "somethingWrong": "問題が発生しました",
-    "unexpectedError": "予期しないエラーが発生しました。もう一度お試しください。",
-    "tryAgain": "再試行",
-    "notFoundTitle1": "404",
-    "notFoundTitle2": "NOT FOUND",
-    "notFoundLabel": "SIGNAL LOST · NET-0",
-    "notFoundSubtitle": "お探しのページは見つかりませんでした。\nURLを確認するか、受信箱に戻ってください。",
+    "notFoundTitle": "ページが見つかりません",
+    "notFoundSubtitle": "リンクが古いか、アドレスが少し違うようです。",
     "backToInbox": "受信箱に戻る",
-    "errorTitle1": "ERROR",
-    "errorTitle2": "UNCAUGHT",
-    "errorLabel": "RUNTIME FAULT · NET-0",
-    "errorSubtitle": "処理中に予期しないエラーが発生しました。"
+    "openHelp": "ヘルプを見る",
+    "errorTitle": "うまく表示できませんでした",
+    "errorSubtitle": "一時的な問題かもしれません。もう一度読み込んでください。続くときは、受信箱からやり直してください。",
+    "tryAgain": "もう一度読み込む",
+    "details": "問い合わせるときの情報"
   },
   "firstRun": {
     "title": "はじめての設定",

@@ -5087,3 +5087,53 @@ details[open] .help-accordion-chevron {
 .connect-step-title {
   word-break: auto-phrase;
 }
+
+/* Not-found and error pages: plain words on the /login stage
+   (docs/error_pages_mock.html). */
+.ai-error-title {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: auto-phrase;
+}
+.ai-error-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 160, 255, 0.35);
+  color: #dfe3ff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.ai-error-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.ai-error-code {
+  margin: 14px 0 0;
+  color: #8190c4;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+.ai-error-details {
+  margin-top: 14px;
+  color: #8190c4;
+  font-size: 12px;
+}
+.ai-error-details summary {
+  cursor: pointer;
+}
+.ai-error-details code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  word-break: break-all;
+}
+.ai-error-title + .ai-login-subtitle {
+  word-break: auto-phrase;
+}

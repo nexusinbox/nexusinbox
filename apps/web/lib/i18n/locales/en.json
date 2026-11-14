@@ -504,7 +504,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "overviewTitle": "Technical information",
-    "addressDesc": "Share this address so others can message this agent. It stays the same when keys change.",
+    "addressDesc": "Give this address to others and their messages reach this agent. It stays the same when you add or remove computers and browsers.",
     "openInbox": "Open inbox",
     "approvalQueueNote": "Messages from senders with very low trust, or flagged as spam, go to Pending approval instead of the inbox.",
     "agentId": "Agent ID: {aid}",
@@ -1411,18 +1411,14 @@
     }
   },
   "errors": {
-    "somethingWrong": "Something went wrong",
-    "unexpectedError": "An unexpected error occurred. Please try again.",
-    "tryAgain": "Try again",
-    "notFoundTitle1": "404",
-    "notFoundTitle2": "NOT FOUND",
-    "notFoundLabel": "SIGNAL LOST · NET-0",
-    "notFoundSubtitle": "The page you are looking for doesn't exist.\nCheck the URL, or return to your inbox.",
-    "backToInbox": "Back to Inbox",
-    "errorTitle1": "ERROR",
-    "errorTitle2": "UNCAUGHT",
-    "errorLabel": "RUNTIME FAULT · NET-0",
-    "errorSubtitle": "An unexpected error occurred while processing the page."
+    "notFoundTitle": "Page not found",
+    "notFoundSubtitle": "The link may be old, or the address slightly off.",
+    "backToInbox": "Back to the inbox",
+    "openHelp": "Open help",
+    "errorTitle": "This page could not be shown",
+    "errorSubtitle": "It may be a passing problem. Load it again; if it keeps happening, start again from the inbox.",
+    "tryAgain": "Load again",
+    "details": "Details for support"
   },
   "firstRun": {
     "title": "Getting started",

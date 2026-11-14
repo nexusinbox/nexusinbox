@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useTranslation } from "../lib/i18n";
 
 /**
@@ -29,34 +30,19 @@ export default function Error({
         <span />
         <span />
         <span />
-        <span className="tag">
-          <span className="marker" />
-          {t("errors.errorLabel")}
-        </span>
       </div>
 
       <section className="ai-login-card" role="alertdialog" aria-labelledby="ai-error-title">
         <div className="ai-login-brand">
           <span className="dot" />
-          <span>{t("errors.errorLabel")}</span>
+          <span>NexusInbox</span>
         </div>
 
-        <h1 id="ai-error-title" className="ai-login-title">
-          <span className="glitch" data-text={t("errors.errorTitle1")}>
-            {t("errors.errorTitle1")}
-          </span>
-          <br />
-          <span className="glitch" data-text={t("errors.errorTitle2")}>
-            {t("errors.errorTitle2")}
-          </span>
+        <h1 id="ai-error-title" className="ai-login-title ai-error-title">
+          {t("errors.errorTitle")}
         </h1>
 
         <p className="ai-login-subtitle">{t("errors.errorSubtitle")}</p>
-
-        <div className="ai-login-meta" aria-hidden="true">
-          <code>{error.message || t("errors.unexpectedError")}</code>
-          <span className="blink" />
-        </div>
 
         <div className="ai-login-cta-wrap">
           <button
@@ -80,6 +66,17 @@ export default function Error({
             <span>{t("errors.tryAgain")}</span>
           </button>
         </div>
+        <Link className="ai-error-secondary" href="/">
+          {t("errors.backToInbox")}
+        </Link>
+        {/* The program's own message, only for someone asking for help. */}
+        <details className="ai-error-details">
+          <summary>{t("errors.details")}</summary>
+          <code>
+            {error.message || "-"}
+            {error.digest ? ` (${error.digest})` : ""}
+          </code>
+        </details>
       </section>
     </main>
   );

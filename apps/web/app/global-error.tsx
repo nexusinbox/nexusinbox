@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "../lib/i18n";
+import { translate, translations, type Locale } from "../lib/i18n/translate";
 
 /**
  * Last-resort error boundary — fires when the root layout itself throws,
@@ -18,9 +18,12 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const { t } = useTranslation();
+  // The root layout failed, so there is no I18nProvider: useTranslation()
+  // would print the keys. Read the chosen language directly.
+  const locale = storedLocale();
+  const t = (key: string) => translate(locale, key);
   return (
-    <html lang="ja">
+    <html lang={locale}>
       <body
         style={{
           margin: 0,
@@ -74,16 +77,16 @@ export default function GlobalError({
                 boxShadow: "0 0 10px rgba(255, 99, 132, 0.8)",
               }}
             />
-            <span>{t("errors.errorLabel")}</span>
+            <span>NexusInbox</span>
           </div>
 
           <h1
             id="ai-global-error-title"
             style={{
-              fontSize: 44,
+              fontSize: 26,
               fontWeight: 800,
               letterSpacing: "-0.02em",
-              lineHeight: 1.1,
+              lineHeight: 1.3,
               margin: 0,
               background:
                 "linear-gradient(135deg, #7dd7ff 0%, #a9b8ff 50%, #d49eff 100%)",
@@ -93,7 +96,7 @@ export default function GlobalError({
               color: "transparent",
             }}
           >
-            {t("errors.somethingWrong")}
+            {t("errors.errorTitle")}
           </h1>
 
           <p
@@ -104,7 +107,7 @@ export default function GlobalError({
               margin: "16px 0 24px",
             }}
           >
-            {t("errors.unexpectedError")}
+            {t("errors.errorSubtitle")}
           </p>
 
           <button
@@ -133,4 +136,14 @@ export default function GlobalError({
       </body>
     </html>
   );
+}
+
+function storedLocale(): Locale {
+  try {
+    const stored = localStorage.getItem("nexusinbox-locale") as Locale | null;
+    if (stored && translations[stored]) return stored;
+  } catch {
+    // localStorage unavailable
+  }
+  return "en";
 }
