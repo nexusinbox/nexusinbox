@@ -69,7 +69,8 @@ import { ConfirmationPanel } from "../ConfirmationPanel";
 import { checkReceived, receivedOldFormat, receivedWarns, type ReceivedCheck } from "../../../lib/agents/sender-check";
 import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thread-export";
 import { useTranslation, type Locale } from "../../../lib/i18n";
-import { localDeviceDid } from "../../../lib/agents/local-device";
+import { localDeviceDid, readableElsewhere } from "../../../lib/agents/local-device";
+import { elsewhereText } from "../AgentDevices";
 
 // Same bound as the list's preview decrypt: the X25519 unwrap hits
 // IndexedDB, so more in parallel only adds in-flight fetches.
@@ -220,16 +221,22 @@ export function ConversationView({
   // This browser was added to the agent later (docs/40 §17.4): what came
   // before was not wrapped for it.
   const [addedBrowser, setAddedBrowser] = useState(false);
+  // Otherwise, where it can be read: the agent's other devices, when a
+  // browser is among them.
+  const [elsewhere, setElsewhere] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const own = conversation.ownAgent;
     void localDeviceDid(own ?? undefined).then((did) => {
-      if (!cancelled) setAddedBrowser(!!own && !!did && did !== own.did);
+      if (cancelled) return;
+      setAddedBrowser(!!own && !!did && did !== own.did);
+      const other = readableElsewhere(own ?? undefined, did);
+      setElsewhere(other ? elsewhereText(t, other) : null);
     });
     return () => {
       cancelled = true;
     };
-  }, [conversation.ownAgent]);
+  }, [conversation.ownAgent, t]);
 
   // Mark the counterpart's unread messages read once the conversation is open.
   const markedRef = useRef(new Set<string>());
@@ -613,6 +620,7 @@ export function ConversationView({
                 messageId={entry.id}
                 recipientDid={entry.recipient_did}
                 beforeAdded={addedBrowser}
+                elsewhere={elsewhere}
               />
             );
           }

@@ -209,7 +209,13 @@
     "archiveEmpty": "No archived messages.",
     "beforeAddedPreview": "Not readable here (it arrived before this browser was added)",
     "beforeAddedTitle": "This browser cannot read this message",
-    "beforeAddedBody": "It arrived before this browser was added, so it was not encrypted for this browser. The browsers you had before can read it."
+    "beforeAddedBody": "It arrived before this browser was added, so it was not encrypted for this browser. The browsers you had before can read it.",
+    "readableElsewherePreview": "Not readable here. Readable on {where}",
+    "readableElsewhereBody": "This message was not encrypted for this browser. Open it on {where} to read it.",
+    "deviceQuoted": "“{name}”",
+    "deviceJoin": ", ",
+    "devicesOrComputer": "{names} or your computer",
+    "firstBrowser": "the browser the agent was created in"
   },
   "connectedAIs": {
     "title": "Connected AIs",

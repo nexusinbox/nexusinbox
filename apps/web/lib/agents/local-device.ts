@@ -26,3 +26,18 @@ export async function localDeviceDid(
   }
   return null;
 }
+
+/**
+ * Where a message this browser cannot open can be read: the agent's other
+ * active devices. Null when no other browser is among them, so the old
+ * "on the computer" text still fits.
+ */
+export function readableElsewhere(
+  agent: Pick<Agent, "devices"> | undefined,
+  local: string | null,
+): { browsers: NonNullable<Agent["devices"]>; computer: boolean } | null {
+  const others = (agent?.devices ?? []).filter((d) => d.did !== local);
+  const browsers = others.filter((d) => d.kind === "browser");
+  if (browsers.length === 0) return null;
+  return { browsers, computer: others.some((d) => d.kind === "computer") };
+}

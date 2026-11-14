@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>読めない理由の文言と、スマホの空の受信箱（案）</title>
+<style>
+  :root { --page: #f6f7f9; --ink: #0f1419; --muted: #536471; --line: #e5e7eb; --card: #fff; --primary: #2f5bea; --soft: #e8eeff; --ok: #00875a; --ok-soft: #e6f4ea; --warn: #9a5b00; --warn-soft: #fff7e6; --danger: #d0193f; --danger-soft: #fdecef; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: var(--page); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .app { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .head { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 17px; }
+  .foot { border-top: 1px solid var(--line); padding: 12px 20px; color: var(--muted); font-size: 13px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .gone { text-decoration: line-through; color: var(--muted); }
+  .irow { display: flex; gap: 10px; padding: 11px 18px; border-bottom: 1px solid var(--line); align-items: center; }
+  .irow .from { font-weight: 700; min-width: 170px; }
+  .irow .sub { color: var(--muted); font-size: 14px; flex: 1; }
+  .case { font-size: 12px; color: var(--muted); padding: 8px 18px 0; }
+  .card { margin: 12px 18px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-right: 6px; color: var(--primary); background: var(--soft); }
+  .btn { font: inherit; font-size: 13px; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: var(--card); font-weight: 700; }
+  .phones { display: flex; gap: 20px; flex-wrap: wrap; padding: 16px; justify-content: center; background: #eef0f3; }
+  .phone { width: 260px; height: 520px; border-radius: 26px; background: #15202b; color: #e7e9ea; position: relative; overflow: hidden; border: 6px solid #0b0f14; font-size: 11px; }
+  .phone .bar { padding: 10px 14px; font-weight: 800; font-size: 14px; }
+  .phone .body { position: absolute; top: 40px; bottom: 44px; left: 0; right: 0; overflow: hidden; padding: 0 14px; }
+  .phone .tabbar { position: absolute; bottom: 0; left: 0; right: 0; height: 44px; border-top: 1px solid #2f3336; display: flex; justify-content: space-around; align-items: center; color: #8b98a5; }
+  .phone .fab { position: absolute; right: 10px; bottom: 54px; width: 40px; height: 40px; border-radius: 50%; background: #2f5bea; color: #fff; display: grid; place-items: center; font-size: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  .phone .fab.hl { outline: 3px solid #f0c36d; }
+  .phone p { margin: 0 0 6px; line-height: 1.5; }
+  .phone .b { display: inline-block; border: 1px solid #536471; border-radius: 999px; padding: 3px 10px; margin: 2px 0 8px; }
+  .phone .bp { background: #2f5bea; border-color: #2f5bea; }
+  .cap { text-align: center; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  aside .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
+  aside h3 { font-size: 14px; margin: 0 0 8px; }
+  aside ul { padding-left: 18px; margin: 0; }
+  aside li { margin: 5px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<main>
+  <h1>読めない理由の文言と、スマホの空の受信箱（案）</h1>
+  <p class="lead">docs/40 §17 のあとに残った 2 つ。<span class="new">新</span> が変わるところ。</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-s="s1">① 受信箱のプレビュー</button>
+    <button data-s="s2">② 会話の中のカード</button>
+    <button data-s="s3">③ スマホの空の受信箱</button>
+  </div>
+
+  <section id="s1" class="app">
+    <div class="head">メッセージ</div>
+    <div class="case">いま: このブラウザで読めないものは、どれも同じ文</div>
+    <div class="irow"><span class="from">アレックスさんの秘書</span><span class="sub gone">本文はパソコン側で読めます</span></div>
+    <div class="case">案: 読める端末を名指す <span class="new">新</span></div>
+    <div class="irow"><span class="from">アレックスさんの秘書</span><span class="sub">本文はパソコン側で読めます</span><span class="muted">エージェントがパソコンでだけ動いている（今のまま）</span></div>
+    <div class="irow"><span class="from">アレックスさんの秘書</span><span class="sub">このブラウザでは読めません。「Safari (iPhone)」で読めます</span><span class="new">新</span></div>
+    <div class="irow"><span class="from">アレックスさんの秘書</span><span class="sub">このブラウザでは読めません。「Safari (iPhone)」かパソコンで読めます</span><span class="new">新</span></div>
+    <div class="irow"><span class="from">アレックスさんの秘書</span><span class="sub">このブラウザでは読めません（足す前に届いたため）</span><span class="muted">足したブラウザ（実装済み）</span></div>
+    <div class="foot">「読める端末」はエージェントの端末の一覧（サーバの言う active な端末）から、このブラウザを除いたもの。パソコンだけなら今の文のまま。外されたブラウザや、パソコンで動いていないエージェントで「パソコン側で読めます」と出ていた誤りがなくなる。</div>
+  </section>
+
+  <section id="s2" class="app" hidden>
+    <div class="head">アレックスさんの秘書 ↔ 秘書</div>
+    <div class="case">いま（どの場合も）</div>
+    <div class="card"><h4><span class="badge">パソコンで動作中</span>このブラウザでは本文を表示できません</h4>
+      <p class="muted" style="margin:0 0 8px">このエージェントはパソコンで動いているため、本文はパソコンにある鍵でしか開けません。パソコンの AI ツール (Claude Desktop など) から開くと読めます。</p>
+      <span class="btn">パソコンの AI ツールで開く</span></div>
+    <div class="case">案: 読める端末にブラウザがあるとき <span class="new">新</span></div>
+    <div class="card"><h4>このブラウザでは本文を表示できません</h4>
+      <p class="muted" style="margin:0">このメッセージは、このブラウザには包まれていません。「Safari (iPhone)」で開くと読めます。</p></div>
+    <div class="foot">パソコンだけのときは今のカードのまま（「パソコンで動作中」と「パソコンの AI ツールで開く」）。ブラウザが含まれるときは、パソコン向けのバッジとボタンを出さず、読める端末の名前だけを出す。</div>
+  </section>
+
+  <section id="s3" class="app" hidden>
+    <div class="head">スマホの空の受信箱（エージェントがまだ無いとき）</div>
+    <div class="phones">
+      <div>
+        <div class="phone">
+          <div class="bar">Messages</div>
+          <div class="body">
+            <p style="font-size:13px;font-weight:800;text-align:center;margin-top:10px">👋 Welcome to NexusInbox</p>
+            <p>An inbox for the AI agents that message on your behalf…</p>
+            <p><b>① Create your first agent</b><br>Just give it a name…</p>
+            <span class="b bp">Create agent →</span>
+            <p><b>② Invite people</b><br>Send your intro link…</p>
+            <p><b>③ Learn more</b><br>Help explains how it all works and how to connect your computer and AI tools.</p>
+            <span class="b">Open help →</span>
+          </div>
+          <div class="fab hl">+</div>
+          <div class="tabbar"><span>Messages</span><span>Review</span><span>Agents</span><span>Contacts</span></div>
+        </div>
+        <div class="cap">いま: ＋ が最後の行に重なる。押しても送れる相手もエージェントも無い</div>
+      </div>
+      <div>
+        <div class="phone">
+          <div class="bar">Messages</div>
+          <div class="body">
+            <p style="font-size:13px;font-weight:800;text-align:center;margin-top:10px">👋 Welcome to NexusInbox</p>
+            <p>An inbox for the AI agents that message on your behalf…</p>
+            <p><b>① Create your first agent</b><br>Just give it a name…</p>
+            <span class="b bp">Create agent →</span>
+            <p><b>② Invite people</b><br>Send your intro link…</p>
+            <p><b>③ Learn more</b><br>Help explains how it all works and how to connect your computer and AI tools.</p>
+            <span class="b">Open help →</span>
+          </div>
+          <div class="tabbar"><span>Messages</span><span>Review</span><span>Agents</span><span>Contacts</span></div>
+        </div>
+        <div class="cap">案: エージェントが無いうちは ＋ を出さない <span class="new">新</span></div>
+      </div>
+    </div>
+    <div class="foot">エージェントができたら ＋ はいまどおり出る。あわせて、スマホでは本文の下に ＋ の高さぶんの余白を足し、最後の行が ＋ の下に隠れないようにする（エージェントがある空の受信箱や長い一覧でも同じ）。</div>
+  </section>
+</main>
+<aside>
+  <div class="box">
+    <h3>変わること</h3>
+    <ul>
+      <li>このブラウザで読めないメッセージに、読める端末の名前を出す（パソコンだけなら今のまま）</li>
+      <li>エージェントが無いうちは、スマホの ＋（新しい会話）を出さない</li>
+      <li>スマホでは本文の下に ＋ のぶんの余白を足す</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>決めてほしいこと</h3>
+    <ul>
+      <li>① ② 読める端末を名前で出すか（推奨: 出す。どこで開けばよいかが分かる。名前はサーバの一覧のもので、表示だけに使う）</li>
+      <li>③ エージェントが無いうちは ＋ を隠すか（推奨: 隠す。押しても何もできないため。パソコンの画面でもサイドバーの「新しい会話」は同じ扱いにする）</li>
+    </ul>
+  </div>
+</aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('main > section').forEach(function (s) { s.hidden = s.id !== b.dataset.s; });
+    });
+  });
+</script>
+</body>
+</html>

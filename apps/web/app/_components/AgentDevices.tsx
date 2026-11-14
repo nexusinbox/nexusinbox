@@ -37,6 +37,18 @@ import { useTranslation } from "../../lib/i18n";
 import { AddBrowserPanel } from "./AddBrowserPanel";
 import { STRONG } from "./AgentSetup";
 
+/** Where a message can be read instead: 「Safari (iPhone)」 (かパソコン). */
+export function elsewhereText(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  elsewhere: { browsers: AgentDevice[]; computer: boolean },
+): string {
+  // A browser without a name of its own is the one the agent was made in.
+  const names = elsewhere.browsers
+    .map((d) => (d.label ? t("inbox.deviceQuoted", { name: d.label }) : t("inbox.firstBrowser")))
+    .join(t("inbox.deviceJoin"));
+  return elsewhere.computer ? t("inbox.devicesOrComputer", { names }) : names;
+}
+
 export function deviceName(t: (key: string, vars?: Record<string, string | number>) => string, d: AgentDevice): string {
   if (d.kind === "browser") return d.label ?? t("agentStatus.deviceBrowser");
   if (d.kind === "computer") {

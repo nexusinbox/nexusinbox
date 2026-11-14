@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ReactNode, Suspense, useEffect, useState } from "react";
 import {
   useAgentDraftsQuery,
+  useAgentsQuery,
   useAuthSessionQuery,
   useMessagesQuery,
 } from "../../lib/api/hooks";
@@ -191,6 +192,9 @@ export function AppShell({
   });
 
   const inboxUnread = unreadQuery.data?.total ?? null;
+  // 「新しい会話」 needs an agent to send from: shown once there is one.
+  const agentsQuery = useAgentsQuery();
+  const canCompose = (agentsQuery.data?.agents.length ?? 0) > 0;
   // 確認が必要 covers held messages and AI drafts (docs/33 §9).
   const draftsQuery = useAgentDraftsQuery();
   const pendingCount =
@@ -309,9 +313,11 @@ export function AppShell({
             );
           })}
         </nav>
-        <Link href="/compose" className="x-compose">
-          {t("nav.newConversation")}
-        </Link>
+        {canCompose ? (
+          <Link href="/compose" className="x-compose">
+            {t("nav.newConversation")}
+          </Link>
+        ) : null}
         <div className="x-me">
           <Link
             className="x-avatar"
@@ -388,12 +394,14 @@ export function AppShell({
           );
         })}
       </nav>
-      <Link href="/compose" className="x-fab" aria-label={t("nav.newConversation")}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      </Link>
+      {canCompose ? (
+        <Link href="/compose" className="x-fab" aria-label={t("nav.newConversation")}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </Link>
+      ) : null}
     </div>
   );
 }

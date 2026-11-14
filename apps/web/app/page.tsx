@@ -37,7 +37,8 @@ import {
 } from "../lib/api/hooks";
 import type { Agent, MessageContentResponse } from "../lib/api/types";
 import { hasRecipientPrivateKey } from "../lib/crypto/recipient-keyring";
-import { localDeviceDid } from "../lib/agents/local-device";
+import { localDeviceDid, readableElsewhere } from "../lib/agents/local-device";
+import { elsewhereText } from "./_components/AgentDevices";
 import {
   groupConversations,
   previewSnippet,
@@ -292,12 +293,17 @@ function MessagesPageInner() {
 
   const agentsQuery = useAgentsQuery();
   const agentList = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
-  // Agents this browser was added to later (docs/40 §17.4), by their DID.
-  const [addedHere, setAddedHere] = useState<Set<string>>(new Set());
+  // This browser's device of each agent, by agent DID (docs/40 §17.4):
+  // added later when it is not the agent's first, none when not a device.
+  const [localHere, setLocalHere] = useState<Map<string, string | null>>(new Map());
+  const addedHere = useMemo(
+    () => new Set([...localHere].filter(([did, local]) => local && local !== did).map(([did]) => did)),
+    [localHere],
+  );
   useEffect(() => {
     let cancelled = false;
     void Promise.all(agentList.map(async (a) => [a.did, await localDeviceDid(a)] as const)).then((pairs) => {
-      if (!cancelled) setAddedHere(new Set(pairs.filter(([did, local]) => local && local !== did).map(([did]) => did)));
+      if (!cancelled) setLocalHere(new Map(pairs));
     });
     return () => {
       cancelled = true;
@@ -371,7 +377,13 @@ function MessagesPageInner() {
     else if (p.state === "readable") text = p.text || t("inbox.previewEmpty");
     else if (c.latest.mine) text = t("messages.previewMineLocked");
     else if (p.state === "no_key" && c.ownAgent && addedHere.has(c.ownAgent.did)) text = t("inbox.beforeAddedPreview");
-    else if (p.state === "no_key") text = t("inbox.unavailableOnThisDevicePreview");
+    else if (p.state === "no_key") {
+      // Name the devices that can read it, when a browser is among them.
+      const elsewhere = readableElsewhere(c.ownAgent, c.ownAgent ? (localHere.get(c.ownAgent.did) ?? null) : null);
+      text = elsewhere
+        ? t("inbox.readableElsewherePreview", { where: elsewhereText(t, elsewhere) })
+        : t("inbox.unavailableOnThisDevicePreview");
+    }
     else text = t("inbox.previewUnavailable");
     return c.latest.mine ? t("messages.you", { text }) : text;
   };

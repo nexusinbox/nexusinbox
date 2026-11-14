@@ -1081,6 +1081,11 @@ button, input, textarea, select {
   .x-shell:has(.dm-layout.mobile-detail) .x-fab {
     display: none;
   }
+  /* Room under the last row, so it can scroll clear of that button. */
+  .dm-list,
+  .x-shell:has(.x-fab) .page-content:not(:has(.dm-layout)) {
+    padding-bottom: 80px;
+  }
   /* An open conversation has its own header (back, name); the page
      header would only take room. */
   .x-shell:has(.dm-layout.mobile-detail) .x-head {

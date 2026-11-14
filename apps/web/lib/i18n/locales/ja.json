@@ -209,7 +209,13 @@
     "archiveEmpty": "アーカイブしたメッセージはありません。",
     "beforeAddedPreview": "このブラウザでは読めません（足す前に届いたため）",
     "beforeAddedTitle": "このブラウザでは本文を読めません",
-    "beforeAddedBody": "このメッセージは、このブラウザを足す前に届きました。届いたときに、このブラウザには鍵が渡っていないため読めません。前からあるブラウザで読めます。"
+    "beforeAddedBody": "このメッセージは、このブラウザを足す前に届きました。届いたときに、このブラウザには鍵が渡っていないため読めません。前からあるブラウザで読めます。",
+    "readableElsewherePreview": "このブラウザでは読めません。{where}で読めます",
+    "readableElsewhereBody": "このメッセージは、このブラウザには包まれていません。{where}で開くと読めます。",
+    "deviceQuoted": "「{name}」",
+    "deviceJoin": "、",
+    "devicesOrComputer": "{names}かパソコン",
+    "firstBrowser": "エージェントを作ったブラウザ"
   },
   "connectedAIs": {
     "title": "つながっている AI",
