@@ -39,6 +39,7 @@ mod pairing;
 mod policy_evaluator;
 mod relay_client;
 mod remote_mcp;
+mod request_state;
 
 // ---------------------------------------------------------------------------
 // CLI

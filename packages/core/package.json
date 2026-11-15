@@ -33,6 +33,10 @@
     "./confirmation": {
       "types": "./dist/confirmation.d.ts",
       "default": "./dist/confirmation.js"
+    },
+    "./request-state": {
+      "types": "./dist/request-state.d.ts",
+      "default": "./dist/request-state.js"
     }
   },
   "scripts": {

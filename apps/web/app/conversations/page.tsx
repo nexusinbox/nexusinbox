@@ -47,6 +47,8 @@ import {
 import { candidateDids, decryptMessageBody } from "../../lib/inbox/decrypt-message";
 import { useTwoColumnResize } from "../../lib/ui/useTwoColumnResize";
 import { CONVERSATIONS_PATH, conversationsHref } from "../../lib/url/conversations";
+import { conversationChips, type ConversationChips } from "../../lib/inbox/request-facts";
+import { useNow } from "../_components/AgentStatusCard";
 
 // Bounded concurrency for the preview decrypt below. Picked 4 by hand:
 // the bottleneck in practice is the X25519 keystore unwrap, which is
@@ -408,6 +410,29 @@ function MessagesPageInner() {
 
   const active = conversations.find((c) => c.key === activeKey) ?? null;
 
+  // Where each conversation's requests stand (docs/41 §7.3), worked out a
+  // few conversations at a time; a row says nothing until its messages
+  // are read and checked.
+  const [requestChips, setRequestChips] = useState<Record<string, ConversationChips | null>>({});
+  const chipsNow = useNow(60_000);
+  useEffect(() => {
+    let cancelled = false;
+    const queue = [...visible];
+    const worker = async () => {
+      while (!cancelled) {
+        const c = queue.shift();
+        if (!c) return;
+        const result = await conversationChips(c, agentList, queryClient, chipsNow).catch(() => null);
+        if (cancelled) return;
+        setRequestChips((prev) => ({ ...prev, [c.key]: result }));
+      }
+    };
+    void Promise.all(Array.from({ length: 3 }, worker));
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, agentList, queryClient, chipsNow]);
+
   // The `with` counterpart as a DID: as given, an own agent's AID, or
   // resolved on the server (an AID, to its current DID).
   const [withTarget, setWithTarget] = useState<
@@ -700,6 +725,25 @@ function MessagesPageInner() {
                         <span className="dm-time">{timeText(c.latest.entry.created_at)}</span>
                       </span>
                       <span className="dm-preview">{previewText(c)}</span>
+                      {requestChips[c.key]?.waiting || requestChips[c.key]?.inProgress || requestChips[c.key]?.unresolved ? (
+                        // The person's turn first, then how many others are under
+                        // way; what needs checking is never counted as under way.
+                        <span className="dm-tags" data-testid="dm-row-requests">
+                          {requestChips[c.key]?.waiting ? (
+                            <span className="dm-tag you">{t("requests.listWaiting")}</span>
+                          ) : null}
+                          {requestChips[c.key]?.inProgress ? (
+                            <span className="dm-tag">
+                              {requestChips[c.key]?.waiting
+                                ? t("requests.listOthers", { n: requestChips[c.key]?.inProgress ?? 0 })
+                                : t("requests.listInProgress", { n: requestChips[c.key]?.inProgress ?? 0 })}
+                            </span>
+                          ) : null}
+                          {requestChips[c.key]?.unresolved ? (
+                            <span className="dm-tag danger">{t("requests.listUnresolved")}</span>
+                          ) : null}
+                        </span>
+                      ) : null}
                       {protocolType || c.autoReplied || unknown || unverified ? (
                         <span className="dm-tags">
                           {unverified ? (

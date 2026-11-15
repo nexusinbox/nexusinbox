@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docs/41 段階 C: 会話の状態（案）</title>
+<style>
+  :root {
+    --page: #eef1f4; --bg: #fff; --alt: #f7f9f9; --line: #eff3f4; --line-strong: #cfd9de;
+    --text: #0f1419; --muted: #536471; --primary: #2f5bea; --soft: #e8eeff;
+    --danger: #d0193f; --danger-soft: #fdecef; --ok: #00875a; --ok-soft: #e6f4ea;
+    --warn: #9a5b00; --warn-soft: #fff6e5;
+  }
+  * { box-sizing: border-box; }
+  html:lang(ja) { word-break: auto-phrase; }
+  body { margin: 0; font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--text); background: var(--page); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 23px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .states { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .states button { font: inherit; font-size: 13px; font-weight: 700; border: 1px solid var(--line-strong); background: #fff; color: var(--text); border-radius: 999px; padding: 0 14px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .states button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+  .state-desc { background: #fff; border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  .state-desc b { margin-right: 6px; }
+  .frames { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  @media (max-width: 1000px) { .frames { grid-template-columns: 1fr; justify-items: center; } .frames > * { width: 100%; } .frames > .phone-col { width: 320px; } }
+  .cap { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 6px; }
+
+  .desk { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 620px; }
+  .list { border-right: 1px solid var(--line); }
+  .list-head { padding: 12px 14px; font-weight: 800; border-bottom: 1px solid var(--line); }
+  .crow { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 2px 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .crow.on { background: var(--soft); }
+  .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+  .crow .name { font-weight: 800; }
+  .crow .prev { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chips { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; }
+  .conv { display: flex; flex-direction: column; min-width: 0; }
+  .conv-head { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 800; display: flex; gap: 8px; align-items: center; }
+  .phone { width: 320px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; height: 680px; }
+  .phone .conv-head { padding: 12px 14px; }
+  .p-scroll { flex: 1; overflow-y: auto; }
+
+  /* Request status panel at the top of a conversation */
+  .reqs { border-bottom: 1px solid var(--line); background: var(--alt); padding: 10px 14px; display: grid; gap: 8px; }
+  .reqs-title { font-size: 12px; font-weight: 800; color: var(--muted); }
+  .req { background: #fff; border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
+  .req .t { font-weight: 800; }
+  .req .last { font-size: 13px; color: var(--muted); }
+  .req .next { font-size: 13px; }
+  .req .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .st { display: inline-block; font-size: 12px; font-weight: 800; border-radius: 6px; padding: 1px 8px; margin-right: 6px; vertical-align: 1px; white-space: nowrap; }
+  .st.you { background: var(--soft); color: var(--primary); }
+  .st.them { background: #eef0f3; color: #3d4652; }
+  .st.ai { background: #f1ecff; color: #5b3cc4; }
+  .st.done { background: var(--ok-soft); color: var(--ok); }
+  .st.stop { background: var(--warn-soft); color: var(--warn); }
+  .st.bad { background: var(--danger-soft); color: var(--danger); }
+  .st.plain { background: var(--alt); color: var(--muted); border: 1px solid var(--line-strong); }
+  .btn { font-size: 14px; font-weight: 800; border-radius: 999px; padding: 0 14px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--line-strong); background: #fff; color: var(--text); white-space: nowrap; }
+  .btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .phone .btn { min-height: 44px; }
+  .link { font-size: 13px; font-weight: 700; color: var(--primary); }
+  .more { font-size: 13px; font-weight: 700; color: var(--primary); }
+
+  .msgs { padding: 14px 16px; display: grid; gap: 10px; }
+  .phone .msgs { padding: 12px; }
+  .msg { max-width: 82%; display: grid; gap: 2px; }
+  .msg.mine { justify-self: end; }
+  .who { font-size: 12px; color: var(--muted); }
+  .msg.mine .who { text-align: right; }
+  .bub { border-radius: 14px; padding: 8px 12px; background: var(--alt); border: 1px solid var(--line); font-size: 14px; }
+  .msg.mine .bub { background: var(--soft); border-color: #d6e0ff; }
+  .bub .ptag { font-size: 11px; font-weight: 800; color: var(--muted); }
+  .bub.warn { background: var(--danger-soft); border-color: #f4c2cd; }
+  .bub.faded { opacity: .6; }
+  .origin { display: inline-block; font-size: 11px; font-weight: 700; color: #5b3cc4; background: #f1ecff; border-radius: 6px; padding: 0 6px; margin-left: 4px; }
+
+  .notes { margin-top: 24px; background: #fff; border-radius: 14px; padding: 14px 20px; font-size: 14px; }
+  .notes h2 { font-size: 17px; margin: 10px 0 4px; }
+  .notes li { margin: 4px 0; }
+  table.map { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+  table.map td, table.map th { border: 1px solid var(--line-strong); padding: 4px 8px; text-align: left; vertical-align: top; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>段階 C: 会話の状態（案）</h1>
+  <p class="lead">docs/41 §7・§13 段階 C の画面案。会話のいちばん上に、その会話の「依頼」ごとの状態と、次に動くのはだれかを出す。左はパソコン（会話一覧 + 会話）、右はスマホの会話画面（幅 320px）。</p>
+  <div class="states" id="states"></div>
+  <div class="state-desc" id="desc"></div>
+  <div class="frames">
+    <div><p class="cap">パソコン</p><div class="desk"><div class="list" id="list"></div><div class="conv" id="desk-conv"></div></div></div>
+    <div class="phone-col"><p class="cap">スマホ（320px）</p><div class="phone" id="phone"></div></div>
+  </div>
+
+  <div class="notes">
+    <h2>決めたいこと（考え方）</h2>
+    <ul>
+      <li>状態は会話全体ではなく<b>依頼ごと</b>（最初の依頼の protocol ID と、それに reply_to でつながる返事）に持つ。1 つの会話に依頼が複数あれば、判断待ちを先頭に並べる。</li>
+      <li>根拠にするのは、送り主を確かめられた（署名 v2・端末名簿）構造化メッセージだけ。確かめられないものは状態に含めず、その旨を出す。自由文だけの会話には状態を付けない（「会話中」とも出さない）。</li>
+      <li>「送れた」ことと「仕事が終わった」ことを分ける。日程の承諾は「候補に合意」で、予定表への登録とは書かない。タスクの引き受けは「引き受けた」で、完了は相手からの完了の連絡（complete）が来たときだけ。</li>
+      <li>次に動くのはだれかを 1 行で書く（あなた／相手／AI）。あなたの番のときだけ、操作ボタンを状態の欄に出す。</li>
+      <li>期限を過ぎた依頼は、古いボタンから返事できないようにする（押す時にも期限を確かめ直す）。</li>
+      <li>吹き出しの上に「あなたが送信」「AI が自動返信」「AI が作成し、あなたが送信」を出す。根拠はサーバの記録（自動返信の記録、下書きの送信記録）だけで、推測はしない。</li>
+    </ul>
+    <h2>状態の決め方</h2>
+    <table class="map">
+      <tr><th>依頼</th><th>最後の確かな出来事</th><th>状態</th><th>次に動く</th></tr>
+      <tr><td rowspan="6">日程調整</td><td>こちらが提案（propose）／別の候補（counter）を送った</td><td>相手の返事待ち</td><td>相手</td></tr>
+      <tr><td>相手から提案／別の候補が届いた</td><td>あなたの判断待ち（自動返信の対象なら「AI が対応中」）</td><td>あなた／AI</td></tr>
+      <tr><td>どちらかが承諾（accept）</td><td>合意（候補への合意。予定表は別）</td><td>—</td></tr>
+      <tr><td>どちらかが辞退（decline）</td><td>不成立</td><td>—</td></tr>
+      <tr><td>返事の期限を過ぎた</td><td>期限切れ</td><td>—</td></tr>
+      <tr><td>承諾と辞退が両方ある、違う候補に承諾、など</td><td>返事が食い違っている</td><td>あなた（履歴を確かめる）</td></tr>
+      <tr><td rowspan="4">タスク</td><td>依頼（delegate）を送った／届いた</td><td>相手の返事待ち／あなたの判断待ち</td><td>相手／あなた</td></tr>
+      <tr><td>引き受け（accept）</td><td>引き受け済み（完了の連絡待ち）</td><td>引き受けた側</td></tr>
+      <tr><td>完了の連絡（complete）</td><td>完了</td><td>—</td></tr>
+      <tr><td>辞退（decline）</td><td>不成立</td><td>—</td></tr>
+    </table>
+    <h2>決まったこと（2026-11-15）</h2>
+    <ul>
+      <li>AI ツール（<code>list_inbox</code>・<code>read_message</code>）にも同じ意味の状態を付ける。取得した情報だけで決められなければ「未確認」。1 通から会話全体を推測しない。根拠のメッセージ ID・確かめた時刻・履歴不足の有無も返す。</li>
+      <li>会話一覧は判断待ちを先にし、ほかの進行中の数も見えるようにする。送り主の確認失敗と履歴不足は「進行中」に混ぜない。</li>
+      <li>終わった依頼はたたみ、開いた中で「合意」「完了の連絡あり」「辞退」「期限切れ」を分ける。食い違い・履歴不足はたたまない。</li>
+      <li>「AI が対応中」は、その依頼のメッセージに処理を取った記録があり、未送信で、取った時刻から 3 分以内のときだけ。取り消された処理は対象外。3 分を過ぎたら「確認できません」（失敗とは言わない）。処理を取る記録には期限がないので、時刻は記録された取得時刻だけで判定する。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const ST = {
+  you: ["you", "あなたの判断待ち"], them: ["them", "相手の返事待ち"], ai: ["ai", "AI が対応中"],
+  done: ["done", "合意"], doneTask: ["done", "完了"], accepted: ["them", "引き受け済み"],
+  closed: ["plain", "不成立"], expired: ["stop", "期限切れ"], unknown: ["stop", "確認できません"],
+  conflict: ["bad", "返事が食い違っています"], unverified: ["bad", "送り主を確かめられません"],
+};
+const st = (k) => `<span class="st ${ST[k][0]}">${ST[k][1]}</span>`;
+
+function req(r) {
+  const acts = r.acts ? `<div class="acts">${r.acts.map((a, i) => `<span class="btn${i === 0 ? " pri" : ""}">${a}</span>`).join("")}</div>` : "";
+  return `<div class="req">
+    <div>${st(r.state)}<span class="t">${r.title}</span>
+      <div class="last">${r.last}</div>
+      ${r.next ? `<div class="next">${r.next}</div>` : ""}
+    </div>${acts}</div>`;
+}
+function reqs(list, folded) {
+  if (!list.length && !folded) return "";
+  const f = folded ? `<div class="more">▸ 終わった依頼 ${folded} 件</div>` : "";
+  return `<div class="reqs"><div class="reqs-title">この会話の依頼</div>${list.map(req).join("")}${f}</div>`;
+}
+function msg(m) {
+  const origin = m.origin ? `<span class="origin">${m.origin}</span>` : "";
+  return `<div class="msg${m.mine ? " mine" : ""}"><div class="who">${m.who}${origin} · ${m.at}</div>
+    <div class="bub${m.cls ? " " + m.cls : ""}">${m.tag ? `<div class="ptag">${m.tag}</div>` : ""}${m.text}</div></div>`;
+}
+
+const LIST = (active, override) => [
+  { id: "tanaka", name: "田中さん", color: "#2f5bea", prev: "木曜 14:00 と金曜 10:00 はいかがですか", chips: [st("you")] },
+  { id: "sato", name: "佐藤さん", color: "#00875a", prev: "資料の確認、引き受けました", chips: [`<span class="st them">進行中 2</span>`] },
+  { id: "suzuki", name: "鈴木さん", color: "#9a5b00", prev: "（読めません）", chips: [st("unverified")] },
+  { id: "yamamoto", name: "山本さん", color: "#5b3cc4", prev: "来週もよろしくお願いします", chips: [] },
+].map((c) => (override && c.id === active ? { ...c, chips: override } : c)).map((c) => `<div class="crow${c.id === active ? " on" : ""}"><span class="av" style="background:${c.color}">${c.name[0]}</span>
+  <div><span class="name">${c.name}</span><div class="prev">${c.prev}</div></div>
+  ${c.chips.length ? `<div class="chips">${c.chips.join("")}</div>` : ""}</div>`).join("");
+
+const SCREENS = [
+  {
+    id: "waiting-them", label: "相手の返事待ち", list: "tanaka", who: "田中さん",
+    desc: "こちらの AI が候補を送った。送れたことは完了ではないので「相手の返事待ち」。次に動くのは相手。",
+    reqs: [{ state: "them", title: "打ち合わせの日程", last: "木曜 14:00・金曜 10:00 を提案しました（11/16 10:24）", next: "次は田中さんの返事です。期限: 11/18 18:00" }],
+    msgs: [
+      { mine: true, who: "秘書", origin: "AI が自動返信", at: "10:24", tag: "日程の提案", text: "来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか。" },
+    ],
+  },
+  {
+    id: "waiting-you", label: "あなたの判断待ち", list: "tanaka", who: "田中さん",
+    desc: "相手から候補が届き、自動返信の対象外（または合う候補がない）。あなたの番なので、操作ボタンを状態の欄に出す。",
+    reqs: [{ state: "you", title: "打ち合わせの日程", last: "田中さんから候補が届きました（11/16 10:24）", next: "合う候補を選ぶか、別の候補を出してください。期限: 11/18 18:00", acts: ["候補を選ぶ", "別の候補を出す", "辞退"] }],
+    msgs: [
+      { who: "田中さんの秘書", at: "10:24", tag: "日程の提案", text: "来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか。" },
+    ],
+  },
+  {
+    id: "ai", label: "AI が対応中", list: "tanaka", who: "田中さん",
+    desc: "自動返信の対象で、パソコンが処理を取った記録が 3 分以内にある。返事を送るまでは「AI が対応中」。",
+    reqs: [{ state: "ai", title: "打ち合わせの日程", last: "田中さんから候補が届きました（11/16 10:24）", next: "パソコンの AI が返事を用意しています（設定: コンタクトからの日程調整に自動で返事）" }],
+    msgs: [
+      { who: "田中さんの秘書", at: "10:24", tag: "日程の提案", text: "来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか。" },
+    ],
+  },
+  {
+    id: "counter", label: "別の候補が届いた", list: "tanaka", who: "田中さん",
+    desc: "こちらの提案に、相手が別の候補（counter）を返した。経緯が分かるよう、最後の出来事に「別の候補」と書く。",
+    reqs: [{ state: "you", title: "打ち合わせの日程", last: "田中さんが別の候補を出しました: 月曜 11:00（11/16 13:02）", next: "この候補でよければ選んでください。", acts: ["月曜 11:00 にする", "別の候補を出す", "辞退"] }],
+    msgs: [
+      { mine: true, who: "秘書", origin: "AI が自動返信", at: "10:24", tag: "日程の提案", text: "木曜 14:00 か金曜 10:00 はいかがですか。" },
+      { who: "田中さんの秘書", at: "13:02", tag: "別の候補", text: "その日は難しいので、月曜 11:00 はどうでしょう。" },
+    ],
+  },
+  {
+    id: "agreed", label: "合意", list: "tanaka", who: "田中さん",
+    desc: "どちらかが承諾した。候補への合意であり、予定表への登録とは書かない。終わった依頼は 1 行にたたむ。",
+    reqs: [{ state: "done", title: "打ち合わせの日程", last: "月曜 11:00 に合意しました（11/16 13:10）", next: "予定表には登録していません。必要なら、ご自分の予定表に入れてください。" }],
+    msgs: [
+      { who: "田中さんの秘書", at: "13:02", tag: "別の候補", text: "月曜 11:00 はどうでしょう。" },
+      { mine: true, who: "あなた", at: "13:10", tag: "承諾", text: "月曜 11:00 でお願いします。" },
+    ],
+  },
+  {
+    id: "task", label: "タスク: 引き受け → 完了", list: "sato", who: "佐藤さん",
+    desc: "タスクは「引き受けた」と「完了」を分ける。完了は相手からの完了の連絡（complete）が来たときだけ。本文だけから完了と決めない。",
+    reqs: [
+      { state: "accepted", title: "資料の確認", last: "佐藤さんが引き受けました（11/15 18:20）", next: "次は佐藤さんからの完了の連絡です。期日: 11/20" },
+      { state: "doneTask", title: "議事録のまとめ", last: "完了の連絡がありました: 共有フォルダに置きました（11/14 09:00）", next: "" },
+    ],
+    msgs: [
+      { mine: true, who: "秘書", origin: "AI が作成し、あなたが送信", at: "11/15 18:00", tag: "タスクの依頼", text: "資料の確認をお願いできますか。期日は 11/20 です。" },
+      { who: "佐藤さんの秘書", at: "11/15 18:20", tag: "引き受け", text: "引き受けました。" },
+    ],
+  },
+  {
+    id: "multi", label: "複数の依頼", list: "sato", who: "佐藤さん",
+    desc: "1 つの会話に依頼が 4 つ。判断待ちを先頭にし、終わったものはたたむ。会話一覧には「あなたの判断待ち」と、ほかの進行中の数を出す。",
+    folded: 2,
+    listChips: [st("you"), `<span class="st them">ほかに進行中 1</span>`],
+    reqs: [
+      { state: "you", title: "来月の定例の日程", last: "佐藤さんから候補が届きました（11/16 09:40）", next: "合う候補を選んでください。", acts: ["候補を選ぶ", "別の候補を出す", "辞退"] },
+      { state: "accepted", title: "資料の確認", last: "佐藤さんが引き受けました（11/15 18:20）", next: "次は佐藤さんからの完了の連絡です。" },
+    ],
+    msgs: [
+      { who: "佐藤さんの秘書", at: "09:40", tag: "日程の提案", text: "来月の定例、12/3 10:00 か 12/4 15:00 はいかがですか。" },
+    ],
+  },
+  {
+    id: "expired", label: "期限切れ", list: "tanaka", who: "田中さん",
+    desc: "返事の期限を過ぎた。古いボタンは出さず、押した時にも期限を確かめ直す。",
+    reqs: [{ state: "expired", title: "打ち合わせの日程", last: "返事の期限（11/14 18:00）を過ぎました", next: "この依頼にはもう返事できません。必要なら、新しく日程を相談してください。", acts: ["新しく日程を相談する"] }],
+    msgs: [
+      { who: "田中さんの秘書", at: "11/12", tag: "日程の提案", text: "木曜 14:00 か金曜 10:00 はいかがですか。（期限 11/14 18:00）", cls: "faded" },
+    ],
+  },
+  {
+    id: "unverified", label: "送り主を確かめられない", list: "suzuki", who: "鈴木さん",
+    desc: "署名が前に確かめた相手のものと合わない。このメッセージは状態に含めず、理由を出す。",
+    reqs: [{ state: "unverified", title: "日程の依頼（確かめられない）", last: "この依頼は送り主を確かめられないため、状態に含めていません", next: "心当たりがなければ、返事をせずに相手の端末を確かめてください。", acts: ["理由を確認"] }],
+    msgs: [
+      { who: "鈴木さん（確かめられません）", at: "08:12", tag: "日程の提案", text: "急ぎで今日 15:00 に打ち合わせを。", cls: "warn" },
+    ],
+  },
+  {
+    id: "conflict", label: "返事が食い違う", list: "tanaka", who: "田中さん",
+    desc: "同じ依頼に承諾と辞退が両方届いた（または違う候補に承諾）。自動で完了にせず、履歴を確かめてもらう。",
+    reqs: [{ state: "conflict", title: "打ち合わせの日程", last: "承諾（月曜 11:00）と辞退の両方が届いています", next: "どちらが正しいか、田中さんに確かめてください。自動では決めません。", acts: ["履歴を見る", "メッセージで確かめる"] }],
+    msgs: [
+      { who: "田中さんの秘書", at: "13:10", tag: "承諾", text: "月曜 11:00 でお願いします。" },
+      { who: "田中さんの秘書", at: "13:12", tag: "辞退", text: "申し訳ありません、今回は見送ります。" },
+    ],
+  },
+  {
+    id: "missing", label: "元の依頼が見つからない", list: "tanaka", who: "田中さん",
+    desc: "返事はあるが、元の依頼が 90 日で消えた（または別の端末にしかない）。状態は推測せず、この返事だけを出す。",
+    reqs: [{ state: "unknown", title: "日程の依頼（元の依頼なし）", last: "元の依頼が見つかりません（90 日で消えたか、この端末にありません）", next: "この返事だけを表示しています。" }],
+    msgs: [
+      { who: "田中さんの秘書", at: "11/16", tag: "承諾", text: "その日程でお願いします。" },
+    ],
+  },
+  {
+    id: "plain", label: "自由文だけ", list: "yamamoto", who: "山本さん",
+    desc: "構造化された依頼がない会話。状態の欄は出さず、無理に推定しない。",
+    reqs: [],
+    msgs: [
+      { who: "山本さんの秘書", at: "11/15", text: "先日はありがとうございました。来週もよろしくお願いします。" },
+      { mine: true, who: "あなた", at: "11/15", text: "こちらこそ、よろしくお願いします。" },
+    ],
+  },
+];
+
+function conv(s) {
+  return `<div class="conv-head">← ${s.who}</div>${reqs(s.reqs, s.folded)}<div class="msgs">${s.msgs.map(msg).join("")}</div>`;
+}
+function render(id) {
+  const s = SCREENS.find((x) => x.id === id);
+  document.querySelectorAll("#states button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+  document.getElementById("desc").innerHTML = `<b>${s.label}</b>${s.desc}`;
+  document.getElementById("list").innerHTML = `<div class="list-head">会話</div>${LIST(s.list, s.listChips)}`;
+  document.getElementById("desk-conv").innerHTML = conv(s);
+  document.getElementById("phone").innerHTML = `<div class="p-scroll">${conv(s)}</div>`;
+}
+document.getElementById("states").innerHTML = SCREENS.map((s) => `<button type="button" data-id="${s.id}">${s.label}</button>`).join("");
+document.getElementById("states").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) render(b.dataset.id); });
+render("waiting-you");
+</script>
+</body>
+</html>

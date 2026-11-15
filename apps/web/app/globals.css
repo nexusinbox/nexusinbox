@@ -5225,3 +5225,118 @@ details[open] .help-accordion-chevron {
     text-align: left;
   }
 }
+
+/* この会話の依頼 (docs/41 §7.3, mock docs/41_stage_c_conversation_mock.html) */
+.req-panel {
+  flex: none;
+  display: grid;
+  gap: 8px;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+.req-panel-title {
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--text-muted);
+}
+.req-note {
+  font-size: var(--fs-xs);
+  color: var(--warn);
+}
+.req-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--bg);
+  word-break: auto-phrase;
+}
+.req-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.req-tag.you {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+}
+.req-tag.them,
+.req-tag.plain {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  border: 1px solid var(--line-strong);
+}
+.req-tag.ai {
+  background: var(--primary-soft);
+  color: var(--text);
+}
+.req-tag.done {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.req-tag.stop {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.req-tag.bad {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.req-title {
+  font-weight: 800;
+}
+.req-last,
+.req-next {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.req-next {
+  color: var(--text);
+}
+.req-open {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.req-folded {
+  justify-self: start;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (max-width: 980px) {
+  .req-open {
+    min-height: 44px;
+  }
+}
+.dm-tag.you {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-weight: 700;
+}

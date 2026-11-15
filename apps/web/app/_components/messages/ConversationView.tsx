@@ -70,6 +70,9 @@ import { formatThreadExport, threadExportFileName } from "../../../lib/inbox/thr
 import { useTranslation, type Locale } from "../../../lib/i18n";
 import { localDeviceDid, readableElsewhere } from "../../../lib/agents/local-device";
 import { elsewhereText } from "../AgentDevices";
+import { conversationRequests, type RequestMessage, type RequestSummary } from "@nexusinbox/core/request-state";
+import { RequestPanel } from "./RequestPanel";
+import { useNow } from "../AgentStatusCard";
 
 // Same bound as the list's preview decrypt: the X25519 unwrap hits
 // IndexedDB, so more in parallel only adds in-flight fetches.
@@ -313,6 +316,67 @@ export function ConversationView({
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages.length, rendered]);
 
+  // Where each request in this conversation stands (docs/41 §7.3), from the
+  // messages this browser has read and checked. Not yet read, unreadable or
+  // not yet checked ones make it "not fully confirmed".
+  const now = useNow(15_000);
+  const requestFacts = useMemo(() => {
+    const facts: RequestMessage[] = [];
+    let incomplete = false;
+    for (const m of messages) {
+      const r = rendered[m.entry.id];
+      if (!r || r.state === "loading" || r.state !== "readable" || (!m.mine && r.sender === "unchecked")) {
+        incomplete = true;
+        continue;
+      }
+      const p = r.protocol;
+      facts.push({
+        id: m.entry.id,
+        at: m.entry.created_at,
+        mine: m.mine,
+        verified: m.mine || r.sender === "verified",
+        protocol: p
+          ? {
+              id: p.id,
+              type: p.type,
+              action: p.action,
+              reply_to: p.reply_to,
+              payload: p.payload as NonNullable<RequestMessage["protocol"]>["payload"],
+            }
+          : null,
+        auto_reply: m.mine
+          ? null
+          : { claimed_at: m.entry.auto_reply_claimed_at ?? null, sent_at: m.entry.auto_reply_sent_at ?? null },
+      });
+    }
+    return { facts: conversationRequests(facts, new Date(now).toISOString()), incomplete };
+  }, [messages, rendered, now]);
+  // A request's title, from its first message's payload.
+  const requestTitle = (request: RequestSummary): string | null => {
+    for (const m of messages) {
+      const p = rendered[m.entry.id]?.protocol;
+      if (p?.id !== request.request_id) continue;
+      const payload = p.payload as { event_title?: unknown; title?: unknown };
+      const title = typeof payload.event_title === "string" ? payload.event_title : payload.title;
+      return typeof title === "string" && title.trim() ? title : null;
+    }
+    return null;
+  };
+  const openMessage = (messageId: string) => {
+    document.getElementById(`dm-item-${messageId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+  // Messages an AI drafted and the person sent (agent_draft_sent), by id.
+  const draftSends = useAuditLogQuery({ event: "agent_draft_sent", limit: 100 }, { refetchInterval: 60_000 });
+  const fromDraftIds = useMemo(
+    () =>
+      new Set(
+        (draftSends.data?.events ?? [])
+          .map((e) => e.detail?.message_id)
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    [draftSends.data],
+  );
+
   // My replies the auto-reply sent, by their message id.
   const autoReplyIds = useMemo(
     () =>
@@ -514,6 +578,14 @@ export function ConversationView({
         </div>
       </header>
 
+      {/* The requests in this conversation and where they stand (docs/41 §7.3). */}
+      <RequestPanel
+        facts={requestFacts.facts}
+        incomplete={requestFacts.incomplete}
+        name={name}
+        titleOf={requestTitle}
+        onOpen={openMessage}
+      />
       <div
         className="dm-thread"
         ref={threadRef}
@@ -625,7 +697,7 @@ export function ConversationView({
           }
 
           return (
-            <div key={entry.id} className="dm-item">
+            <div key={entry.id} className="dm-item" id={`dm-item-${entry.id}`}>
               {showDay ? <div className="dm-sys">{day}</div> : null}
               <div className={"dm-msg" + (mine ? " mine" : "")} data-testid="dm-message">
                 {mine ? null : <Avatar did={conversation.counterpartDid} name={name} small />}
@@ -647,6 +719,7 @@ export function ConversationView({
                   ) : null}
                   <div className="dm-meta">
                     {isAutoReply ? `${t("messages.autoReplyMark")} · ` : ""}
+                    {mine && !isAutoReply && fromDraftIds.has(entry.id) ? `${t("requests.originDraft")} · ` : ""}
                     {time}
                     {!mine && receivedNoList(r.sender) ? (
                       <span className="dm-oldformat" data-testid="sender-no-list">

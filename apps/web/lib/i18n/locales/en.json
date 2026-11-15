@@ -138,7 +138,7 @@
     "chipAuto": "AI auto-replies"
   },
   "inbox": {
-    "title": "Messages",
+    "title": "Conversations",
     "subtitle": "Check your latest messages",
     "emptyMessage": "No new messages.",
     "welcomeTitle": "Welcome to NexusInbox",
@@ -1908,6 +1908,378 @@
       "stopped": "Automatic replies are stopped from now on. What was already sent cannot be taken back.",
       "resumed": "Automatic replies resumed.",
       "switchFailed": "Could not switch. Please try again."
+    }
+  },
+  "requests": {
+    "title": "Requests in this conversation",
+    "deadline": "Deadline: {deadline}",
+    "incomplete": "Some messages could not be read yet, so these states are not fully confirmed.",
+    "openRequest": "See the request",
+    "openHistory": "See the history",
+    "untitledTask": "Task request",
+    "untitledSchedule": "Scheduling",
+    "unverifiedTitle": "{n} request(s) that could not be checked",
+    "unverifiedBody": "Their sender could not be verified, so they are left out.",
+    "finished": "Finished requests: {n}",
+    "listWaiting": "Waiting for you",
+    "listOthers": "{n} more in progress",
+    "listInProgress": "{n} in progress",
+    "listUnresolved": "Needs checking",
+    "originDraft": "Written by AI, sent by you",
+    "state": {
+      "waiting_for_you": "Waiting for you",
+      "waiting_for_them": "Waiting for them",
+      "ai_started": "AI started",
+      "ai_unknown": "Status unknown since",
+      "ai_replied": "AI replied",
+      "accepted": "Taken on",
+      "agreed": "Agreed",
+      "completed": "Reported done",
+      "declined": "Declined",
+      "expired": "Expired",
+      "conflict": "Replies contradict",
+      "missing_original": "Original request missing",
+      "unverified": "Sender not verified"
+    },
+    "last": {
+      "waiting_for_you": {
+        "mine": {
+          "schedule": "{name} sent times to choose from ({at})",
+          "task": "{name} asked you to take on a task ({at})"
+        },
+        "theirs": {
+          "schedule": "{name} sent times to choose from ({at})",
+          "task": "{name} asked you to take on a task ({at})"
+        }
+      },
+      "waiting_for_them": {
+        "mine": {
+          "schedule": "You sent times to choose from ({at})",
+          "task": "You asked them to take on a task ({at})"
+        },
+        "theirs": {
+          "schedule": "You sent times to choose from ({at})",
+          "task": "You asked them to take on a task ({at})"
+        }
+      },
+      "ai_started": {
+        "mine": {
+          "schedule": "The AI started handling it at {started}",
+          "task": "The AI started handling it at {started}"
+        },
+        "theirs": {
+          "schedule": "The AI started handling it at {started}",
+          "task": "The AI started handling it at {started}"
+        }
+      },
+      "ai_unknown": {
+        "mine": {
+          "schedule": "The AI started handling it at {started}; what happened since is not known",
+          "task": "The AI started handling it at {started}; what happened since is not known"
+        },
+        "theirs": {
+          "schedule": "The AI started handling it at {started}; what happened since is not known",
+          "task": "The AI started handling it at {started}; what happened since is not known"
+        }
+      },
+      "ai_replied": {
+        "mine": {
+          "schedule": "The AI sent a reply",
+          "task": "The AI sent a reply"
+        },
+        "theirs": {
+          "schedule": "The AI sent a reply",
+          "task": "The AI sent a reply"
+        }
+      },
+      "accepted": {
+        "mine": {
+          "schedule": "You took it on ({at})",
+          "task": "You took it on ({at})"
+        },
+        "theirs": {
+          "schedule": "{name} took it on ({at})",
+          "task": "{name} took it on ({at})"
+        }
+      },
+      "agreed": {
+        "mine": {
+          "schedule": "Agreed on {start} ({at})",
+          "task": "Agreed ({at})"
+        },
+        "theirs": {
+          "schedule": "Agreed on {start} ({at})",
+          "task": "Agreed ({at})"
+        }
+      },
+      "completed": {
+        "mine": {
+          "schedule": "You reported it done ({at})",
+          "task": "You reported it done ({at})"
+        },
+        "theirs": {
+          "schedule": "Reported done ({at}): {result}",
+          "task": "Reported done ({at}): {result}"
+        }
+      },
+      "declined": {
+        "mine": {
+          "schedule": "You declined ({at})",
+          "task": "You declined ({at})"
+        },
+        "theirs": {
+          "schedule": "{name} declined ({at})",
+          "task": "{name} declined ({at})"
+        }
+      },
+      "expired": {
+        "mine": {
+          "schedule": "The reply deadline ({deadline}) passed",
+          "task": "The reply deadline ({deadline}) passed"
+        },
+        "theirs": {
+          "schedule": "The reply deadline ({deadline}) passed",
+          "task": "The reply deadline ({deadline}) passed"
+        }
+      },
+      "conflict": {
+        "mine": {
+          "schedule": "Replies that cannot both be true arrived (such as accept and decline)",
+          "task": "Replies that cannot both be true arrived (such as taking it on and declining)"
+        },
+        "theirs": {
+          "schedule": "Replies that cannot both be true arrived (such as accept and decline)",
+          "task": "Replies that cannot both be true arrived (such as taking it on and declining)"
+        }
+      },
+      "missing_original": {
+        "mine": {
+          "schedule": "The original request is not in this conversation (it may be older than 90 days, or on another device)",
+          "task": "The original request is not in this conversation (it may be older than 90 days, or on another device)"
+        },
+        "theirs": {
+          "schedule": "The original request is not in this conversation (it may be older than 90 days, or on another device)",
+          "task": "The original request is not in this conversation (it may be older than 90 days, or on another device)"
+        }
+      }
+    },
+    "next": {
+      "waiting_for_you": {
+        "you": {
+          "schedule": "Choose a time that works, or offer others.",
+          "task": "Decide whether to take it on."
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "waiting_for_them": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "Next is {name}'s reply.",
+          "task": "Next is {name}'s reply."
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_started": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "Whether it is still running cannot be told from here.",
+          "task": "Whether it is still running cannot be told from here."
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_unknown": {
+        "you": {
+          "schedule": "Do not send it again: check the conversation and the sent messages.",
+          "task": "Do not send it again: check the conversation and the sent messages."
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_replied": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "Its content is in the conversation.",
+          "task": "Its content is in the conversation."
+        }
+      },
+      "accepted": {
+        "you": {
+          "schedule": "Report it done when it is.",
+          "task": "Report it done when it is."
+        },
+        "them": {
+          "schedule": "Next is {name}'s report that it is done.",
+          "task": "Next is {name}'s report that it is done."
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "agreed": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "It was not put in any calendar.",
+          "task": ""
+        }
+      },
+      "completed": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "declined": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "expired": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "This request can no longer be answered.",
+          "task": "This request can no longer be answered."
+        }
+      },
+      "conflict": {
+        "you": {
+          "schedule": "Nothing is decided automatically. Check the history.",
+          "task": "Nothing is decided automatically. Check the history."
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "missing_original": {
+        "you": {
+          "schedule": "Only this reply is shown.",
+          "task": "Only this reply is shown."
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      }
     }
   }
 }

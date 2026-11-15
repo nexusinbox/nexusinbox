@@ -138,7 +138,7 @@
     "chipAuto": "AI の自動返信"
   },
   "inbox": {
-    "title": "メッセージ",
+    "title": "会話",
     "subtitle": "最新のメッセージを確認",
     "emptyMessage": "新しいメッセージはありません。",
     "welcomeTitle": "NexusInbox へようこそ",
@@ -1908,6 +1908,378 @@
       "stopped": "これからの自動返信を停止しました。送信済みの内容は取り消せません。",
       "resumed": "自動返信を再開しました。",
       "switchFailed": "切り替えられませんでした。もう一度お試しください。"
+    }
+  },
+  "requests": {
+    "title": "この会話の依頼",
+    "deadline": "期限: {deadline}",
+    "incomplete": "読めていないメッセージがあるため、状態を確かめきれていません。",
+    "openRequest": "依頼を見る",
+    "openHistory": "履歴を見る",
+    "untitledTask": "タスクの依頼",
+    "untitledSchedule": "日程調整",
+    "unverifiedTitle": "確かめられない依頼 {n} 件",
+    "unverifiedBody": "送り主を確かめられないため、状態に含めていません。",
+    "finished": "終わった依頼 {n} 件",
+    "listWaiting": "あなたの判断待ち",
+    "listOthers": "ほかに進行中 {n}",
+    "listInProgress": "進行中 {n}",
+    "listUnresolved": "確かめが必要な依頼",
+    "originDraft": "AI が作成し、あなたが送信",
+    "state": {
+      "waiting_for_you": "あなたの判断待ち",
+      "waiting_for_them": "相手の返事待ち",
+      "ai_started": "AI が対応を開始",
+      "ai_unknown": "その後の状況を確認できません",
+      "ai_replied": "AI が返事を送りました",
+      "accepted": "引き受け済み",
+      "agreed": "合意",
+      "completed": "完了の連絡あり",
+      "declined": "辞退",
+      "expired": "期限切れ",
+      "conflict": "返事が食い違っています",
+      "missing_original": "元の依頼が見つかりません",
+      "unverified": "送り主を確かめられません"
+    },
+    "last": {
+      "waiting_for_you": {
+        "mine": {
+          "schedule": "{name}から日程の候補が届きました（{at}）",
+          "task": "{name}からタスクの依頼が届きました（{at}）"
+        },
+        "theirs": {
+          "schedule": "{name}から日程の候補が届きました（{at}）",
+          "task": "{name}からタスクの依頼が届きました（{at}）"
+        }
+      },
+      "waiting_for_them": {
+        "mine": {
+          "schedule": "日程の候補を送りました（{at}）",
+          "task": "タスクを依頼しました（{at}）"
+        },
+        "theirs": {
+          "schedule": "日程の候補を送りました（{at}）",
+          "task": "タスクを依頼しました（{at}）"
+        }
+      },
+      "ai_started": {
+        "mine": {
+          "schedule": "{started} に AI が対応を開始しました",
+          "task": "{started} に AI が対応を開始しました"
+        },
+        "theirs": {
+          "schedule": "{started} に AI が対応を開始しました",
+          "task": "{started} に AI が対応を開始しました"
+        }
+      },
+      "ai_unknown": {
+        "mine": {
+          "schedule": "{started} に AI が対応を開始しましたが、その後の状況を確認できません",
+          "task": "{started} に AI が対応を開始しましたが、その後の状況を確認できません"
+        },
+        "theirs": {
+          "schedule": "{started} に AI が対応を開始しましたが、その後の状況を確認できません",
+          "task": "{started} に AI が対応を開始しましたが、その後の状況を確認できません"
+        }
+      },
+      "ai_replied": {
+        "mine": {
+          "schedule": "AI が返事を送りました",
+          "task": "AI が返事を送りました"
+        },
+        "theirs": {
+          "schedule": "AI が返事を送りました",
+          "task": "AI が返事を送りました"
+        }
+      },
+      "accepted": {
+        "mine": {
+          "schedule": "あなたが引き受けました（{at}）",
+          "task": "あなたが引き受けました（{at}）"
+        },
+        "theirs": {
+          "schedule": "{name}が引き受けました（{at}）",
+          "task": "{name}が引き受けました（{at}）"
+        }
+      },
+      "agreed": {
+        "mine": {
+          "schedule": "{start} の候補に合意しました（{at}）",
+          "task": "合意しました（{at}）"
+        },
+        "theirs": {
+          "schedule": "{start} の候補に合意しました（{at}）",
+          "task": "合意しました（{at}）"
+        }
+      },
+      "completed": {
+        "mine": {
+          "schedule": "完了を連絡しました（{at}）",
+          "task": "完了を連絡しました（{at}）"
+        },
+        "theirs": {
+          "schedule": "完了の連絡がありました（{at}）: {result}",
+          "task": "完了の連絡がありました（{at}）: {result}"
+        }
+      },
+      "declined": {
+        "mine": {
+          "schedule": "あなたが辞退しました（{at}）",
+          "task": "あなたが辞退しました（{at}）"
+        },
+        "theirs": {
+          "schedule": "{name}が辞退しました（{at}）",
+          "task": "{name}が辞退しました（{at}）"
+        }
+      },
+      "expired": {
+        "mine": {
+          "schedule": "返事の期限（{deadline}）を過ぎました",
+          "task": "返事の期限（{deadline}）を過ぎました"
+        },
+        "theirs": {
+          "schedule": "返事の期限（{deadline}）を過ぎました",
+          "task": "返事の期限（{deadline}）を過ぎました"
+        }
+      },
+      "conflict": {
+        "mine": {
+          "schedule": "承諾と辞退など、両立しない返事が届いています",
+          "task": "引き受けと辞退など、両立しない返事が届いています"
+        },
+        "theirs": {
+          "schedule": "承諾と辞退など、両立しない返事が届いています",
+          "task": "引き受けと辞退など、両立しない返事が届いています"
+        }
+      },
+      "missing_original": {
+        "mine": {
+          "schedule": "元の依頼がこの会話にありません（90 日で消えたか、別の端末にあります）",
+          "task": "元の依頼がこの会話にありません（90 日で消えたか、別の端末にあります）"
+        },
+        "theirs": {
+          "schedule": "元の依頼がこの会話にありません（90 日で消えたか、別の端末にあります）",
+          "task": "元の依頼がこの会話にありません（90 日で消えたか、別の端末にあります）"
+        }
+      }
+    },
+    "next": {
+      "waiting_for_you": {
+        "you": {
+          "schedule": "合う候補を選ぶか、別の候補を出してください。",
+          "task": "引き受けるかどうか決めてください。"
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "waiting_for_them": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "次は{name}の返事です。",
+          "task": "次は{name}の返事です。"
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_started": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "続いているかどうかは、ここからは分かりません。",
+          "task": "続いているかどうかは、ここからは分かりません。"
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_unknown": {
+        "you": {
+          "schedule": "もう一度送らずに、会話と送信済みのメッセージを確かめてください。",
+          "task": "もう一度送らずに、会話と送信済みのメッセージを確かめてください。"
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "ai_replied": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "内容は会話で確かめられます。",
+          "task": "内容は会話で確かめられます。"
+        }
+      },
+      "accepted": {
+        "you": {
+          "schedule": "終わったら、完了を連絡してください。",
+          "task": "終わったら、完了を連絡してください。"
+        },
+        "them": {
+          "schedule": "次は{name}からの完了の連絡です。",
+          "task": "次は{name}からの完了の連絡です。"
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "agreed": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "予定表には登録していません。",
+          "task": ""
+        }
+      },
+      "completed": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "declined": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "expired": {
+        "you": {
+          "schedule": "",
+          "task": ""
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "この依頼にはもう返事できません。",
+          "task": "この依頼にはもう返事できません。"
+        }
+      },
+      "conflict": {
+        "you": {
+          "schedule": "自動では決めません。履歴を確かめてください。",
+          "task": "自動では決めません。履歴を確かめてください。"
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      },
+      "missing_original": {
+        "you": {
+          "schedule": "この返事だけを表示しています。",
+          "task": "この返事だけを表示しています。"
+        },
+        "them": {
+          "schedule": "",
+          "task": ""
+        },
+        "ai": {
+          "schedule": "",
+          "task": ""
+        },
+        "none": {
+          "schedule": "",
+          "task": ""
+        }
+      }
     }
   }
 }
