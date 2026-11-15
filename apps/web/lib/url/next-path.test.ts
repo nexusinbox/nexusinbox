@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitiseNextPath, withPairingHash } from "./next-path";
+import { isReauth, reauthLoginPath, sanitiseNextPath, withPairingHash } from "./next-path";
 
 describe("sanitiseNextPath", () => {
   it("accepts a simple site-relative path", () => {
@@ -74,5 +74,14 @@ describe("withPairingHash (docs/40 §17.4)", () => {
     expect(withPairingHash("/pair", "")).toBe("/pair");
     expect(withPairingHash("/pair", "#a b")).toBe("/pair");
     expect(withPairingHash("/pair", "#a/../x")).toBe("/pair");
+  });
+});
+
+describe("reauthLoginPath", () => {
+  it("asks for a fresh World ID check that sign-in does not skip", () => {
+    const path = reauthLoginPath("/settings/agents?addBrowser=1");
+    expect(path).toBe("/login?next=%2Fsettings%2Fagents%3FaddBrowser%3D1&reauth=1");
+    expect(isReauth(path.slice(path.indexOf("?")))).toBe(true);
+    expect(isReauth("?next=%2F")).toBe(false);
   });
 });

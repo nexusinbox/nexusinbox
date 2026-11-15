@@ -9,6 +9,7 @@ import {
 } from "../../../lib/api/hooks";
 import { ApiError } from "../../../lib/api/client";
 import { useTranslation } from "../../../lib/i18n";
+import { reauthLoginPath } from "../../../lib/url/next-path";
 
 function formatDate(iso: string | undefined): string {
   if (!iso) return "\u2014";
@@ -257,7 +258,7 @@ export function ProfilePanel() {
             {deleteError === "reauth" && (
               <span className="badge" role="alert">
                 {t("profile.deleteReauth")}{" "}
-                <a href="/login?next=/settings/profile">{t("profile.deleteReauthLink")}</a>
+                <a href={reauthLoginPath("/settings/profile")}>{t("profile.deleteReauthLink")}</a>
               </span>
             )}
             {deleteError === "failed" && (

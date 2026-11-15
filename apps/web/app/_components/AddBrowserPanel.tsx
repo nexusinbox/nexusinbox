@@ -17,6 +17,7 @@ import {
 } from "../../lib/agents/browser-pairing";
 import { defaultApiClient } from "../../lib/api/client";
 import { useTranslation } from "../../lib/i18n";
+import { reauthLoginPath } from "../../lib/url/next-path";
 
 type Step =
   | { kind: "reauth" }
@@ -94,7 +95,7 @@ export function AddBrowserPanel({ onClose, onDone }: { onClose: () => void; onDo
           <button
             type="button"
             className="btn primary"
-            onClick={() => window.location.assign(`/login?next=${encodeURIComponent(returnPath())}`)}
+            onClick={() => window.location.assign(reauthLoginPath(returnPath()))}
           >
             {t("addBrowser.reauthButton")}
           </button>
@@ -151,7 +152,7 @@ export function AddBrowserPanel({ onClose, onDone }: { onClose: () => void; onDo
         <p style={{ margin: 0 }}>{message}</p>
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {result.kind === "reauth" ? (
-            <a className="btn primary" href={`/login?next=${encodeURIComponent(returnPath())}`}>
+            <a className="btn primary" href={reauthLoginPath(returnPath())}>
               {t("addBrowser.reauthButton")}
             </a>
           ) : result.kind !== "done" ? (

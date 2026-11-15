@@ -48,3 +48,18 @@ export function sanitiseNextPath(raw: string | null | undefined): string {
 export function withPairingHash(next: string, hash: string): string {
   return next === "/pair" && /^#[A-Za-z0-9._~-]+$/.test(hash) ? next + hash : next;
 }
+
+/**
+ * The sign-in page as a fresh World ID check, for actions the server only
+ * allows shortly after one (adding or removing a browser, deleting the
+ * account). Unlike a plain sign-in it does not skip ahead when a session
+ * already exists.
+ */
+export function reauthLoginPath(next: string): string {
+  return `/login?next=${encodeURIComponent(next)}&reauth=1`;
+}
+
+/** Whether a sign-in page was opened as a fresh World ID check. */
+export function isReauth(search: string): boolean {
+  return new URLSearchParams(search).get("reauth") === "1";
+}

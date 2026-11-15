@@ -38,7 +38,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, defaultApiClient } from "../../../lib/api/client";
 import { useAuthVerifyMutation } from "../../../lib/api/hooks";
 import { toAuthVerifyRequest, extractNullifierHash } from "../../../lib/world/idkit";
-import { sanitiseNextPath, withPairingHash } from "../../../lib/url/next-path";
+import { isReauth, sanitiseNextPath, withPairingHash } from "../../../lib/url/next-path";
 
 type WorldRequestConfig = {
   app_id: `app_${string}`;
@@ -98,7 +98,9 @@ function handleStandaloneOutcome(msg: IdkitPostMessage) {
       // login URL stable also means a fresh redirect re-arms the
       // CTA the user originally clicked.
       window.location.assign(
-        `/login?next=${encodeURIComponent(next)}` + withPairingHash(next, window.location.hash).slice(next.length),
+        `/login?next=${encodeURIComponent(next)}` +
+          (isReauth(window.location.search) ? "&reauth=1" : "") +
+          withPairingHash(next, window.location.hash).slice(next.length),
       );
       return;
   }
@@ -150,7 +152,7 @@ export default function IdkitEmbeddedPage() {
     // On a phone this page is opened on its own. If signing in already
     // finished (for example the tab was reloaded on the way back from
     // World App), go on instead of asking again.
-    if (state === "standalone") {
+    if (state === "standalone" && !isReauth(window.location.search)) {
       void defaultApiClient
         .getAuthSession()
         .then((session) => {

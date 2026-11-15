@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation, type Locale } from "../../lib/i18n";
 import { defaultApiClient } from "../../lib/api/client";
-import { sanitiseNextPath, withPairingHash } from "../../lib/url/next-path";
+import { isReauth, sanitiseNextPath, withPairingHash } from "../../lib/url/next-path";
 
 // Message contract between the iframe (`/login/idkit`) and this
 // page. Keep the keys flat and serialisable — postMessage cannot
@@ -54,6 +54,8 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const next = sanitiseNextPath(params.get("next"));
     setNextPath(next);
+    // A fresh World ID check was asked for: do not skip it.
+    if (isReauth(window.location.search)) return;
     // Already signed in: go on. A link opened from another app (a QR code
     // read by the camera) can arrive without the SameSite=Strict session
     // cookie, so the server sent it here; this request is same-site and
@@ -142,7 +144,8 @@ export default function LoginPage() {
     // has the target. Today the parent is what navigates, but
     // passing it along keeps the two routes interchangeable for
     // direct debugging access to /login/idkit.
-    return `/login/idkit?next=${encodeURIComponent(nextPath)}`;
+    const reauth = typeof window !== "undefined" && isReauth(window.location.search) ? "&reauth=1" : "";
+    return `/login/idkit?next=${encodeURIComponent(nextPath)}${reauth}`;
   }, [nextPath]);
 
   const handleOpenWidget = () => {

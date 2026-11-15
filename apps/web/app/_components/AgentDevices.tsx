@@ -37,6 +37,7 @@ import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { AddBrowserPanel } from "./AddBrowserPanel";
 import { CommandLine, STRONG } from "./AgentSetup";
+import { reauthLoginPath } from "../../lib/url/next-path";
 
 /** Where a message can be read instead: 「Safari (iPhone)」 (かパソコン). */
 export function elsewhereText(
@@ -493,7 +494,7 @@ export function AgentDevices({
           {failed === "reauth" ? (
             <>
               {t("addBrowser.reauth")}{" "}
-              <a href={`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}>
+              <a href={reauthLoginPath(window.location.pathname + window.location.search)}>
                 {t("addBrowser.reauthLink")}
               </a>
             </>
