@@ -589,7 +589,7 @@ fn tool_catalog() -> serde_json::Value {
         },
         {
             "name": "create_draft",
-            "description": "Write a draft message or reply. It is NOT sent: the person reads it in the NexusInbox app (確認が必要) and sends it themselves. Give either `reply_to_message_id` (to answer a message) or `to` (an aid:ai:... or did:key:... address). To change a draft, make a new one.",
+            "description": "Write a draft message or reply. It is NOT sent: the person reads it on Home (ホーム) in the NexusInbox app and sends it themselves. Give either `reply_to_message_id` (to answer a message) or `to` (an aid:ai:... or did:key:... address). To change a draft, make a new one.",
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": false,
@@ -1105,8 +1105,8 @@ async fn create_draft(
         "to": recipient.aid,
         "subject": subject,
         "expires_at": created.get("expires_at"),
-        "next": "Saved as a draft. Nothing was sent. Tell the person to open 確認が必要 in the \
-                 NexusInbox app to read it and send it.",
+        "next": "Saved as a draft. Nothing was sent. Tell the person to open Home (ホーム) in \
+                 the NexusInbox app to read it and send it.",
     }))
 }
 

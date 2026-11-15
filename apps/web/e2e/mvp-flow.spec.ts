@@ -35,10 +35,13 @@ test("MVP flow: login screen shown, then direct route to inbox -> detail -> comp
   ]);
 
   // Current e2e scope intentionally shortcuts auth and navigates
-  // directly with a session cookie.
-  await page.goto("/");
+  // directly with a session cookie. The login page forwards a signed-in
+  // person on its own (the session is mocked as signed in), which can
+  // abort this navigation: let it land first.
+  await page.waitForURL((url) => url.pathname !== "/login");
+  await page.goto("/conversations");
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/conversations$/);
 
   // Conversation row from the seeded /api/messages response.
   const firstThread = page.getByTestId("dm-row").first();

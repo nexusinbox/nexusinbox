@@ -50,7 +50,7 @@ test("realtime subscriber: new_message WS push triggers a messages refetch", asy
     );
   });
 
-  await page.goto("/");
+  await page.goto("/conversations");
 
   // The visible "Live" badge was intentionally removed — RealtimeSubscriber
   // is now a side-effect-only component (returns null, see

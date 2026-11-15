@@ -5,6 +5,7 @@ import { AppShell } from "../../_components/AppShell";
 import { useTranslation } from "../../../lib/i18n";
 import { useAuthSessionQuery } from "../../../lib/api/hooks";
 import { AccordionChevron, PublicHelpShell, RichText } from "../HelpParts";
+import { CONVERSATIONS_PATH } from "../../../lib/url/conversations";
 
 type Step = {
   titleKey: string;
@@ -35,7 +36,7 @@ const tutorialSteps: Step[] = [
   {
     titleKey: "help.step4Title",
     bodyKey: "help.step4Body",
-    href: "/",
+    href: CONVERSATIONS_PATH,
     hrefLabelKey: "help.step4Link",
   },
   {

@@ -22,6 +22,7 @@ import {
 } from "../../lib/api/hooks";
 import { useTranslation } from "../../lib/i18n";
 import type { ContactEntry } from "../../lib/api/types";
+import { conversationsHref } from "../../lib/url/conversations";
 
 type DraftState = {
   did: string;
@@ -138,7 +139,7 @@ function ContactsPageInner() {
   // picker, with this contact already filtered, lets the person choose.
   const messageHref = (did: string): string =>
     agents.length === 1
-      ? `/?with=${encodeURIComponent(did)}&as=${encodeURIComponent(agents[0].did)}`
+      ? conversationsHref({ with: did, as: agents[0].did })
       : `/compose?with=${encodeURIComponent(did)}`;
 
   const openNew = () => {

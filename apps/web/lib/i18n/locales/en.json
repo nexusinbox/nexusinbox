@@ -2,26 +2,24 @@
   "brand": "NexusInbox",
   "nav": {
     "newConversation": "New conversation",
-    "tabInbox": "Messages",
-    "tabPending": "Review",
     "tabs": "Main screens",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "workflow": "Agents",
-    "inbox": "Messages",
     "starred": "Starred",
     "drafts": "Drafts",
     "allMail": "All Mail",
     "spam": "Spam",
     "trash": "Trash",
     "byAgent": "By Agent",
-    "pending": "Needs review",
     "contacts": "Contacts",
     "blocks": "Block Settings",
     "agentSettings": "Agents",
     "createAgent": "Create Agent",
     "auditLog": "AI activity",
-    "archive": "Archive"
+    "archive": "Archive",
+    "home": "Home",
+    "conversations": "Conversations"
   },
   "topbar": {
     "themeDark": "Dark",
@@ -133,7 +131,8 @@
     "composerOnComputer": "This agent runs on your computer. Reply from the AI tool on your computer or from a cloud AI.",
     "composeMore": "Add a subject or attachment",
     "composerElsewhere": "This browser cannot send for this agent. Reply from {where}.",
-    "devicesOrComputerTool": "{names} or the AI tool on your computer"
+    "devicesOrComputerTool": "{names} or the AI tool on your computer",
+    "chipAuto": "AI auto-replies"
   },
   "inbox": {
     "title": "Messages",
@@ -229,7 +228,7 @@
     "disconnect": "Disconnect",
     "disconnected": "Disconnected {app}.",
     "disconnectFailed": "Could not disconnect.",
-    "note": "A disconnected AI stops working within a minute. Its unfinished drafts stay in Needs review."
+    "note": "A disconnected AI stops working within a minute. Its unfinished drafts stay on Home."
   },
   "oauthConsent": {
     "loading": "Loading…",
@@ -241,7 +240,7 @@
     "returnsTo": "Returns to: {host}",
     "canRead": "See the inbox and read messages",
     "canDraft": "Write drafts of replies and new messages",
-    "cannotSend": "Send (drafts wait in Needs review; you send them)",
+    "cannotSend": "Send (drafts wait on Home; you check and send them)",
     "cannotOther": "Touch other agents, contacts or settings",
     "providerSees": "The company behind {app} sees the messages you let {app} read. NexusInbox does not.",
     "revokeLater": "You can disconnect it any time under the agent's Details. It disconnects by itself after 30 days without use.",
@@ -347,13 +346,7 @@
     "toGroupOwn": "Your agents"
   },
   "agentDrafts": {
-    "replyTo": "Reply to {name}",
-    "newTo": "To {name}",
-    "title": "Drafts written by AI ({count})",
-    "why": "Cloud AIs cannot send. A draft is sent only when you read it and press \"Send this\".",
     "notHere": "Drafts for \"{agent}\" cannot be read in this browser. Open them in the browser that made the agent, or one you added.",
-    "empty": "No drafts are waiting.",
-    "loadFailed": "Could not load drafts.",
     "unknownParty": "Unknown sender",
     "madeBy": "Written by {agent}",
     "madeByVia": "Written by {via} as \"{agent}\"",
@@ -367,35 +360,23 @@
   },
   "pending": {
     "block": "Block",
-    "subjectHidden": "The subject is encrypted (approve to read it in the inbox)",
+    "subjectHidden": "The subject is encrypted (let it in to read it in Conversations)",
     "categoryName": {
       "spam_denylist": "matches the spam sender list",
       "spam_burst": "many messages in a short time",
       "other": "automatic check"
     },
-    "title": "Needs review",
     "subtitle": "Messages you decide whether to let in",
-    "refresh": "Refresh",
     "selectAgent": "Select Agent",
     "allAgents": "All Agents",
-    "heading": "Messages held for you ({count})",
-    "descSelected": "From senders with very low trust, or that look like spam. You decide whether they go to the inbox.",
     "descUnselected": "Select an agent from the left.",
-    "loading": "Loading...",
-    "error": "Failed to load messages.",
-    "retry": "Retry",
-    "empty": "No messages need review.",
-    "trustScore": "Trust {n}%",
-    "category": " · Category {category}",
     "noSubject": "(No subject)",
     "approve": "Accept",
     "reject": "Discard",
     "approved": "Moved to the inbox.",
     "approveFailed": "Could not approve. Please try again later.",
     "rejected": "Moved to the trash.",
-    "rejectFailed": "Could not reject. Please try again later.",
-    "recipient": "To: ",
-    "unknownAgent": "(unknown agent)"
+    "rejectFailed": "Could not reject. Please try again later."
   },
   "contacts": {
     "tabBlocks": "Blocked",
@@ -505,8 +486,8 @@
     "cancel": "Cancel",
     "overviewTitle": "About this agent",
     "addressDesc": "Give it to others and their messages reach this agent. It stays the same as devices come and go.",
-    "openInbox": "Open inbox",
-    "approvalQueueNote": "Messages from senders with very low trust, or flagged as spam, go to Pending approval instead of the inbox.",
+    "openInbox": "Open conversations",
+    "approvalQueueNote": "Messages from senders with very low trust, or flagged as spam, show up under \"Needs you\" on Home instead of in the conversations.",
     "agentId": "Address (aid): {aid}",
     "copyAgentId": "Copy aid",
     "currentDid": "Current key ID (did): {did}",
@@ -957,14 +938,14 @@
       "step4Title": "Share your address",
       "step4Body": "Give the \"Address\" (`aid:ai:…`) from the agent settings to the people you want to hear from.",
       "whereQ": "\"This browser only\" or \"Also on my computer\"?",
-      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while Messages is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer; this browser can still read and write."
+      "whereA": "**This browser only**: you read and write on this page. Automatic replies run only while Home or Conversations is open. **Also on my computer**: automatic replies and cloud AIs keep working with the browser closed. You install a small program on the computer; this browser can still read and write."
     },
     "daily": {
       "title": "Everyday use",
-      "inboxTerm": "Inbox",
+      "inboxTerm": "Conversations",
       "inboxDesc": "Messages and requests. The chips at the top filter by agent.",
-      "reviewTerm": "Needs review",
-      "reviewDesc": "Things for you to decide: drafts an AI wrote (check them, then \"Send as is\") and messages that may not be wanted.",
+      "reviewTerm": "Home",
+      "reviewDesc": "What needs you, what the AI did, and whether automatic replies run. Drafts an AI wrote (check them, then \"Send as is\") and messages that may not be wanted are decided here too.",
       "sentTerm": "Sent and Archive",
       "sentDesc": "What you sent and what you put away.",
       "composeTerm": "Send",
@@ -981,7 +962,7 @@
       "canTerm": "Can",
       "canDesc": "Read the inbox, open messages, look up recipients, write drafts",
       "cannotTerm": "Cannot",
-      "cannotDesc": "Send. Drafts go to Needs review, and you send them after checking.",
+      "cannotDesc": "Send. Drafts show up on Home, and you send them after checking.",
       "cloudTitle": "Cloud AIs (Muse, Claude and others)",
       "cloudNeedsComputer": "The agent must run on a computer. The AI reads the inbox through your computer.",
       "step1Title": "Turn it on",
@@ -1024,7 +1005,7 @@
       "preparingQ": "Cloud AIs stay at \"getting ready\"",
       "preparingA": "An old version of the program on the computer stays there. Update it and start it again (Mac: `brew upgrade nexusinbox`).",
       "autoReplyQ": "Automatic replies do not run",
-      "autoReplyA": "For an agent in this browser only, they run only while Messages is open. To keep them running with the browser closed, also run the agent on a computer.",
+      "autoReplyA": "For an agent in this browser only, they run only while Home or Conversations is open. To keep them running with the browser closed, also run the agent on a computer.",
       "cannotReadQ": "I cannot read a message in this browser",
       "cannotReadA": "Messages of an agent that runs on a computer open only with the keys on that computer. Read them with an AI tool on the computer or a cloud AI.",
       "strangerQ": "A message from someone I do not know",
@@ -1034,8 +1015,8 @@
       "title": "Words",
       "addressTerm": "Address",
       "addressDesc": "The agent's address (`aid:ai:…`). This is what you share. It stays the same when keys change.",
-      "reviewTerm": "Needs review",
-      "reviewDesc": "Where things for you to decide go.",
+      "reviewTerm": "Needs you",
+      "reviewDesc": "The top of Home, where things for you to decide go.",
       "cloudTerm": "Cloud AI",
       "cloudDesc": "An AI that runs on a company's servers, such as Muse or Claude.",
       "historyTerm": "AI activity",
@@ -1435,7 +1416,7 @@
       "desc": "If unsure, start with \"This browser only\". You can connect a computer later.",
       "browserTitle": "This browser only",
       "browserBadge": "Easy",
-      "browserDesc": "Read and write messages on this screen. Auto-replies run while Messages is open.",
+      "browserDesc": "Read and write messages on this screen. Auto-replies run while Home or Conversations is open.",
       "pcTitle": "Also on my computer",
       "pcDesc": "Auto-replies and AI tools keep working with the browser closed. A small program runs on your computer.",
       "pcNote": "You can still read and write in this browser after connecting."
@@ -1492,7 +1473,7 @@
       "queuedNotContact": "You are not in your own contacts, so you decide how to answer (requests from contacts are accepted automatically)",
       "acceptPendingPc": "As set, it will be accepted automatically. Waiting for your computer to answer…",
       "acceptedPc": "Your computer sent the acceptance",
-      "acceptInBrowser": "As set, it will be accepted automatically. This browser answers when you open Messages",
+      "acceptInBrowser": "As set, it will be accepted automatically. This browser answers when you open Home or Conversations",
       "noKey": "This browser does not hold this agent's keys, so it cannot send the test.",
       "failed": "Could not send the test: {error}",
       "timeout": "Could not confirm in time. Check your inbox.",
@@ -1502,7 +1483,7 @@
     "done": {
       "title": "You're all set",
       "desc": "\"{name}\" is ready.",
-      "inbox": "Messages shows the messages and requests that arrive.",
+      "inbox": "Conversations shows the messages and requests that arrive.",
       "details": "Technical details such as keys are in the agent settings.",
       "toInbox": "Go to Messages",
       "toSettings": "Agent settings",
@@ -1515,7 +1496,7 @@
     "offSub": "Cloud AIs like Muse or Claude can read the inbox and write drafts. They cannot send.",
     "turnOn": "Turn on",
     "confirmTitle": "Let cloud AIs use this agent?",
-    "confirmDraft": "A connected AI can read the inbox and write drafts. It cannot send. Drafts go to Needs review, and you send them after checking.",
+    "confirmDraft": "A connected AI can read the inbox and write drafts. It cannot send. Drafts show up on Home, and you send them after checking.",
     "confirmProvider": "Text you give an AI can be read by its company (Meta, Anthropic, …). We cannot see it.",
     "confirmGrant": "You allow each AI app yourself, and can disconnect it at any time.",
     "confirmComputer": "It works only while this computer is running.",
@@ -1681,29 +1662,17 @@
     "removeBrowserConfirm": "Remove \"{name}\"? That browser can no longer read. The address stays the same and no one is notified. You confirm with World ID again.",
     "notReceivingTitle": "This agent is not receiving messages right now",
     "notReceivingOldWay": "No device has been chosen to receive them yet. Reconnect or remove the computer below, and they will arrive.",
-    "redoBody": "If all the devices below are yours, press \"Deliver to these {n}\" to choose them again.",
-    "groupTitle": "{n} agents are not receiving messages",
-    "groupWhy": "No receiving device chosen",
-    "groupAction": "Choose devices →"
+    "redoBody": "If all the devices below are yours, press \"Deliver to these {n}\" to choose them again."
   },
   "deviceNotice": {
     "title": "A new device connected to \"{agent}\"",
-    "body": "{device} connected {date}. If you did not connect it, remove it or use the emergency stop now.",
-    "mine": "I connected it",
-    "mineApprove": "I connected it (deliver here too)",
-    "view": "See devices →",
-    "stop": "Emergency stop",
-    "stopped": "Emergency stop done. Every computer and AI connected to \"{agent}\" has been stopped.",
-    "stopFailed": "The emergency stop failed. Try again from the agent page."
+    "mine": "I connected it"
   },
   "stoppedNotice": {
     "title": "The computer for \"{agent}\" has stopped",
-    "groupTitle": "{n} computers have stopped",
     "groupSub": "While stopped, auto-replies and cloud AIs stop too.",
     "since": "stopped {ago}",
-    "stale": "you can remove it if unused",
-    "actionView": "Check →",
-    "actionRemove": "Remove →"
+    "stale": "you can remove it if unused"
   },
   "pairing": {
     "mismatchTitle": "The computer you connected is not the one the server shows",
@@ -1764,5 +1733,84 @@
   },
   "notices": {
     "later": "Later"
+  },
+  "home": {
+    "title": "Home",
+    "loading": "Loading…",
+    "retry": "Try again",
+    "pickAgent": "Choose an agent",
+    "allAgents": "All agents",
+    "noAgents": "No agents yet",
+    "noAgentsSub": "Once you create your first agent, what the AI did and what needs you show up here.",
+    "startSetup": "Get started",
+    "attention": {
+      "title": "Needs you",
+      "count": "{n}",
+      "none": "Nothing to decide on Home",
+      "failed": "Could not load what needs you",
+      "failedSub": "The number is unknown. Try again once you are back online.",
+      "laterFolded": "Put off for later: {n}",
+      "noneRequests": "Requests such as scheduling are in Conversations →",
+      "moreHeld": "{n} more messages to allow (not loaded yet)",
+      "moreHeldAnyAgent": "{n} messages to allow, not loaded yet, for any agent",
+      "loadMore": "Load more"
+    },
+    "group": {
+      "count": "{group} {n}",
+      "device_check": "Check devices",
+      "new_device": "New device",
+      "undelivered": "Not arriving",
+      "send": "Approve send",
+      "receive": "Allow message",
+      "stopped": "Computer stopped"
+    },
+    "item": {
+      "checkDevices": "Check devices",
+      "newDeviceWhy": "{device} · connected {date}. Check that you connected it.",
+      "newDeviceAccepted": "Recorded as a device you connected.",
+      "notMine": "If you don't recognize it, check the devices",
+      "chooseDevices": "Choose devices",
+      "draftReply": "Draft reply to {name}",
+      "draftNew": "Draft message to {name}",
+      "draftWhy": "Written by the AI. It needs your check before it is sent.",
+      "reviewDraft": "Review draft",
+      "close": "Close",
+      "heldWhat": "Message from {name}",
+      "heldWhy": "Decide whether to let it in",
+      "heldLowTrust": "Sender not trusted yet",
+      "heldTo": "To: {agent}",
+      "decide": "Decide",
+      "remove": "Remove",
+      "check": "Check"
+    },
+    "activity": {
+      "title": "What the AI did",
+      "all": "See everything the AI did →",
+      "none": "The AI has not sent an automatic reply yet.",
+      "failed": "Could not load what the AI did."
+    },
+    "status": {
+      "title": "Automatic replies",
+      "unknown": "Status unavailable",
+      "unknownSub": "Whether automatic replies are running is unknown right now.",
+      "recheck": "Check again",
+      "whereBrowser": "Browser",
+      "whereComputer": "Computer “{name}”",
+      "off": "Automatic replies are off",
+      "connected": "Connection confirmed {ago}",
+      "autoReplyOn": "Automatic replies: on",
+      "silent": "Connection not confirmed (last: {ago})",
+      "silentNever": "Connection not confirmed yet",
+      "silentSub": "Automatic replies: on. Nothing is answered while the computer is stopped.",
+      "check": "Check",
+      "browser": "Replies automatically while this screen is open",
+      "otherBrowser": "Replies automatically only while “{browser}” has the screen open",
+      "settings": "Settings",
+      "stop": "Stop automatic replies",
+      "resume": "Resume automatic replies",
+      "stopped": "Automatic replies are stopped from now on. What was already sent cannot be taken back.",
+      "resumed": "Automatic replies resumed.",
+      "switchFailed": "Could not switch. Please try again."
+    }
   }
 }

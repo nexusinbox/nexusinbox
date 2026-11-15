@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docs/41 段階 A: ホーム（案）</title>
+<style>
+  :root {
+    --page: #eef1f4; --bg: #fff; --alt: #f7f9f9; --hover: #f2f4f5; --line: #eff3f4; --line-strong: #cfd9de;
+    --text: #0f1419; --muted: #536471; --primary: #2f5bea; --soft: #e8eeff;
+    --danger: #d0193f; --danger-soft: #fdecef; --ok: #00875a; --ok-soft: #e6f4ea;
+    --warn: #9a5b00; --warn-soft: #fff6e5; --warn-line: #f0c36d;
+  }
+  * { box-sizing: border-box; }
+  html:lang(ja) { word-break: auto-phrase; }
+  body { margin: 0; font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--text); background: var(--page); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 23px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .states { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .states button { font: inherit; font-size: 13px; font-weight: 700; border: 1px solid var(--line-strong); background: #fff; color: var(--text); border-radius: 999px; padding: 0 14px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .states button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+  .state-desc { background: #fff; border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  .state-desc b { margin-right: 6px; }
+  .frames { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  @media (max-width: 1000px) { .frames { grid-template-columns: 1fr; justify-items: center; } .frames > * { width: 100%; } .frames > .phone-col { width: 320px; } }
+  .cap { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 6px; }
+
+  /* ---- desktop frame ---- */
+  .desk { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 640px; }
+  .side { border-right: 1px solid var(--line); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .brand { font-weight: 800; font-size: 17px; padding: 4px 10px 14px; }
+  .nav { display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 42px; border-radius: 999px; font-weight: 600; color: var(--text); }
+  .nav.on { font-weight: 800; background: var(--hover); }
+  .nav .ic { width: 20px; text-align: center; }
+  .nav .lab { flex: 1; }
+  .badge { font-size: 12px; font-weight: 800; border-radius: 999px; min-width: 22px; height: 22px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; }
+  .badge.judg { background: var(--primary); color: #fff; }
+  .badge.unread { background: #e3e7ee; color: #3d4652; }
+  .compose { margin: 14px 4px 10px; min-height: 44px; border-radius: 999px; background: var(--primary); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .side .minor { margin-top: auto; display: grid; gap: 2px; }
+  .side .minor .nav { font-size: 14px; min-height: 36px; color: var(--muted); font-weight: 600; }
+  .main { padding: 20px 28px 28px; min-width: 0; }
+
+  /* ---- phone frame ---- */
+  .phone { width: 320px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; height: 640px; }
+  .p-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .p-top .brand { padding: 0; flex: 1; font-size: 16px; }
+  .p-scroll { flex: 1; overflow-y: auto; padding: 14px 14px 20px; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
+  .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 56px; font-size: 11px; font-weight: 700; color: var(--muted); position: relative; }
+  .tab .ic { font-size: 18px; line-height: 1; }
+  .tab.on { color: var(--text); }
+  .tab .badge { position: absolute; top: 4px; left: calc(50% + 6px); height: 18px; min-width: 18px; font-size: 11px; padding: 0 5px; }
+
+  /* ---- home content (shared) ---- */
+  .h-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .h-head h2 { margin: 0; font-size: 23px; flex: 1; }
+  .phone .h-head h2 { font-size: 19px; }
+  .agent-one { font-size: 13px; font-weight: 700; color: var(--muted); background: var(--alt); border-radius: 999px; padding: 3px 12px; }
+  .select { font-size: 14px; font-weight: 700; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 14px; min-height: 36px; display: inline-flex; align-items: center; gap: 6px; background: #fff; }
+  .phone .select { font-size: 13px; min-height: 34px; padding: 0 12px; }
+  section { margin-bottom: 22px; }
+  .sec-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
+  .sec-h h3 { margin: 0; font-size: 17px; }
+  .sec-h .n { font-size: 17px; font-weight: 800; color: var(--primary); }
+  .phone .sec-h { flex-wrap: wrap; }
+  .phone .sec-h .more { margin-left: 0; flex-basis: 100%; }
+  .sec-h .more { margin-left: auto; font-size: 14px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+  .box { border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .phone .row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tag { font-size: 12px; font-weight: 800; border-radius: 6px; padding: 2px 8px; white-space: nowrap; justify-self: start; }
+  .tag.danger { background: var(--danger-soft); color: var(--danger); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.info { background: var(--soft); color: var(--primary); }
+  .tag.gray { background: #eef0f3; color: #3d4652; }
+  .what { font-weight: 700; }
+  .why { font-size: 13px; color: var(--muted); }
+  .agent-chip { font-size: 12px; font-weight: 700; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 8px; margin-right: 6px; white-space: nowrap; }
+  .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .phone .acts { justify-content: flex-start; }
+  .btn { font-size: 14px; font-weight: 800; border-radius: 999px; padding: 0 16px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--line-strong); background: #fff; color: var(--text); white-space: nowrap; }
+  .btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: #f1b5c2; }
+  .phone .btn { min-height: 44px; }
+  .link { font-size: 14px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+  .phone .link { min-height: 44px; display: inline-flex; align-items: center; }
+  .empty { padding: 16px 14px; display: flex; gap: 10px; align-items: center; color: var(--muted); }
+  .empty .ok-ic { width: 24px; height: 24px; border-radius: 50%; background: var(--ok-soft); color: var(--ok); display: grid; place-items: center; font-weight: 800; flex: none; }
+  .err { padding: 14px; background: var(--warn-soft); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .err .t { flex: 1; min-width: 180px; }
+  .act-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .act-row:first-child { border-top: 0; }
+  .act-row .time { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .st-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .st-row:first-child { border-top: 0; }
+  .phone .st-row { grid-template-columns: minmax(0, 1fr); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: #d99a1e; } .dot.off { background: #b8c0ca; } .dot.unk { background: #fff; border: 2px solid #8a94a0; }
+  .st-name { font-weight: 800; }
+  .expand { grid-column: 1 / -1; background: var(--alt); border-radius: 12px; padding: 12px; margin-top: 6px; font-size: 14px; display: grid; gap: 8px; }
+  .phone .expand { grid-column: 1; }
+  .expand .acts { justify-content: flex-start; }
+  .bubble { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .choices { display: grid; gap: 6px; }
+  .choice { border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 12px; background: #fff; }
+  .choice.rec { border-color: var(--primary); }
+  .choice b { display: block; }
+  .choice span { font-size: 13px; color: var(--muted); }
+  .rec-tag { font-size: 11px; font-weight: 800; color: var(--primary); margin-left: 6px; }
+  .folded { padding: 10px 14px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); font-weight: 700; }
+
+  .notes { margin-top: 24px; background: #fff; border-radius: 14px; padding: 14px 20px; font-size: 14px; }
+  .notes h2 { font-size: 17px; margin: 8px 0 4px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>段階 A: ホーム（案）</h1>
+  <p class="lead">docs/41 §3・§6・§8・§13 の画面案。上のボタンで状態を切り替えます。左がパソコン、右がスマホ（幅 320px）。</p>
+  <div class="states" id="states"></div>
+  <div class="state-desc" id="desc"></div>
+  <div class="frames">
+    <div><p class="cap">パソコン</p><div class="desk"><nav class="side" id="side"></nav><div class="main" id="desk-main"></div></div></div>
+    <div class="phone-col"><p class="cap">スマホ（320px）</p><div class="phone"><div class="p-top"><span class="brand">NexusInbox</span><span id="p-agent"></span></div><div class="p-scroll" id="phone-main"></div><div class="tabs" id="tabs"></div></div></div>
+  </div>
+
+  <div class="notes">
+    <h2>変えること</h2>
+    <ul>
+      <li>ナビは「ホーム」「会話」「コンタクト」「エージェント」の 4 つ。パソコンとスマホで同じ。「確認が必要」はなくなり、中身はホームの「あなたの判断が必要」に入る（<code>/pending</code> はここへ転送）。</li>
+      <li>ホームの数字は「判断が必要な件数」（青）、会話の数字は「未読」（灰）。別々に数え、未読は判断待ちに入れない。</li>
+      <li>判断待ちの並び順は、①信頼の警告（送り主を確かめられない、新しい端末）②届かない（受け取る端末が未定）③AI の下書き・依頼への判断 ④届けてよいかの判断（旧「確認が必要」）。</li>
+      <li>1 行は「種類・相手・要点・止まっている理由・操作 1 つ」。押すとその場で開き、ホームから離れずに片づく（「下書きを確認」「決める」）。</li>
+      <li>読み込み中・0 件・取得失敗を分ける。失敗したときは件数を出さず「—」にし、0 件とは言わない。</li>
+      <li>エージェントが 1 つなら名前だけ。2 つ以上なら選ぶ欄を出し、各行に名前を付ける。</li>
+      <li>「自動対応の状態」は、設定（オン・オフ）と、実際に動いているかの確認を分けて書く。ホームの停止ボタンは「自動返信を停止」だけ（連携の終了・緊急停止はエージェント画面）。</li>
+      <li>新しいバージョンの知らせは「自動対応の状態」の中に 1 行で出す。会話画面には出さない。</li>
+      <li>会話画面の上の大きなカード（端末未定・新しい端末・パソコン停止）はやめ、ホームにまとめる。会話画面では、その会話の操作に影響するときだけ短く出す。</li>
+    </ul>
+    <h2>決まったこと（2026-11-15）</h2>
+    <ul>
+      <li>「あとで」は端末未定とパソコン停止だけ。件数からは外すが解消扱いにせず、「あとでにしたもの」を常に残す。パソコンの接続は稼働状態に出し続ける。同じ問題は再表示せず、新しい端末や別の障害は新しく知らせる。</li>
+      <li>心当たりのない端末は「心当たりがない場合は、端末を確認」で対象エージェントの端末画面へ。該当端末を強調して最初に見せる。</li>
+      <li>迷惑の疑いも件数に入れ、「受信を許可するか確認」と表示して送信の確認と区別する。件数の下に内訳を出す。</li>
+      <li>AI が対応したことは直近 5 件。「AI の対応をすべて見る」で会話一覧を「AI の自動返信」で絞り込んで開く。</li>
+    </ul>
+    <h2>当初の論点</h2>
+    <ul>
+      <li><b>「あとで」の扱い</b>（推奨: 端末未定とパソコン停止の 2 種類だけ「あとで」を残す。あとでにしたものは件数から外し、最後に「あとでにしたもの 1 件」とたたんで出す。下書き・依頼・信頼の警告には「あとで」を付けない）</li>
+      <li><b>新しい端末で「心当たりがない」とき</b>（推奨: ホームでは「心当たりがない →」でエージェントの端末画面へ。外す・緊急停止はそこで行う。§8 どおりホームに緊急停止を置かない）</li>
+      <li><b>届けてよいかの判断（迷惑の疑い）を件数に入れるか</b>（推奨: 入れる。届くかどうかは本人しか決められないため）</li>
+      <li><b>AI が対応したことの件数</b>（推奨: 直近 5 件。それより前は「会話をすべて見る」から）</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// Mock data per state. Shared markup renders into the desktop and phone frames.
+const ONE = { kind: "one", name: "秘書" };
+const MULTI = { kind: "multi" };
+
+const it = {
+  sender: { tag: ["danger", "送り主の確認"], who: "鈴木さん", what: "送り主を確かめられません", why: "署名が、前に確かめた相手のものと合いません", act: "理由を確認" },
+  draft: { tag: ["info", "送信の確認"], who: "田中さん", what: "返信の下書きを AI が作りました", why: "送る前に、あなたの確認が要ります", act: "下書きを確認" },
+  sched: { tag: ["info", "依頼"], who: "佐藤さん", what: "日程の候補が合いません", why: "相手の候補がすべて予定と重なっています", act: "候補を選ぶ" },
+  held: { tag: ["gray", "受信の許可"], who: "agent-7f3a…（コンタクト外）", what: "受信を許可するか確認してください", why: "短時間に大量の送信", act: "決める" },
+  newdev: { tag: ["danger", "新しい端末"], who: "", what: "「秘書」に新しい端末がつながりました", why: "Pixel 8 · 今日 9:12。あなたがつないだものか確かめてください", act: "わたしがつないだ", link: "心当たりがない場合は、端末を確認" },
+  nolist: { tag: ["warn", "届かない"], who: "日程係", what: "メッセージが届いていません", why: "受け取る端末が未定です", act: "端末を決める" },
+};
+
+const activity1 = [
+  ["田中さんに日程候補を返信しました", "10:24"],
+  ["佐藤さんからの依頼を受け取りました", "09:10"],
+  ["山本さんに自動返信を送信しました", "昨日"],
+];
+const statusOk = [{ dot: "ok", name: "秘書", where: "パソコン「MacBook Air」", text: "接続を 2 分前に確認しました", sub: "自動返信: オン", acts: ["設定", "自動返信を停止"] }];
+
+const STATES = [
+  {
+    id: "zero", label: "判断待ち 0 件", agents: ONE, counts: { judg: 0, unread: 3 },
+    desc: "エージェントが 1 つ。判断が必要なものはない。名前だけを出し、選ぶ欄は出さない。",
+    judg: { kind: "zero" }, activity: activity1, status: statusOk,
+  },
+  {
+    id: "items", label: "判断待ちあり", agents: ONE, counts: { judg: 4, unread: 3 },
+    desc: "判断が必要なものが 4 件。信頼の警告が先頭。各行の操作は 1 つで、押すとその場で開く。",
+    judg: { kind: "items", items: [it.sender, it.draft, it.sched, it.held] }, activity: activity1, status: statusOk,
+  },
+  {
+    id: "expanded", label: "旧「確認が必要」をホームで", agents: ONE, counts: { judg: 2, unread: 3 },
+    desc: "旧「確認が必要」の 2 種類（AI の下書き、届けてよいかの判断）を、ホームから離れずに片づける。ブロックは L1〜L3 の名前で選ぶ。",
+    judg: { kind: "items", items: [
+      { ...it.draft, open: "draft" },
+      { ...it.held, open: "held" },
+    ] }, activity: activity1, status: statusOk,
+  },
+  {
+    id: "error", label: "取得に失敗した", agents: ONE, counts: { judg: null, unread: 3 },
+    desc: "判断待ちを読み込めなかった。件数は「—」にし、0 件とは言わない。ほかの欄は読めた分を出す。読み込み中は「読み込み中…」だけを出し、件数は出さない。",
+    judg: { kind: "error" }, activity: activity1, status: statusOk,
+  },
+  {
+    id: "stale", label: "パソコンの接続が古い", agents: ONE, counts: { judg: 0, unread: 3 },
+    desc: "自動返信はオンだが、パソコンの接続をしばらく確認できていない。設定（オン）と実際（確認できない）を分けて書く。止まっているパソコンを「あとで」にしても、ここには出し続け、判断待ちの最後にも「あとでにしたもの」として残る。新しいバージョンの知らせもここに 1 行。",
+    judg: { kind: "zero", folded: 1 }, activity: activity1,
+    status: [
+      { dot: "warn", name: "秘書", where: "パソコン「MacBook Air」", text: "接続を 3 時間確認できていません", sub: "自動返信: オン（パソコンが止まっている間は返信しません）", acts: ["確かめる →"] },
+      { version: true },
+    ],
+  },
+  {
+    id: "unknown", label: "状態が分からない", agents: ONE, counts: { judg: 0, unread: 3 },
+    desc: "状態を取り出せなかった。「止まっている」とも「動いている」とも言わず、分からないと書いて再確認を出す。",
+    judg: { kind: "zero" }, activity: activity1,
+    status: [{ dot: "unk", name: "秘書", where: "", text: "状態を取得できません", sub: "自動返信が動いているかどうか、いまは分かりません", acts: ["再確認"] }],
+  },
+  {
+    id: "newdev", label: "新しい端末が増えた", agents: ONE, counts: { judg: 1, unread: 3 },
+    desc: "知らない端末かもしれないので、信頼の警告として先頭に出す。心当たりがなければ端末画面へ（外す・緊急停止はそこ）。",
+    judg: { kind: "items", items: [it.newdev] }, activity: activity1, status: statusOk,
+  },
+  {
+    id: "multi", label: "エージェントが複数", agents: MULTI, counts: { judg: 3, unread: 5 },
+    desc: "エージェントが 3 つ。選ぶ欄を出し、各行と状態にエージェント名を付ける。同じ問題は 1 件として数える。「あとで」にしたものは最後にたたむ。",
+    judg: { kind: "items", agentChips: true, folded: 1, items: [
+      { ...it.nolist, agent: "日程係", who: "" },
+      { ...it.draft, agent: "秘書" },
+      { ...it.sched, agent: "日程係" },
+    ] },
+    activity: [
+      ["<span class='agent-chip'>秘書</span>田中さんに日程候補を返信しました", "10:24"],
+      ["<span class='agent-chip'>日程係</span>佐藤さんからの依頼を受け取りました", "09:10"],
+      ["<span class='agent-chip'>秘書</span>山本さんに自動返信を送信しました", "昨日"],
+    ],
+    status: [
+      { dot: "ok", name: "秘書", where: "パソコン「MacBook Air」", text: "接続を 2 分前に確認しました", sub: "自動返信: オン", acts: ["設定", "自動返信を停止"] },
+      { dot: "ok", name: "日程係", where: "このブラウザ", text: "この画面を開いている間、自動対応できます", sub: "自動返信: オン", acts: ["設定", "自動返信を停止"] },
+      { dot: "off", name: "試し用", where: "", text: "自動対応はオフです", sub: "", acts: ["設定"] },
+    ],
+  },
+];
+
+function expandHtml(kind) {
+  if (kind === "draft") {
+    return `<div class="expand">
+      <div class="why">田中さんへの返信（秘書が作成 · Claude Desktop 経由）</div>
+      <div class="bubble">ご連絡ありがとうございます。来週は火曜 14 時か木曜 10 時でいかがでしょうか。</div>
+      <div class="acts"><span class="btn pri">この内容で送る</span><span class="btn">捨てる</span><span class="link">会話で見る →</span></div>
+    </div>`;
+  }
+  if (kind === "held") {
+    return `<div class="expand">
+      <div class="why">迷惑の疑い: 短時間に大量の送信 · 件名は暗号化されています（受け取ると会話で読めます）</div>
+      <div class="acts"><span class="btn pri">受け取る</span><span class="btn">捨てる</span><span class="btn danger">ブロック…</span></div>
+      <div class="choices">
+        <div class="choice"><b>L1 この相手だけ</b><span>このエージェントからだけ、届かなくします</span></div>
+        <div class="choice rec"><b>L2 この人のすべてのエージェント<span class="rec-tag">おすすめ</span></b><span>この人が持つすべてのエージェントから、あなたへの連絡を止めます。新しいエージェントを作り直しても届きません。</span></div>
+        <div class="choice"><b>L3 完全に非表示</b><span>相手から、あなたのエージェントが見えなくなります</span></div>
+      </div>
+    </div>`;
+  }
+  return "";
+}
+
+function breakdown(j) {
+  if (j.kind !== "items") return "";
+  const counts = {};
+  j.items.forEach((x) => { counts[x.tag[1]] = (counts[x.tag[1]] || 0) + 1; });
+  const text = Object.entries(counts).map(([k, v]) => `${k} ${v}`).join("・");
+  return `<p class="why" style="margin:-4px 0 8px">${text}</p>`;
+}
+
+function judgHtml(s) {
+  const j = s.judg;
+  const n = s.counts.judg;
+  const head = `<div class="sec-h"><h3>あなたの判断が必要</h3><span class="n">${n === null ? "—" : n + " 件"}</span></div>` + breakdown(j);
+  if (j.kind === "zero") {
+    const f = j.folded ? `<div class="folded">▸ あとでにしたもの ${j.folded} 件</div>` : "";
+    return `<section>${head}<div class="box"><div class="empty"><span class="ok-ic">✓</span>今、あなたの操作が必要なものはありません</div>${f}</div></section>`;
+  }
+  if (j.kind === "error") {
+    return `<section>${head}<div class="box"><div class="err"><span class="t"><b>判断待ちを読み込めませんでした</b><br><span class="why">件数は分かりません。通信が戻ってから、もう一度お試しください。</span></span><span class="btn">もう一度読み込む</span></div></div></section>`;
+  }
+  const rows = j.items.map((x) => {
+    const chip = x.agent ? `<span class="agent-chip">${x.agent}</span>` : "";
+    const who = x.who ? `${x.who} — ` : "";
+    const btns = x.open
+      ? `<span class="link">閉じる</span>`
+      : `<span class="btn pri">${x.act}</span>`;
+    return `<div class="row">
+      <span class="tag ${x.tag[0]}">${x.tag[1]}</span>
+      <div>${chip}<span class="what">${who}${x.what}</span><div class="why">${x.why}</div>${x.link && !x.open ? `<span class="link">${x.link}</span>` : ""}</div>
+      <div class="acts">${btns}</div>
+      ${x.open ? expandHtml(x.open) : ""}
+    </div>`;
+  }).join("");
+  const folded = j.folded ? `<div class="folded">▸ あとでにしたもの ${j.folded} 件</div>` : "";
+  return `<section>${head}<div class="box">${rows}${folded}</div></section>`;
+}
+
+function activityHtml(s) {
+  const rows = s.activity.map(([t, time]) => `<div class="act-row"><span>${t}</span><span class="time">${time}</span></div>`).join("");
+  return `<section><div class="sec-h"><h3>AI が対応したこと</h3><span class="more">AI の対応をすべて見る →</span></div><div class="box">${rows}</div></section>`;
+}
+
+function statusHtml(s) {
+  const rows = s.status.map((r) => {
+    if (r.version) {
+      return `<div class="st-row"><div><span class="tag info">更新</span> 新しいバージョン v0.8.4 があります<div class="why">パソコンで <code>brew upgrade nexusinbox</code></div></div><div class="acts"><span class="link">更新のしかた →</span></div></div>`;
+    }
+    const acts = r.acts.map((a) => a.endsWith("→") ? `<span class="link">${a}</span>` : `<span class="btn${a === "再確認" ? " pri" : ""}">${a}</span>`).join("");
+    const where = r.where ? `<span class="why"> · ${r.where}</span>` : "";
+    return `<div class="st-row"><div><span class="dot ${r.dot}"></span><span class="st-name">${r.name}</span>${where}<div>${r.text}</div>${r.sub ? `<div class="why">${r.sub}</div>` : ""}</div><div class="acts">${acts}</div></div>`;
+  }).join("");
+  return `<section><div class="sec-h"><h3>自動対応の状態</h3></div><div class="box">${rows}</div></section>`;
+}
+
+function headHtml(s, phone) {
+  const right = s.agents.kind === "multi"
+    ? `<span class="select">すべてのエージェント ▾</span>`
+    : `<span class="agent-one">${s.agents.name}</span>`;
+  return `<div class="h-head"><h2>ホーム</h2>${phone ? "" : right}</div>`;
+}
+
+function body(s, phone) {
+  return headHtml(s, phone) + judgHtml(s) + activityHtml(s) + statusHtml(s);
+}
+
+function badge(n, cls) {
+  return n ? `<span class="badge ${cls}">${n}</span>` : "";
+}
+
+function render(id) {
+  const s = STATES.find((x) => x.id === id);
+  document.querySelectorAll("#states button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+  document.getElementById("desc").innerHTML = `<b>${s.label}</b>${s.desc}`;
+  const jb = s.counts.judg === null ? "" : badge(s.counts.judg, "judg");
+  document.getElementById("side").innerHTML = `
+    <div class="brand">NexusInbox</div>
+    <div class="nav on"><span class="ic">⌂</span><span class="lab">ホーム</span>${jb}</div>
+    <div class="nav"><span class="ic">💬</span><span class="lab">会話</span>${badge(s.counts.unread, "unread")}</div>
+    <div class="nav"><span class="ic">👥</span><span class="lab">コンタクト</span></div>
+    <div class="nav"><span class="ic">🤖</span><span class="lab">エージェント</span></div>
+    <div class="compose">新しい会話</div>
+    <div class="minor"><div class="nav">AI の操作履歴</div><div class="nav">ヘルプ</div></div>`;
+  document.getElementById("desk-main").innerHTML = body(s, false);
+  document.getElementById("phone-main").innerHTML = body(s, true);
+  document.getElementById("p-agent").innerHTML = s.agents.kind === "multi"
+    ? `<span class="select">すべて ▾</span>`
+    : `<span class="agent-one">${s.agents.name}</span>`;
+  document.getElementById("tabs").innerHTML = `
+    <div class="tab on"><span class="ic">⌂</span>ホーム${jb}</div>
+    <div class="tab"><span class="ic">💬</span>会話${badge(s.counts.unread, "unread")}</div>
+    <div class="tab"><span class="ic">👥</span>コンタクト</div>
+    <div class="tab"><span class="ic">🤖</span>エージェント</div>`;
+}
+
+document.getElementById("states").innerHTML = STATES.map((s) => `<button type="button" data-id="${s.id}">${s.label}</button>`).join("");
+document.getElementById("states").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) render(b.dataset.id);
+});
+render(new URLSearchParams(location.search).get("s") || "items");
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ import {
   useApplyAutoReplyPreset,
 } from "../_components/AgentSetup";
 import { AppShell } from "../_components/AppShell";
-import { acknowledgeDevicesAfterConnect } from "../_components/NewDeviceNotice";
+import { acknowledgeDevicesAfterConnect } from "../../lib/home/device-attention";
 import { InviteCard, useInviteName } from "../_components/InviteCard";
 import { type AutoReplyPreset } from "../../lib/agents/auto-reply-presets";
 import { createAgentWithLocalKeys } from "../../lib/agents/create-agent";
@@ -38,6 +38,7 @@ import { getSigningPrivateKey } from "../../lib/crypto/signing-keyring";
 import { planSend } from "../../lib/crypto/device-wraps";
 import { useTranslation } from "../../lib/i18n";
 import { sendScheduleProposal } from "../../lib/protocol/send-propose";
+import { conversationsHref } from "../../lib/url/conversations";
 
 type Step = "name" | "where" | "connect" | "replies" | "test" | "done";
 type Where = "browser" | "pc";
@@ -155,7 +156,7 @@ function OnboardingFlow() {
         {step === "done" && agent ? (
           <DoneStep
             agent={agent}
-            onInbox={() => router.push(`/?agent=${encodeURIComponent(agent.did)}`)}
+            onInbox={() => router.push(conversationsHref({ agent: agent.did }))}
             onSettings={() => router.push("/settings/agents")}
             onReturn={returnTo ? () => router.push(returnTo) : undefined}
           />

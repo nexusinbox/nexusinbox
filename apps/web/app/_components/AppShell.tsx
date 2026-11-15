@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, Suspense, useEffect, useState } from "react";
 import {
-  useAgentDraftsQuery,
   useAgentsQuery,
   useAuthSessionQuery,
   useMessagesQuery,
@@ -19,6 +18,13 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Logo } from "./Logo";
 import { RealtimeSubscriber } from "./RealtimeSubscriber";
+import { useAttention } from "../../lib/home/use-attention";
+import { CONVERSATIONS_PATH, conversationsHref } from "../../lib/url/conversations";
+
+/** Unread is a quieter number than what needs the person. */
+function countClass(item: NavItem): string {
+  return item.countKey === "inboxUnread" ? "x-count muted" : "x-count";
+}
 
 type AppShellProps = {
   /** Page name: the heading at the top of the column and the tab title. */
@@ -37,33 +43,33 @@ type NavItem = {
   labelKey: string;
   /** Shorter label for the phone tab bar. */
   tabKey?: string;
-  countKey: "inboxUnread" | "pending" | null;
+  /** Home counts what needs the person; the conversations, what is unread (docs/41 §3). */
+  countKey: "attention" | "inboxUnread" | null;
   icon: ReactNode;
 };
 
 const ICON = { width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
-const messagesItem: NavItem = {
+const homeItem: NavItem = {
   href: "/",
-  labelKey: "nav.inbox",
-  tabKey: "nav.tabInbox",
+  labelKey: "nav.home",
+  countKey: "attention",
+  icon: (
+    <svg {...ICON}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V20h14V9.5" />
+      <path d="M10 20v-6h4v6" />
+    </svg>
+  ),
+};
+const messagesItem: NavItem = {
+  href: CONVERSATIONS_PATH,
+  labelKey: "nav.conversations",
   countKey: "inboxUnread",
   icon: (
     <svg {...ICON}>
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
       <polyline points="22,6 12,13 2,6" />
-    </svg>
-  ),
-};
-const pendingItem: NavItem = {
-  href: "/pending",
-  labelKey: "nav.pending",
-  tabKey: "nav.tabPending",
-  countKey: "pending",
-  icon: (
-    <svg {...ICON}>
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
     </svg>
   ),
 };
@@ -96,10 +102,12 @@ const contactsItem: NavItem = {
 
 /** The left navigation (and the phone drawer), in order. */
 const navItems: NavItem[] = [
+  homeItem,
   messagesItem,
-  pendingItem,
+  contactsItem,
+  agentsItem,
   {
-    href: "/?view=archive",
+    href: conversationsHref({ view: "archive" }),
     labelKey: "nav.archive",
     countKey: null,
     icon: (
@@ -110,8 +118,6 @@ const navItems: NavItem[] = [
       </svg>
     ),
   },
-  agentsItem,
-  contactsItem,
   {
     href: "/settings/audit",
     labelKey: "nav.auditLog",
@@ -139,8 +145,8 @@ const navItems: NavItem[] = [
   },
 ];
 
-/** The phone tab bar: the four places people go most. */
-const tabItems: NavItem[] = [messagesItem, pendingItem, agentsItem, contactsItem];
+/** The phone tab bar: the same four places as the top of the navigation. */
+const tabItems: NavItem[] = [homeItem, messagesItem, contactsItem, agentsItem];
 
 function avatarInitial(source: string | null | undefined, fallback: string): string {
   if (!source) return fallback;
@@ -185,12 +191,6 @@ export function AppShell({
     page: 1,
     perPage: 1,
   });
-  const pendingQuery = useMessagesQuery({
-    agentDid: "all",
-    folder: "pending_approval",
-    page: 1,
-    perPage: 1,
-  });
 
   const inboxUnread = unreadQuery.data?.total ?? null;
   // 「新しい会話」 needs an agent to send from: shown once there is one.
@@ -200,16 +200,12 @@ export function AppShell({
   useEffect(() => {
     void forgetOldReviewKey();
   }, []);
-  // 確認が必要 covers held messages and AI drafts (docs/33 §9).
-  const draftsQuery = useAgentDraftsQuery();
-  const pendingCount =
-    pendingQuery.data || draftsQuery.data
-      ? (pendingQuery.data?.total ?? 0) + (draftsQuery.data?.drafts?.length ?? 0)
-      : null;
+  // Home's 「あなたの判断が必要」: no count while loading or failed.
+  const attention = useAttention();
 
-  const counts: Record<"inboxUnread" | "pending", number | null> = {
+  const counts: Record<"attention" | "inboxUnread", number | null> = {
+    attention: attention.state === "ready" ? attention.count : null,
     inboxUnread,
-    pending: pendingCount,
   };
 
   const user = sessionQuery.data?.user;
@@ -291,7 +287,7 @@ export function AppShell({
 
       {/* Left navigation on wide screens; a slide-in drawer on phones. */}
       <aside className="x-nav" id="x-nav-drawer">
-        <Link href="/" className="x-brand" aria-label={t("nav.inbox")}>
+        <Link href="/" className="x-brand" aria-label={t("nav.home")}>
           <Logo size={32} variant="light" />
           <span>
             Nexus<b>Inbox</b>
@@ -310,7 +306,7 @@ export function AppShell({
                 {item.icon}
                 <span className="x-nav-label">{t(item.labelKey)}</span>
                 {count !== null ? (
-                  <span className="x-count" data-testid={`mailbox-count-${item.countKey}`}>
+                  <span className={countClass(item)} data-testid={`mailbox-count-${item.countKey}`}>
                     {count}
                   </span>
                 ) : null}
@@ -394,7 +390,7 @@ export function AppShell({
             >
               {item.icon}
               <span>{t(item.tabKey ?? item.labelKey)}</span>
-              {count !== null ? <span className="x-count">{count}</span> : null}
+              {count !== null ? <span className={countClass(item)}>{count}</span> : null}
             </Link>
           );
         })}

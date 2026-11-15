@@ -132,6 +132,20 @@ export function AgentDevices({
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("addBrowser") === "1") setAdding(true);
   }, []);
+  // ?device=<DID>, from Home's 「端末を確認」 (docs/41 §6.2): that device
+  // first, marked, and in view.
+  const [pointed, setPointed] = useState<string | null>(null);
+  useEffect(() => {
+    setPointed(new URLSearchParams(window.location.search).get("device"));
+  }, []);
+  const pointedRow = useRef<HTMLDivElement | null>(null);
+  const pointedHere = pointed !== null && devices.some((d) => d.did === pointed);
+  useEffect(() => {
+    if (pointedHere) pointedRow.current?.scrollIntoView({ block: "center" });
+  }, [pointedHere]);
+  const shownDevices = pointedHere
+    ? [...devices.filter((d) => d.did === pointed), ...devices.filter((d) => d.did !== pointed)]
+    : devices;
   // Which browser runs the automatic replies (docs/40 §17.6).
   const runner = autoReplyBrowser(agent);
   const autoReplyDid = runner?.did ?? agent.did;
@@ -323,15 +337,25 @@ export function AgentDevices({
           )}
         </div>
       ) : null}
-      {devices.map((d) => {
+      {shownDevices.map((d) => {
         const state = deviceState(d, now, heldHere.has(d.did));
         const approval = listed ? approvalOf(d, status) : null;
         const seen = d.kind === "computer" ? ago(d.last_used_at ?? d.activated_at) : null;
         return (
           <div
             key={d.did}
+            ref={d.did === pointed ? pointedRow : undefined}
             data-testid="agent-device"
-            style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0" }}
+            data-pointed={d.did === pointed ? "true" : undefined}
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              padding: "6px 0",
+              ...(d.did === pointed
+                ? { padding: "8px 10px", margin: "2px -10px", borderRadius: 12, background: "var(--warn-soft)", outline: "2px solid var(--warn)" }
+                : {}),
+            }}
           >
             <span aria-hidden style={{ fontSize: "var(--fs-lg)", lineHeight: "22px" }}>
               {d.kind === "computer" ? "💻" : "🌐"}

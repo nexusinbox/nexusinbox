@@ -30,7 +30,7 @@ import type { Agent, AgentCredential, AgentDevice } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { AgentDevices, connectedTheOldWay } from "./AgentDevices";
-import { acknowledgeDevicesAfterConnect } from "./NewDeviceNotice";
+import { acknowledgeDevicesAfterConnect } from "../../lib/home/device-attention";
 import {
   AutoReplyPresetChoices,
   CommandLine,

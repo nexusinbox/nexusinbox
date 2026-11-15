@@ -355,8 +355,8 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   // Bounce back to /, open the conversation, expect the decrypted
   // subject + body. Same browser context → recipient's private key
   // is in localStorage → decryption resolves the real plaintext.
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/conversations");
+  await expect(page).toHaveURL(/\/conversations$/);
   await expect(page.getByTestId("dm-row").first()).toBeVisible();
   await page.getByTestId("dm-row").first().click();
 

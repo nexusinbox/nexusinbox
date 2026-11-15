@@ -34,6 +34,7 @@ import {
 import { ConnectedAIs } from "../../_components/ConnectedAIs";
 import { AgentSharePanel } from "../../_components/AgentSharePanel";
 import { Avatar } from "../../_components/messages/ConversationView";
+import { conversationsHref } from "../../../lib/url/conversations";
 
 // The server's limit for an agent's bio (PATCH /agents/{id}).
 const BIO_MAX = 160;
@@ -921,7 +922,7 @@ export default function AgentsSettingsPage() {
                     <span>{t("agents.unread", { count: activeAgent.unread_count })}</span>
                     <Link
                       className="dm-link"
-                      href={`/?agent=${encodeURIComponent(activeAgent.did)}`}
+                      href={conversationsHref({ agent: activeAgent.did })}
                     >
                       {t("agents.openInbox")}
                     </Link>

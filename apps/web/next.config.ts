@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { CONVERSATION_PARAMS } from "./lib/url/conversations";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -32,11 +33,21 @@ const nextConfig: NextConfig = {
     ];
   },
   // The old per-agent inbox (/agent, /agent/<DID>) is gone; bookmarks land
-  // on Messages, filtered to that agent.
+  // on the conversations, filtered to that agent. Home took `/` (docs/41
+  // §3.1): a link to `/` naming a conversation, an agent or a view still
+  // opens the conversations (the query is passed on), and 「確認が必要」
+  // (/pending) is Home's 「あなたの判断が必要」.
   async redirects() {
     return [
-      { source: "/agent", destination: "/", permanent: false },
-      { source: "/agent/:did", destination: "/?agent=:did", permanent: false },
+      { source: "/agent", destination: "/conversations", permanent: false },
+      { source: "/agent/:did", destination: "/conversations?agent=:did", permanent: false },
+      ...CONVERSATION_PARAMS.map((key) => ({
+        source: "/",
+        has: [{ type: "query" as const, key }],
+        destination: "/conversations",
+        permanent: false,
+      })),
+      { source: "/pending", destination: "/#attention", permanent: false },
     ];
   },
   async headers() {

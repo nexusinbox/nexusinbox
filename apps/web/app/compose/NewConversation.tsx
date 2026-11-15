@@ -15,6 +15,7 @@ import { formatPartyLabel } from "../../lib/api/labels";
 import { buildRecipientOptions, type RecipientOption } from "../../lib/contacts/recipient-options";
 import { hasSigningPrivateKeyMaterial } from "../../lib/crypto/signing-keyring";
 import { useTranslation } from "../../lib/i18n";
+import { conversationsHref } from "../../lib/url/conversations";
 
 /** Looks like an address someone pasted (not a name to search for). */
 function isAddress(value: string): boolean {
@@ -77,7 +78,7 @@ export function NewConversation() {
 
   const open = (address: string) => {
     if (!sender) return;
-    router.push(`/?with=${encodeURIComponent(address)}&as=${encodeURIComponent(sender.did)}`);
+    router.push(conversationsHref({ with: address, as: sender.did }));
   };
 
   const fullFormHref =

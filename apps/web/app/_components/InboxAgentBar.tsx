@@ -17,11 +17,9 @@ export function agentForDid(agents: Agent[], did: string | undefined): Agent | u
   return agents.find((a) => a.did === did || a.dids?.includes(did));
 }
 
-export function InboxAgentBar({ agents }: { agents: Agent[] }) {
-  const { t } = useTranslation();
-  // This browser's device of each agent whose keys it holds, by agent DID.
+/** This browser's device of each agent whose keys it holds, by agent DID; null while looking. */
+export function useBrowserDevices(agents: Agent[]): Map<string, string> | null {
   const [inBrowser, setInBrowser] = useState<Map<string, string> | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     Promise.all(agents.map(async (a) => [a.did, await localDeviceDid(a)] as const)).then((pairs) => {
@@ -32,6 +30,21 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
       cancelled = true;
     };
   }, [agents]);
+  return inBrowser;
+}
+
+/** Whether this browser runs the agent's auto-replies (docs/40 §17.6). */
+export function runsHere(inBrowser: Map<string, string> | null, a: Agent): boolean {
+  return !!inBrowser && inBrowser.get(a.did) === autoReplyBrowser(a)?.did;
+}
+
+/**
+ * `quiet`: only run the replies, without the line saying where they run
+ * (Home says it in its status section).
+ */
+export function InboxAgentBar({ agents, quiet = false }: { agents: Agent[]; quiet?: boolean }) {
+  const { t } = useTranslation();
+  const inBrowser = useBrowserDevices(agents);
 
   if (agents.length === 0) return null;
 
@@ -40,9 +53,9 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
   // here, in another browser of the person (named), or, with no browser
   // among its devices, on a computer.
   const runner = (a: Agent) => autoReplyBrowser(a);
-  const runsHere = (a: Agent) => !!inBrowser && inBrowser.get(a.did) === runner(a)?.did;
-  const browserRun = inBrowser ? autoReplying.filter(runsHere) : [];
-  const otherBrowserRun = inBrowser ? autoReplying.filter((a) => !runsHere(a) && runner(a)) : [];
+  const here = (a: Agent) => runsHere(inBrowser, a);
+  const browserRun = inBrowser ? autoReplying.filter(here) : [];
+  const otherBrowserRun = inBrowser ? autoReplying.filter((a) => !here(a) && runner(a)) : [];
   const computerRun = inBrowser ? autoReplying.filter((a) => !runner(a)) : [];
   const names = (list: Agent[]) => list.map((a) => a.label).join("、");
   const browserName = (a: Agent) => {
@@ -52,7 +65,7 @@ export function InboxAgentBar({ agents }: { agents: Agent[] }) {
 
   return (
     <section className="inbox-agent-bar">
-      {browserRun.length > 0 || computerRun.length > 0 || otherBrowserRun.length > 0 ? (
+      {!quiet && (browserRun.length > 0 || computerRun.length > 0 || otherBrowserRun.length > 0) ? (
         <p
           data-testid="inbox-auto-reply-note"
           style={{

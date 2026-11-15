@@ -15,15 +15,19 @@ type MessageRecord = {
   ai_category: string | null;
   created_at: string;
   trust_score: number;
-  // The pending view server-side filters on `folder=pending_approval`
-  // (apps/web/app/pending/page.tsx:33). Approve/reject mutate the
+  // Home's 「あなたの判断が必要」 asks for `folder=pending_approval`
+  // (lib/home/use-attention.ts). Approve/reject mutate the
   // folder via PATCH /messages/:id/flags, so this mock has to track
   // it too — once the folder leaves pending_approval, the row drops
   // out of the GET list.
   folder: "pending_approval" | "inbox" | "trash";
 };
 
-test("pending approval: approve and reject flagged messages", async ({ page, context, baseURL }) => {
+test("home: the old 確認が必要 lands on Home, and held messages are let in or thrown away there", async ({
+  page,
+  context,
+  baseURL,
+}) => {
   const messages: MessageRecord[] = [
     {
       id: "00000000-0000-0000-0000-0000000000a1",
@@ -171,38 +175,116 @@ test("pending approval: approve and reject flagged messages", async ({ page, con
 
   await seedAuthSessionCookie(context, baseURL);
 
+  // The old page is Home's 「あなたの判断が必要」 (docs/41 §3.1).
   await page.goto("/pending");
-  await expect(page).toHaveURL(/\/pending$/);
-  // Heading text follows the `pending.heading` template
-  // "届いたメッセージ（{count}）" (docs/34 §3 step 3).
-  const heading = page.getByTestId("pending-messages").locator("h3");
-  await expect(heading).toContainText("届いたメッセージ（2）");
-  // The AI drafts section sits above it, empty here.
-  await expect(page.getByTestId("agent-drafts")).toContainText("AI が作った下書き（0）");
+  await expect(page).toHaveURL(/\/#attention$/);
+  const section = page.getByTestId("home-attention");
+  const count = page.getByTestId("home-attention-count");
+  await expect(count).toHaveText("2 件");
+  // The breakdown says what kind of work it is (docs/41 §6.1).
+  await expect(section).toContainText("受信の許可 2");
+  await expect(page.getByTestId("mailbox-count-attention").first()).toHaveText("2");
 
-  // Approve the first flagged message. Approve == folder=inbox via
-  // PATCH /messages/:id/flags, so the row drops out of the
-  // folder=pending_approval query result and the heading count
-  // decreases. The approve button is `pending.approve` ("受け取る");
-  // the reject counterpart is `pending.reject` ("捨てる").
   // The subject is ciphertext for the recipient agent and is never shown
   // as text; each row is told apart by why it was held.
   await expect(page.getByText("怪しい件名A")).toHaveCount(0);
-  await expect(page.getByText("件名は暗号化されています").first()).toBeVisible();
-  await page
-    .getByTestId("pending-row")
-    .filter({ hasText: "短時間に大量の送信" })
-    .getByRole("button", { name: "受け取る" })
-    .click();
+  const burst = page.getByTestId("home-attention-row").filter({ hasText: "短時間に大量の送信" });
+  await burst.getByRole("button", { name: "決める" }).click();
+  await expect(burst.getByText("件名は暗号化されています")).toBeVisible();
+  await burst.getByRole("button", { name: "受け取る" }).click();
   await expect(page.getByText("受信に入れました。")).toBeVisible();
-  await expect(heading).toContainText("届いたメッセージ（1）");
+  await expect(count).toHaveText("1 件");
 
-  // Reject the remaining message → folder=trash → empty state.
-  await page
-    .getByTestId("pending-row")
-    .filter({ hasText: "迷惑な送信者の一覧に一致" })
-    .getByRole("button", { name: "捨てる" })
-    .click();
+  // Throw the other away → nothing left.
+  const denylist = page.getByTestId("home-attention-row").filter({ hasText: "迷惑な送信者の一覧に一致" });
+  await denylist.getByRole("button", { name: "決める" }).click();
+  await denylist.getByRole("button", { name: "捨てる" }).click();
   await expect(page.getByText("ゴミ箱に移しました。")).toBeVisible();
-  await expect(page.getByText("確認が必要なメッセージはありません。")).toBeVisible();
+  await expect(page.getByTestId("home-attention-none")).toBeVisible();
+  await expect(count).toHaveText("0 件");
+});
+
+test("home: a failed load is not shown as nothing to do", async ({ page, context, baseURL }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("nexusinbox-locale", "ja");
+  });
+  await mockNexusInboxBackend(page);
+  await page.route("**/api/agent-drafts*", async (route) => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "down" }) });
+  });
+  await seedAuthSessionCookie(context, baseURL);
+
+  await page.goto("/");
+  await expect(page.getByTestId("home-attention-error")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("home-attention-count")).toHaveText("—");
+  await expect(page.getByTestId("home-attention-none")).toHaveCount(0);
+  await expect(page.getByTestId("mailbox-count-attention")).toHaveCount(0);
+});
+
+test("home: old links that named a conversation open the conversations", async ({ page, context, baseURL }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("nexusinbox-locale", "ja");
+  });
+  await mockNexusInboxBackend(page);
+  await seedAuthSessionCookie(context, baseURL);
+
+  await page.goto("/?view=archive");
+  await expect(page).toHaveURL(/\/conversations\?view=archive$/);
+  await page.goto("/?agent=did%3Akey%3AzE2E");
+  await expect(page).toHaveURL(/\/conversations\?agent=did%3Akey%3AzE2E$/);
+  await page.goto("/agent/did:key:zE2E");
+  await expect(page).toHaveURL(/\/conversations\?agent=did(:|%3A)key(:|%3A)zE2E$/);
+});
+
+test("home: more than one page of held messages is counted, and the rest can be read", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("nexusinbox-locale", "ja");
+  });
+  await mockNexusInboxBackend(page);
+  const held = Array.from({ length: 150 }, (_, i) => ({
+    id: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`,
+    sender_did: `did:key:zHeld${i}`,
+    sender_label: null,
+    recipient_did: "did:key:zE2EAGENTSEED01",
+    recipient_label: null,
+    thread_id: null,
+    subject_encrypted: "x",
+    status: "unread",
+    priority: "background",
+    ai_category: "spam_burst",
+    created_at: new Date().toISOString(),
+    trust_score: 0.1,
+    folder: "pending_approval",
+  }));
+  await page.route("**/api/messages**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/messages" && url.searchParams.get("folder") === "pending_approval") {
+      const perPage = Number(url.searchParams.get("per_page") ?? 100);
+      const pageNo = Number(url.searchParams.get("page") ?? 1);
+      const messages = held.slice((pageNo - 1) * perPage, pageNo * perPage);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages, total: held.length, page: pageNo, per_page: perPage }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+  await seedAuthSessionCookie(context, baseURL);
+
+  await page.goto("/");
+  await expect(page.getByTestId("home-attention-count")).toHaveText("150 件");
+  await expect(page.getByTestId("home-attention")).toContainText("受信の許可 150");
+  const more = page.getByTestId("home-attention-more");
+  await expect(more).toContainText("ほかに 50 件");
+  await expect(page.getByTestId("home-attention-row")).toHaveCount(100);
+  await more.getByRole("button", { name: "続きを読み込む" }).click();
+  await expect(page.getByTestId("home-attention-row")).toHaveCount(150);
+  await expect(more).toHaveCount(0);
+  await expect(page.getByTestId("home-attention-count")).toHaveText("150 件");
 });

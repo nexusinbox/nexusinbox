@@ -103,7 +103,7 @@ test("dashboard UI: search and the unread chip", async ({
     await route.fallback();
   });
 
-  await page.goto("/");
+  await page.goto("/conversations");
   const rows = page.getByTestId("dm-row");
   await expect(rows).toHaveCount(2);
 
