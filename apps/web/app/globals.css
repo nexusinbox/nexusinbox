@@ -5069,6 +5069,15 @@ details[open] .help-accordion-chevron {
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+/* A note after a switch goes on its own line under the buttons, and the
+   buttons' column stays narrow, so the agent's name keeps its width. */
+.home-status-row .home-acts {
+  max-width: 22em;
+}
+.home-acts .home-note {
+  flex-basis: 100%;
+  text-align: right;
+}
 .home-expand {
   grid-column: 1 / -1;
   display: grid;
@@ -5207,4 +5216,12 @@ details[open] .help-accordion-chevron {
 .x-count.muted {
   background: var(--surface-active);
   color: var(--text);
+}
+@media (max-width: 980px) {
+  .home-status-row .home-acts {
+    max-width: none;
+  }
+  .home-acts .home-note {
+    text-align: left;
+  }
 }
