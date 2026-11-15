@@ -1480,6 +1480,98 @@
     ],
     "unverified": []
    }
+  },
+  {
+   "name": "server time format: index times like 2026-11-16 11:57:00.123456+00 are read (the AI started)",
+   "messages": [
+    {
+     "id": "m1",
+     "at": "2026-11-16 11:50:00.123456+00",
+     "mine": false,
+     "verified": true,
+     "protocol": {
+      "id": "P1",
+      "type": "schedule_negotiation",
+      "action": "propose",
+      "reply_to": null,
+      "payload": {}
+     },
+     "auto_reply": {
+      "claimed_at": "2026-11-16 11:57:00.5+00",
+      "sent_at": null
+     }
+    }
+   ],
+   "expect": {
+    "requests": [
+     {
+      "request_id": "P1",
+      "state": "ai_started",
+      "next": "ai",
+      "last_message_id": "m1",
+      "evidence": [
+       "m1"
+      ],
+      "ai_started_at": "2026-11-16 11:57:00.5+00"
+     }
+    ],
+    "unverified": []
+   }
+  },
+  {
+   "name": "server time format: replies are put in order by their index times",
+   "messages": [
+    {
+     "id": "m2",
+     "at": "2026-11-16 10:05:00.000001+00",
+     "mine": false,
+     "verified": true,
+     "protocol": {
+      "id": "P2",
+      "type": "schedule_negotiation",
+      "action": "accept",
+      "reply_to": "P1",
+      "payload": {
+       "selected_candidate": {
+        "start": "2026-11-19T05:00:00Z",
+        "end": "2026-11-19T06:00:00Z"
+       }
+      }
+     }
+    },
+    {
+     "id": "m1",
+     "at": "2026-11-16 10:00:00+00",
+     "mine": true,
+     "verified": true,
+     "protocol": {
+      "id": "P1",
+      "type": "schedule_negotiation",
+      "action": "propose",
+      "reply_to": null,
+      "payload": {}
+     }
+    }
+   ],
+   "expect": {
+    "requests": [
+     {
+      "request_id": "P1",
+      "state": "agreed",
+      "next": "none",
+      "last_message_id": "m2",
+      "evidence": [
+       "m1",
+       "m2"
+      ],
+      "selected": {
+       "start": "2026-11-19T05:00:00Z",
+       "end": "2026-11-19T06:00:00Z"
+      }
+     }
+    ],
+    "unverified": []
+   }
   }
  ]
 }

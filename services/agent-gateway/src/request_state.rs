@@ -88,9 +88,24 @@ const ORDER: [&str; 12] = [
     "declined",
 ];
 
+/// Read a time as the API prints it: RFC 3339, or Postgres text such as
+/// `2026-11-16 11:57:00.123456+00` (the message index).
 fn time(value: Option<&str>) -> Option<i64> {
-    value
-        .and_then(|v| DateTime::parse_from_rfc3339(v).ok())
+    let v = value?.trim();
+    let mut iso = v.replacen(' ', "T", 1);
+    // "+00" (hours only) → "+00:00".
+    let bytes = iso.as_bytes();
+    if bytes.len() >= 3 {
+        let tail = &iso[iso.len() - 3..];
+        if (tail.starts_with('+') || tail.starts_with('-'))
+            && tail[1..].chars().all(|c| c.is_ascii_digit())
+            && !iso[..iso.len() - 3].ends_with(':')
+        {
+            iso.push_str(":00");
+        }
+    }
+    DateTime::parse_from_rfc3339(&iso)
+        .ok()
         .map(|t| t.with_timezone(&Utc).timestamp_millis())
 }
 
@@ -411,7 +426,7 @@ mod tests {
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(vectors.ai_started_window_seconds, AI_STARTED_WINDOW_SECS);
-        assert_eq!(vectors.cases.len(), 30);
+        assert_eq!(vectors.cases.len(), 32);
         for case in &vectors.cases {
             let out = conversation_requests(&case.messages, &vectors.now);
             assert_eq!(out.unverified, case.expect.unverified, "{}", case.name);

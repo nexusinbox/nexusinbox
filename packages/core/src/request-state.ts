@@ -120,11 +120,22 @@ const ORDER: RequestState[] = [
 
 type Event = { message: RequestMessage; protocol: NonNullable<RequestMessage["protocol"]>; ms: number };
 
-function time(value: string | null | undefined): number | null {
+/**
+ * Read a time as the API prints it: RFC 3339, or Postgres text such as
+ * `2026-11-16 11:57:00.123456+00` (the message index), which not every
+ * JavaScript engine reads as is.
+ */
+export function parseTime(value: string | null | undefined): number | null {
   if (!value) return null;
-  const ms = Date.parse(value);
+  const iso = value
+    .trim()
+    .replace(" ", "T")
+    .replace(/(\.\d{3})\d+/, "$1")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  const ms = Date.parse(iso);
   return Number.isNaN(ms) ? null : ms;
 }
+const time = parseTime;
 
 export function conversationRequests(messages: RequestMessage[], now: string): ConversationRequests {
   const nowMs = time(now) ?? 0;
