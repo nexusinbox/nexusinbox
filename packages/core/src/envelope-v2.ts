@@ -217,6 +217,8 @@ export type SenderCheck = {
   state: SenderCheckState;
   /** The sender's current list, when it verified (to move the pin forward). */
   list?: DeviceListPayload;
+  /** That list's `deviceListHash`, kept in the pin with it. */
+  hash?: string;
 };
 
 /** The fields a delivered message's v2 signature should cover. */
@@ -281,7 +283,7 @@ export async function checkSender(input: {
   if (!ref) return { state: pin ? "broken" : "no_list" };
   const checked = await checkDeviceList({ aid: sig.sender_aid, ref, pin, history: input.history });
   if (!checked.ok) return { state: checked.reason === "root_changed" ? "root_changed" : "broken" };
-  const list = checked.list;
+  const { list, hash } = checked;
 
   // The list as it was when the message was sent: same root, not newer,
   // signed by a signer the current list still trusts, or else followed
@@ -291,15 +293,15 @@ export async function checkSender(input: {
   if (sentRef && sentRef.version !== list.version) {
     const old = await readDeviceList(sentRef.jws, sig.sender_aid);
     if (!old || old.list.root !== list.root || old.list.version !== sentRef.version || old.list.version > list.version) {
-      return { state: "broken", list };
+      return { state: "broken", list, hash };
     }
     if (!listSigners(list).includes(old.signer) && !(await inChain(sig.sender_aid, list, sentRef, input.history))) {
-      return { state: "broken", list };
+      return { state: "broken", list, hash };
     }
     sentWith = old.list;
   }
-  if (!sentWith.devices.some((d) => d.did === content.sender_did)) return { state: "not_listed", list };
-  return { state: "verified", list };
+  if (!sentWith.devices.some((d) => d.did === content.sender_did)) return { state: "not_listed", list, hash };
+  return { state: "verified", list, hash };
 }
 
 /** Whether `sent` is the version the chain from version 1 to `current` holds. */
@@ -316,7 +318,7 @@ async function inChain(
 /** What to remember after a check (the pin only moves forward). */
 export function pinAfterCheck(pin: DevicePin | null, check: SenderCheck): DevicePin | null {
   if (!check.list || check.state === "root_changed") return pin;
-  return pinFor(pin, check.list);
+  return pinFor(pin, check.list, check.hash);
 }
 
 /** Why an automatic reply is left to the person (recorded as the skip reason). */

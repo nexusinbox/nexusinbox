@@ -44,7 +44,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -93,7 +94,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -138,7 +140,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -175,7 +178,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -217,7 +221,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -291,7 +296,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "fB758SCeDkga2CkIY8SKHUgUZAi1PXd6uVczW-LsWzs"
         }
       }
     },
@@ -444,7 +450,8 @@
         },
         "pin": {
           "root": "did:key:z6Mko9hTggMwjSTEaJaPUfE6tqcy2xvU6BnNq3e3o8qVBiyH",
-          "version": 1
+          "version": 1,
+          "hash": "mHueM4_5P6pvuUHCqlhQRdSsVzl_dv9KsLQ2hFmh_FQ"
         }
       }
     },
@@ -519,7 +526,8 @@
         },
         "pin": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 2
+          "version": 2,
+          "hash": "GnhV-Z4psDp8wWWFWekEiICEkTLdaoUQeuRKm1_tw6E"
         }
       }
     },
@@ -672,7 +680,8 @@
           "version": 4,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "16vjcO6dtR9E-D9AFoohNIAno-5j28WEpbhKUU1kO7g"
         }
       }
     },
@@ -727,7 +736,8 @@
           "version": 4,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "16vjcO6dtR9E-D9AFoohNIAno-5j28WEpbhKUU1kO7g"
         }
       }
     },
@@ -796,7 +806,8 @@
           "version": 4,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "16vjcO6dtR9E-D9AFoohNIAno-5j28WEpbhKUU1kO7g"
         }
       }
     },
@@ -1067,6 +1078,199 @@
         "reason": "signature"
       },
       "history": null
+    },
+    {
+      "name": "the root hands signing to another; the same list checks again (review 2026-11-15)",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa210V3RZNjNHUVZCcnBNeVJKV0V6c254ZnNHa2VtdTZDdE1Ed0dUdjRSWWoyIiwiZW5jIjoiRU5DX1BIT05FIiwia2luZCI6ImJyb3dzZXIifSx7ImRpZCI6ImRpZDprZXk6ejZNa3ZSWE5ZY0U3TU1kdXluV1RnZUtiRGFUMWlpakRTQzhwWnFYWmM4ckhQcmYyIiwiZW5jIjoiRU5DX1BDMSIsImtpbmQiOiJjb21wdXRlciJ9XSwic2lnbmVycyI6WyJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJdfQ.UE62ulZ_DMri5uPfOgru7tCCoVjPSE9Jn2_oYlLxeCkfdZXsHjPWK4chFNkCB7BcbLstEpkg0hgUcnA0PbzyAw"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 2,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ],
+        "hash": "OSq43XSlgQ3NndYJ5fk5xg1oRCJvn2PmdxHFsRwvUGg"
+      },
+      "history": null,
+      "expect": {
+        "kind": "listed",
+        "targets": [
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          },
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          }
+        ],
+        "single": {
+          "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+          "encryption_public_key": "ENC_PC1"
+        },
+        "pin": {
+          "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+          "version": 2,
+          "signers": [
+            "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+          ],
+          "hash": "OSq43XSlgQ3NndYJ5fk5xg1oRCJvn2PmdxHFsRwvUGg"
+        }
+      }
+    },
+    {
+      "name": "the remembered version, but not the same list",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTE0VDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa210V3RZNjNHUVZCcnBNeVJKV0V6c254ZnNHa2VtdTZDdE1Ed0dUdjRSWWoyIiwiZW5jIjoiRU5DX1BIT05FIiwia2luZCI6ImJyb3dzZXIifSx7ImRpZCI6ImRpZDprZXk6ejZNa3ZSWE5ZY0U3TU1kdXluV1RnZUtiRGFUMWlpakRTQzhwWnFYWmM4ckhQcmYyIiwiZW5jIjoiRU5DX1BDMSIsImtpbmQiOiJjb21wdXRlciJ9XSwic2lnbmVycyI6WyJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJdfQ.6dwW9gWJGknerZTmX6w8uc1qHJVEMEeY7PJfLm84nHQAmdtUNU8PcuulRCxYWF-RpPbNLqqteCJ85vaDF_uoDA"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 2,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ],
+        "hash": "OSq43XSlgQ3NndYJ5fk5xg1oRCJvn2PmdxHFsRwvUGg"
+      },
+      "history": null,
+      "expect": {
+        "kind": "stop",
+        "reason": "signature"
+      }
+    },
+    {
+      "name": "a pin without a hash at the same version: followed from version 1",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa210V3RZNjNHUVZCcnBNeVJKV0V6c254ZnNHa2VtdTZDdE1Ed0dUdjRSWWoyIiwiZW5jIjoiRU5DX1BIT05FIiwia2luZCI6ImJyb3dzZXIifSx7ImRpZCI6ImRpZDprZXk6ejZNa3ZSWE5ZY0U3TU1kdXluV1RnZUtiRGFUMWlpakRTQzhwWnFYWmM4ckhQcmYyIiwiZW5jIjoiRU5DX1BDMSIsImtpbmQiOiJjb21wdXRlciJ9XSwic2lnbmVycyI6WyJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJdfQ.UE62ulZ_DMri5uPfOgru7tCCoVjPSE9Jn2_oYlLxeCkfdZXsHjPWK4chFNkCB7BcbLstEpkg0hgUcnA0PbzyAw"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 2,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ]
+      },
+      "history": [
+        {
+          "version": 1,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoxLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoxLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9XX0.x2rgqFof_vQTmmv77z2uC62tL4Hhh6s5AFcRlPePFdsRBekrc3HOcwU4xwDV-bk61xKTDGeqIMXNXMJhAHaOBA"
+        },
+        {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa210V3RZNjNHUVZCcnBNeVJKV0V6c254ZnNHa2VtdTZDdE1Ed0dUdjRSWWoyIiwiZW5jIjoiRU5DX1BIT05FIiwia2luZCI6ImJyb3dzZXIifSx7ImRpZCI6ImRpZDprZXk6ejZNa3ZSWE5ZY0U3TU1kdXluV1RnZUtiRGFUMWlpakRTQzhwWnFYWmM4ckhQcmYyIiwiZW5jIjoiRU5DX1BDMSIsImtpbmQiOiJjb21wdXRlciJ9XSwic2lnbmVycyI6WyJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJdfQ.UE62ulZ_DMri5uPfOgru7tCCoVjPSE9Jn2_oYlLxeCkfdZXsHjPWK4chFNkCB7BcbLstEpkg0hgUcnA0PbzyAw"
+        }
+      ],
+      "expect": {
+        "kind": "listed",
+        "targets": [
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          },
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          }
+        ],
+        "single": {
+          "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+          "encryption_public_key": "ENC_PC1"
+        },
+        "pin": {
+          "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+          "version": 2,
+          "signers": [
+            "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+          ],
+          "hash": "OSq43XSlgQ3NndYJ5fk5xg1oRCJvn2PmdxHFsRwvUGg"
+        }
+      }
+    },
+    {
+      "name": "a pin without a hash at the same version, and the versions cannot be fetched",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa210V3RZNjNHUVZCcnBNeVJKV0V6c254ZnNHa2VtdTZDdE1Ed0dUdjRSWWoyIiwiZW5jIjoiRU5DX1BIT05FIiwia2luZCI6ImJyb3dzZXIifSx7ImRpZCI6ImRpZDprZXk6ejZNa3ZSWE5ZY0U3TU1kdXluV1RnZUtiRGFUMWlpakRTQzhwWnFYWmM4ckhQcmYyIiwiZW5jIjoiRU5DX1BDMSIsImtpbmQiOiJjb21wdXRlciJ9XSwic2lnbmVycyI6WyJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJdfQ.UE62ulZ_DMri5uPfOgru7tCCoVjPSE9Jn2_oYlLxeCkfdZXsHjPWK4chFNkCB7BcbLstEpkg0hgUcnA0PbzyAw"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 2,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ]
+      },
+      "history": null,
+      "expect": {
+        "kind": "stop",
+        "reason": "signature"
+      }
     }
   ]
 }

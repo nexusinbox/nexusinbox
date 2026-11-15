@@ -284,10 +284,18 @@ export function deviceListVersion(jws: string): number | null {
 
 /**
  * What a sender remembers of an agent: its root, the newest list version
- * seen, and who may sign the next one when that is not just the root
- * (docs/40 §17.3).
+ * seen, who may sign the next one when that is not just the root (docs/40
+ * §17.3), and the hash of that list (`deviceListHash`), so the same list
+ * checks again after its signer handed signing to another (review
+ * 2026-11-15).
  */
-export type DevicePin = { root: string; version: number; signers?: string[] };
+export type DevicePin = { root: string; version: number; signers?: string[]; hash?: string };
+
+/** The SHA-256 of a list's JWS (base64url): the same list, byte for byte. */
+export async function deviceListHash(jws: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", asArrayBuffer(encoder.encode(jws)));
+  return toBase64Url(new Uint8Array(digest));
+}
 
 /**
  * The agent's list versions after `after`, oldest first, as the server
@@ -299,7 +307,7 @@ export type DeviceListHistory = (
 ) => Promise<Array<{ version: number; jws: string }> | null>;
 
 export type ListCheck =
-  | { ok: true; list: DeviceListPayload }
+  | { ok: true; list: DeviceListPayload; hash: string }
   | { ok: false; reason: "signature" | "root_changed" | "rollback"; root?: string };
 
 /**
@@ -327,12 +335,22 @@ export async function checkDeviceList(input: {
     pin = null;
   }
   if (pin && list.version < pin.version) return { ok: false, reason: "rollback" };
+  const hash = await deviceListHash(input.ref.jws);
 
-  if (signedDirectly(list, signer, pin)) return { ok: true, list };
+  // The version the pin remembers: the list that checked then, byte for
+  // byte. Its signer need not still be a signer (it may have handed over).
+  if (pin && list.version === pin.version && pin.hash) {
+    return hash === pin.hash ? { ok: true, list, hash } : { ok: false, reason: "signature" };
+  }
 
-  const chain = await followVersions(input.aid, list.root, pin, list.version, input.history);
+  if (signedDirectly(list, signer, pin)) return { ok: true, list, hash };
+
+  // A pin from before hashes were kept, at this version: follow from
+  // version 1. Otherwise from the pin.
+  const from = pin && list.version === pin.version ? null : pin;
+  const chain = await followVersions(input.aid, list.root, from, list.version, input.history);
   if (!chain || chain[chain.length - 1].jws !== input.ref.jws) return { ok: false, reason: "signature" };
-  return { ok: true, list };
+  return { ok: true, list, hash };
 }
 
 /**
@@ -378,12 +396,20 @@ export async function followVersions(
   return out;
 }
 
-/** The pin to keep after `list` checked (it only moves forward). */
-export function pinFor(pin: DevicePin | null, list: DeviceListPayload): DevicePin {
+/**
+ * The pin to keep after `list` checked (it only moves forward). `hash` is
+ * the list's `deviceListHash`, from the check.
+ */
+export function pinFor(pin: DevicePin | null, list: DeviceListPayload, hash?: string): DevicePin {
   if (pin && pin.root === list.root && pin.version > list.version) return pin;
   const signers = listSigners(list);
   const onlyRoot = signers.length === 1 && signers[0] === list.root;
-  return { root: list.root, version: list.version, ...(onlyRoot ? {} : { signers }) };
+  return {
+    root: list.root,
+    version: list.version,
+    ...(onlyRoot ? {} : { signers }),
+    ...(hash ? { hash } : {}),
+  };
 }
 
 /** The part of a resolved agent (`GET /recipients/resolve`) the decision reads. */
@@ -413,7 +439,7 @@ export type StopReason = "root_changed" | "signature" | "rollback" | "removed" |
 
 export type WrapDecision =
   /** Checked: wrap for `targets`; `single` is the one `encrypted_key` goes to. */
-  | { kind: "listed"; list: DeviceListPayload; targets: WrapTarget[]; single: WrapTarget }
+  | { kind: "listed"; list: DeviceListPayload; hash: string; targets: WrapTarget[]; single: WrapTarget }
   | { kind: "stop"; reason: StopReason; root?: string };
 
 /** The root a list names, unchecked. */
@@ -466,7 +492,7 @@ export async function decideWrapTargets(input: {
   if (!checked.ok) {
     return { kind: "stop", reason: checked.reason, ...(checked.root ? { root: checked.root } : {}) };
   }
-  const list = checked.list;
+  const { list, hash } = checked;
 
   const activeDids = new Set(active.map((d) => d.did));
   const targets = list.devices
@@ -475,11 +501,11 @@ export async function decideWrapTargets(input: {
   if (targets.length === 0) return { kind: "stop", reason: "no_device" };
   const single =
     targets.find((d) => d.did === served.did) ?? targets.find((d) => d.did === list.root) ?? targets[0];
-  return { kind: "listed", list, targets, single };
+  return { kind: "listed", list, hash, targets, single };
 }
 
 /** What to remember after a decision (the pin only moves forward). */
 export function pinAfter(pin: DevicePin | null, decision: WrapDecision): DevicePin | null {
   if (decision.kind !== "listed") return pin;
-  return pinFor(pin, decision.list);
+  return pinFor(pin, decision.list, decision.hash);
 }

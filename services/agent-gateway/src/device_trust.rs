@@ -30,13 +30,17 @@ pub const MAX_LIST_DEVICES: usize = 10;
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 /// What is remembered of an agent: its root, the newest list version seen,
-/// and who may sign the next one when that is not just the root.
+/// who may sign the next one when that is not just the root, and the hash
+/// of that list (core `deviceListHash`), so the same list checks again
+/// after its signer handed signing to another (review 2026-11-15).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pin {
     pub root: String,
     pub version: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signers: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
 }
 
 impl Pin {
@@ -46,6 +50,7 @@ impl Pin {
             root: root.to_string(),
             version,
             signers: None,
+            hash: None,
         }
     }
 
@@ -125,6 +130,14 @@ pub struct DeviceList {
     pub devices: Vec<ListDevice>,
     /// Who may sign the next version (a v1 list: its root).
     pub signers: Vec<String>,
+    /// The SHA-256 of the list's JWS (base64url): the same list, byte for byte.
+    pub hash: String,
+}
+
+/// The SHA-256 of a list's JWS, base64url (core `deviceListHash`).
+pub fn device_list_hash(jws: &str) -> String {
+    use sha2::{Digest, Sha256};
+    URL_SAFE_NO_PAD.encode(Sha256::digest(jws.as_bytes()))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -259,6 +272,7 @@ pub fn read_device_list(jws: &str, aid: &str) -> Option<(DeviceList, String)> {
             version,
             devices,
             signers,
+            hash: device_list_hash(jws),
         },
         signer,
     ))
@@ -339,10 +353,24 @@ pub fn check_list(
     if pin.is_some_and(|p| list.version < p.version) {
         return Err((StopReason::Rollback, None));
     }
+    // The version the pin remembers: the list that checked then, byte for
+    // byte. Its signer need not still be a signer (it may have handed over).
+    if let Some(p) = pin.filter(|p| p.version == list.version) {
+        if let Some(hash) = &p.hash {
+            return if *hash == list.hash {
+                Ok(list)
+            } else {
+                Err((StopReason::Signature, None))
+            };
+        }
+    }
     if signed_directly(&list, &signer, pin) {
         return Ok(list);
     }
-    match follow_versions(aid, &list.root, pin, list.version, history) {
+    // A pin from before hashes were kept, at this version: follow from
+    // version 1. Otherwise from the pin.
+    let from = pin.filter(|p| p.version != list.version);
+    match follow_versions(aid, &list.root, from, list.version, history) {
         Some(chain) if chain.last().is_some_and(|(_, jws)| *jws == list_ref.jws) => Ok(list),
         _ => Err((StopReason::Signature, None)),
     }
@@ -369,6 +397,10 @@ pub fn needs_history(
         }
         other => other,
     };
+    // The remembered version, kept with its hash: compared, not followed.
+    if pin.is_some_and(|p| p.version == list.version && p.hash.is_some()) {
+        return false;
+    }
     !signed_directly(&list, &signer, pin)
 }
 
@@ -384,6 +416,7 @@ pub fn pin_for(pin: Option<&Pin>, list: &DeviceList) -> Pin {
         root: list.root.clone(),
         version: list.version,
         signers: (!only_root).then(|| list.signers.clone()),
+        hash: Some(list.hash.clone()),
     }
 }
 
@@ -632,7 +665,7 @@ mod tests {
             "/../../tests/vectors/device_list_decisions.json"
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(vectors.cases.len(), 27);
+        assert_eq!(vectors.cases.len(), 31);
         for case in &vectors.cases {
             let served = Served {
                 aid: &case.served.aid,
@@ -692,6 +725,7 @@ mod tests {
                 root: "did:key:zRoot".into(),
                 version: 3,
                 signers: Some(vec!["did:key:zPhone".into()]),
+                hash: Some("h".repeat(43)),
             },
         );
         store.save(&peers).unwrap();

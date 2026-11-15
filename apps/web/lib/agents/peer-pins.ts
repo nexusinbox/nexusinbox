@@ -25,7 +25,13 @@ function parsePin(raw: string | null): DevicePin | null {
       Array.isArray(value.signers) && value.signers.length > 0 && value.signers.every((d) => typeof d === "string")
         ? { signers: value.signers as string[] }
         : {};
-    return { root: value.root, version: Number.isSafeInteger(version) && version > 0 ? version : 0, ...signers };
+    const hash = typeof value.hash === "string" && /^[A-Za-z0-9_-]{43}$/.test(value.hash) ? { hash: value.hash } : {};
+    return {
+      root: value.root,
+      version: Number.isSafeInteger(version) && version > 0 ? version : 0,
+      ...signers,
+      ...hash,
+    };
   } catch {
     return null;
   }

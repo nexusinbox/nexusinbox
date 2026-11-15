@@ -18,6 +18,7 @@ vi.mock("../contacts/address-book", () => ({ loadAddressBook: vi.fn(async () => 
 
 import { ApiError } from "../api/client";
 import type { MessageContentResponse } from "../api/types";
+import { deviceListHash } from "@nexusinbox/core/device-list";
 import { loadPin } from "./peer-pins";
 import { checkReceived, receivedNoList, receivedWarns } from "./sender-check";
 
@@ -26,7 +27,12 @@ const vectors = JSON.parse(
   readFileSync(new URL("../../../../tests/vectors/sender_check_decisions.json", import.meta.url), "utf8"),
 ) as {
   now: string;
-  cases: { name: string; content: MessageContentResponse; reader_aids: string[]; sender: { aid: string } }[];
+  cases: {
+    name: string;
+    content: MessageContentResponse;
+    reader_aids: string[];
+    sender: { aid: string; device_list?: { version: number; jws: string } };
+  }[];
 };
 const find = (prefix: string) => vectors.cases.find((c) => c.name.startsWith(prefix))!;
 
@@ -53,7 +59,11 @@ describe("checkReceived", () => {
     resolveRecipient.mockResolvedValue(c.sender);
     const me = [{ aid: c.reader_aids[0], did: "did:key:zMe" }];
     expect(await checkReceived(c.content, me)).toBe("verified");
-    expect(loadPin(c.sender.aid)).toEqual({ root: (vectors as unknown as { root: string }).root, version: 1 });
+    expect(loadPin(c.sender.aid)).toEqual({
+      root: (vectors as unknown as { root: string }).root,
+      version: 1,
+      hash: await deviceListHash(c.sender.device_list!.jws),
+    });
   });
 
   it("warns when the envelope was changed or has no signature", async () => {

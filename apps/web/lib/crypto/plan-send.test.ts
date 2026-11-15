@@ -14,7 +14,7 @@ vi.mock("../contacts/address-book", () => ({ loadAddressBook: async () => undefi
 vi.mock("./recipient-keyring", () => ({ hasRecipientPrivateKey: async () => false }));
 
 import { createEd25519KeyPair, deriveDidKeyFromPublicKey } from "@nexusinbox/core";
-import { signDeviceList } from "@nexusinbox/core/device-list";
+import { deviceListHash, signDeviceList } from "@nexusinbox/core/device-list";
 import { forgetContactRoots, loadPin, rememberContactRoots, savePin } from "../agents/peer-pins";
 import type { ContactEntry, RecipientResolutionResponse } from "../api/types";
 import { planSend, SendStop } from "./device-wraps";
@@ -80,7 +80,7 @@ describe("planSend (docs/40 §12)", () => {
     expect(plan.recipient.did).toBe(peer.did);
     expect(plan.senderDevices.map((d) => d.did)).toEqual([me.did]);
     expect(plan.senderKey).toBe(`ENC_${ME}`);
-    expect(loadPin(PEER)).toEqual({ root: peer.did, version: 1 });
+    expect(loadPin(PEER)).toEqual({ root: peer.did, version: 1, hash: await deviceListHash(peer.served.device_list!.jws) });
 
     const swapped = await agent(PEER);
     const stop = await planSend(swapped.served, PEER, me.did).catch((e) => e);
@@ -88,7 +88,11 @@ describe("planSend (docs/40 §12)", () => {
     expect(stop).toMatchObject({ reason: "root_changed", root: swapped.did });
 
     await planSend(swapped.served, PEER, me.did, { acceptRoot: swapped.did });
-    expect(loadPin(PEER)).toEqual({ root: swapped.did, version: 1 });
+    expect(loadPin(PEER)).toEqual({
+      root: swapped.did,
+      version: 1,
+      hash: await deviceListHash(swapped.served.device_list!.jws),
+    });
   });
 
   it("stops on a root other than the one sealed in the contact", async () => {
@@ -243,7 +247,7 @@ describe("planSend (docs/40 §12)", () => {
     const plan = await planSend(served, PEER, null);
     expect(plan.recipientDevices.map((d) => d.did)).toEqual([phoneDid]);
     expect(deviceListHistory).toHaveBeenLastCalledWith(PEER, 1);
-    expect(loadPin(PEER)).toEqual({ root: rootDid, version: 3, signers: [phoneDid] });
+    expect(loadPin(PEER)).toEqual({ root: rootDid, version: 3, signers: [phoneDid], hash: await deviceListHash(v3) });
   });
 
   it("stops for an agent with no list yet (docs/40 §15.2)", async () => {

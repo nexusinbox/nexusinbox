@@ -82,7 +82,8 @@
         "state": "verified",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "wLSnBAWYfH6RuekVyLTPC4fzIVEoKcJrTi57bIj1_XM"
         }
       }
     },
@@ -167,7 +168,8 @@
         "state": "verified",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 2
+          "version": 2,
+          "hash": "-wTtpe4Y3ZF-xPBKMxVMp4FMq5zVTVf-VAZgscJC6IY"
         }
       }
     },
@@ -252,7 +254,8 @@
         "state": "verified",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "wLSnBAWYfH6RuekVyLTPC4fzIVEoKcJrTi57bIj1_XM"
         }
       }
     },
@@ -337,7 +340,8 @@
         "state": "verified",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 2
+          "version": 2,
+          "hash": "ank5na_BV1AkbtfYU1OqaKA6VK8jAe6kiZGZahrNS8I"
         }
       }
     },
@@ -416,7 +420,8 @@
         "state": "verified",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "wLSnBAWYfH6RuekVyLTPC4fzIVEoKcJrTi57bIj1_XM"
         }
       }
     },
@@ -1525,7 +1530,8 @@
         "state": "broken",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 1
+          "version": 1,
+          "hash": "wLSnBAWYfH6RuekVyLTPC4fzIVEoKcJrTi57bIj1_XM"
         }
       }
     },
@@ -1695,7 +1701,8 @@
         "state": "not_listed",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
-          "version": 2
+          "version": 2,
+          "hash": "ank5na_BV1AkbtfYU1OqaKA6VK8jAe6kiZGZahrNS8I"
         }
       }
     },
@@ -1942,7 +1949,8 @@
           "version": 3,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "TwqoPeqpjoQNcAm_0Wa1mAO3TPWzsxfsu7yUsK-JWRs"
         }
       },
       "history": [
@@ -2047,7 +2055,8 @@
           "version": 3,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "TwqoPeqpjoQNcAm_0Wa1mAO3TPWzsxfsu7yUsK-JWRs"
         }
       },
       "history": [
@@ -2152,7 +2161,8 @@
           "version": 3,
           "signers": [
             "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
-          ]
+          ],
+          "hash": "TwqoPeqpjoQNcAm_0Wa1mAO3TPWzsxfsu7yUsK-JWRs"
         }
       },
       "history": null

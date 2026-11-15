@@ -7,6 +7,7 @@
 
 import {
   checkDeviceList as checkList,
+  deviceListHash,
   listSigners,
   pinFor,
   readDeviceList,
@@ -35,9 +36,9 @@ export function loadSeenVersion(agent: Pick<Agent, "aid" | "did">): number {
   return pin && pin.root === agent.did ? pin.version : 0;
 }
 
-function saveSeen(agent: Pick<Agent, "aid" | "did">, list: DeviceListPayload): void {
+function saveSeen(agent: Pick<Agent, "aid" | "did">, list: DeviceListPayload, hash?: string): void {
   const pin = loadPin(agent.aid, agent.did);
-  savePin(agent.aid, pinFor(pin && pin.root === agent.did ? pin : null, list));
+  savePin(agent.aid, pinFor(pin && pin.root === agent.did ? pin : null, list, hash));
 }
 
 /**
@@ -55,7 +56,7 @@ export async function checkDeviceList(agent: Agent): Promise<ListStatus> {
   const checked = await checkList({ aid: agent.aid, ref, pin, history: deviceListHistory });
   if (!checked.ok) return { kind: "broken", reason: checked.reason === "rollback" ? "rollback" : "signature" };
   if (checked.list.root !== agent.did) return { kind: "broken", reason: "signature" };
-  saveSeen(agent, checked.list);
+  saveSeen(agent, checked.list, checked.hash);
   return { kind: "ok", list: checked.list };
 }
 
@@ -151,7 +152,7 @@ export async function storeDeviceList(agent: Agent, dids: Set<string>, extra: Ag
   if (!payload) throw new Error("no device to list");
   const jws = await signDeviceList(key, payload, signer);
   await defaultApiClient.putDeviceList(agent.id, jws);
-  saveSeen(agent, payload);
+  saveSeen(agent, payload, await deviceListHash(jws));
 }
 
 /** Only the root browser itself: nothing to ask, so approve it quietly. */
