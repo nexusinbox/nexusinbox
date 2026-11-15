@@ -817,8 +817,10 @@ async fn read_message(
     }))
 }
 
-/// How many messages of one thread are read to tell where a request stands.
+/// How many messages of one conversation are read to tell where a request stands.
 const REQUEST_THREAD_MAX: usize = 30;
+/// How many of the latest received and sent messages are looked through for them.
+const REQUEST_WINDOW: usize = 100;
 
 /// What each request state means, in the words the Web uses (docs/41 §7).
 fn request_state_label(state: &str) -> &'static str {
@@ -840,9 +842,11 @@ fn request_state_label(state: &str) -> &'static str {
     }
 }
 
-/// The request a message belongs to, worked out from the messages of its
-/// thread this computer can read and check. "unconfirmed" when that is not
-/// enough: never one message read as the whole conversation.
+/// The request a message belongs to, worked out from the messages exchanged
+/// with the same party that this computer can read and check: its thread
+/// when it has one, else the latest messages with that party (as the Web
+/// groups a conversation). "unconfirmed" when that is not enough: never
+/// one message read as the whole conversation.
 async fn request_state_for(
     gateway: &GatewayState,
     token: &str,
@@ -865,50 +869,87 @@ async fn request_state_for(
         // Free text: no request.
         return serde_json::Value::Null;
     }
-    let Some(thread) = content
+    let thread = content
         .get("thread_id")
         .and_then(|v| v.as_str())
-        .filter(|t| is_uuid(t))
-    else {
-        return unconfirmed(
-            vec![id.to_string()],
-            "the message has no thread to read the rest of its request from",
-        );
-    };
+        .filter(|t| is_uuid(t));
 
-    // The thread's messages: received ones (any folder) and sent ones.
-    let mut rows: Vec<(serde_json::Value, bool)> = Vec::new();
-    let mut truncated = false;
-    for (folder, mine) in [("all", false), ("sent", true)] {
-        let url = format!(
-            "{}/messages?thread_id={}&folder={}&status=all&per_page={}",
-            gateway.api_url, thread, folder, REQUEST_THREAD_MAX
-        );
+    // Received messages (any folder) and sent ones: the thread's, or the
+    // latest of each.
+    let mut received: Vec<serde_json::Value> = Vec::new();
+    let mut sent: Vec<serde_json::Value> = Vec::new();
+    let mut beyond_window = false;
+    for (folder, into) in [("all", &mut received), ("sent", &mut sent)] {
+        let url = match thread {
+            Some(t) => format!(
+                "{}/messages?thread_id={}&folder={}&status=all&per_page={}",
+                gateway.api_url, t, folder, REQUEST_WINDOW
+            ),
+            None => format!(
+                "{}/messages?folder={}&status=all&per_page={}",
+                gateway.api_url, folder, REQUEST_WINDOW
+            ),
+        };
         match crate::api_get(gateway, &url, token).await {
             Ok(list) => {
-                let messages = list
+                let rows = list
                     .get("messages")
                     .and_then(|m| m.as_array())
                     .cloned()
                     .unwrap_or_default();
                 let total = list.get("total").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
-                truncated |= total > messages.len();
-                for m in messages {
-                    if !rows.iter().any(|(r, _)| r.get("id") == m.get("id")) {
-                        rows.push((m, mine));
-                    }
-                }
+                beyond_window |= total > rows.len();
+                *into = rows;
             }
             Err(_) => {
                 return unconfirmed(
                     vec![id.to_string()],
-                    "the rest of the thread could not be fetched",
+                    "the related messages could not be fetched",
                 )
             }
         }
     }
+
+    // The other party: whom this agent wrote to, or who wrote to it.
+    let row_field =
+        |row: &serde_json::Value, k: &str| row.get(k).and_then(|v| v.as_str()).map(str::to_string);
+    let is_mine = sent
+        .iter()
+        .any(|r| r.get("id").and_then(|v| v.as_str()) == Some(id));
+    let party = if is_mine {
+        content
+            .get("recipient_did")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+    } else {
+        content
+            .get("sender_did")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+    };
+    if party.is_empty() {
+        return unconfirmed(
+            vec![id.to_string()],
+            "the other party of this message is not known",
+        );
+    }
+    let mut rows: Vec<(serde_json::Value, bool)> = Vec::new();
+    for r in &received {
+        if row_field(r, "sender_did").as_deref() == Some(party) {
+            rows.push((r.clone(), false));
+        }
+    }
+    for r in &sent {
+        if row_field(r, "recipient_did").as_deref() == Some(party)
+            && !rows.iter().any(|(x, _)| x.get("id") == r.get("id"))
+        {
+            rows.push((r.clone(), true));
+        }
+    }
+    // Newest first, as many as are read.
+    rows.sort_by_key(|a| std::cmp::Reverse(row_field(&a.0, "created_at")));
     if rows.len() > REQUEST_THREAD_MAX {
-        truncated = true;
+        beyond_window = true;
         rows.truncate(REQUEST_THREAD_MAX);
     }
 
@@ -944,32 +985,28 @@ async fn request_state_for(
             reply_to: p.reply_to,
             payload: p.payload,
         });
-        // The person's own messages count as theirs to trust; others must verify.
+        // The person's own messages count; others' must verify.
         let verified = *mine
             || matches!(
                 crate::check_message_sender(gateway, token, &row_content).await,
                 Ok(ref c) if c.state == envelope_v2::SenderState::Verified
             );
-        let text = |k: &str| row.get(k).and_then(|v| v.as_str()).map(str::to_string);
         messages.push(crate::request_state::RequestMessage {
             id: row_id.to_string(),
-            at: text("created_at").unwrap_or_default(),
+            at: row_field(row, "created_at").unwrap_or_default(),
             mine: *mine,
             verified,
             protocol,
             auto_reply: Some(crate::request_state::AutoReplyRecord {
-                claimed_at: text("auto_reply_claimed_at"),
-                sent_at: text("auto_reply_sent_at"),
+                claimed_at: row_field(row, "auto_reply_claimed_at"),
+                sent_at: row_field(row, "auto_reply_sent_at"),
             }),
         });
     }
 
     let readable: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-    if truncated || unreadable {
-        return unconfirmed(
-            readable,
-            "some messages of the thread could not be read here",
-        );
+    if unreadable {
+        return unconfirmed(readable, "some related messages could not be read here");
     }
     let out = crate::request_state::conversation_requests(&messages, &checked_at);
     if out.unverified.iter().any(|u| u == id) {
@@ -986,6 +1023,14 @@ async fn request_state_for(
         .iter()
         .find(|r| r.evidence.iter().any(|e| e == id))
     {
+        // The request's first message may simply be older than what was
+        // read: say so rather than call it missing.
+        Some(r) if r.state == "missing_original" && beyond_window => unconfirmed(
+            r.evidence.clone(),
+            "the request's first message is older than the messages read here",
+        ),
+        // Everything newer than the request's first message is among the
+        // newest messages read, so the rest of it is here.
         Some(r) => serde_json::json!({
             "state": r.state,
             "label": request_state_label(r.state),
@@ -1002,7 +1047,7 @@ async fn request_state_for(
         }),
         None => unconfirmed(
             readable,
-            "this message was not found among the thread's readable messages",
+            "this message was not found among the readable related messages",
         ),
     }
 }
