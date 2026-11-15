@@ -325,6 +325,29 @@ fn summarise(root: String, found: bool, events: &[&Event], now_ms: i64) -> Reque
     with_deadline(done("waiting_for_you", "you"))
 }
 
+/// Whether messages that could not be read leave a request unsettled. A
+/// request's replies come after its first message, so only unread messages
+/// at or after that time could belong to it; a request whose first message
+/// is missing is never settled while anything is unread.
+pub fn unread_could_belong(
+    request: &RequestSummary,
+    first_at: Option<&str>,
+    unread_at: &[String],
+) -> bool {
+    if unread_at.is_empty() {
+        return false;
+    }
+    if request.history_incomplete {
+        return true;
+    }
+    let Some(first) = time(first_at) else {
+        return true;
+    };
+    unread_at
+        .iter()
+        .any(|at| time(Some(at)).is_none_or(|t| t >= first))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,6 +368,39 @@ mod tests {
     struct Expect {
         requests: Vec<Value>,
         unverified: Vec<String>,
+    }
+
+    #[test]
+    fn only_unread_messages_from_the_request_on_unsettle_it() {
+        let msgs = vec![RequestMessage {
+            id: "m1".into(),
+            at: "2026-11-16T10:00:00Z".into(),
+            mine: false,
+            verified: true,
+            protocol: Some(ProtocolFacts {
+                id: "P1".into(),
+                kind: "schedule_negotiation".into(),
+                action: "propose".into(),
+                reply_to: None,
+                payload: Value::Null,
+            }),
+            auto_reply: None,
+        }];
+        let out = conversation_requests(&msgs, "2026-11-16T12:00:00Z");
+        let r = &out.requests[0];
+        let first = Some("2026-11-16T10:00:00Z");
+        assert!(!unread_could_belong(r, first, &[]));
+        assert!(!unread_could_belong(
+            r,
+            first,
+            &["2026-11-08T00:00:00Z".into()]
+        ));
+        assert!(unread_could_belong(
+            r,
+            first,
+            &["2026-11-16T11:00:00Z".into()]
+        ));
+        assert!(unread_could_belong(r, first, &["not a time".into()]));
     }
 
     #[test]

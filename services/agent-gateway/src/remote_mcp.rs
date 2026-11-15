@@ -954,23 +954,26 @@ async fn request_state_for(
     }
 
     let mut messages: Vec<crate::request_state::RequestMessage> = Vec::new();
-    let mut unreadable = false;
+    // When the messages that could not be read were sent: only those from a
+    // request's first message on could belong to it.
+    let mut unread_at: Vec<String> = Vec::new();
     for (row, mine) in &rows {
         let Some(row_id) = row.get("id").and_then(|v| v.as_str()) else {
             continue;
         };
         let url = format!("{}/messages/{}/content", gateway.api_url, row_id);
+        let unread = row_field(row, "created_at").unwrap_or_default();
         let Ok(row_content) = crate::api_get(gateway, &url, token).await else {
-            unreadable = true;
+            unread_at.push(unread);
             continue;
         };
         let Ok(key) = open_content_key(gateway, &row_content, my_did).await else {
-            unreadable = true;
+            unread_at.push(unread);
             continue;
         };
         let field = |k: &str| row_content.get(k).and_then(|v| v.as_str()).unwrap_or("");
         let Ok(body) = decrypt_envelope_text(field("encrypted_content"), &key) else {
-            unreadable = true;
+            unread_at.push(unread);
             continue;
         };
         let protocol = crate::a2a_rust::parse_a2a_payload(
@@ -1005,9 +1008,6 @@ async fn request_state_for(
     }
 
     let readable: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
-    if unreadable {
-        return unconfirmed(readable, "some related messages could not be read here");
-    }
     let out = crate::request_state::conversation_requests(&messages, &checked_at);
     if out.unverified.iter().any(|u| u == id) {
         return serde_json::json!({
@@ -1029,6 +1029,22 @@ async fn request_state_for(
             r.evidence.clone(),
             "the request's first message is older than the messages read here",
         ),
+        // A message that could not be read may be one of its replies.
+        Some(r)
+            if crate::request_state::unread_could_belong(
+                r,
+                messages
+                    .iter()
+                    .find(|m| r.evidence.first() == Some(&m.id))
+                    .map(|m| m.at.as_str()),
+                &unread_at,
+            ) =>
+        {
+            unconfirmed(
+                r.evidence.clone(),
+                "a related message from the request on could not be read here",
+            )
+        }
         // Everything newer than the request's first message is among the
         // newest messages read, so the rest of it is here.
         Some(r) => serde_json::json!({
