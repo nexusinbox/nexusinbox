@@ -334,7 +334,7 @@ API は `AGENT_INBOX_MCP_RESOURCE_DOMAIN=mcp.agent-inbox.ai` で URL を割り�
 
 ### 14.4 見つけたこと (初回、2026-11-09)
 
-- 直近 120 日で想定外は `api.agent-inbox.ai` の 4 枚だけ。古い Fly アプリ `agent-inbox-api` (止めたまま) にこの名前の証明書が設定されたまま残り、Fly が 10 月にも更新していた。DNS は消してあるので、この先の更新は通らない。アプリから証明書を外すか、アプリごと消すのが安全
+- 直近 120 日で想定外は `api.agent-inbox.ai` の 4 枚だけ。古い Fly アプリ `agent-inbox-api` (止めたまま) にこの名前の証明書が設定されたまま残り、Fly が 10 月にも更新していた。DNS は消してあるので、この先の更新は通らない。アプリから証明書を外すか、アプリごと消すのが安全。→ 2026-11-15 に運営者が `fly certs remove api.agent-inbox.ai -a agent-inbox-api` で外した (`fly certs list` が空になったことを確認)。アプリ自体は止めたまま残している
 - `agent-inbox.ai` の頂点と `relay` には CAA が無い (`mcp` にだけ Let's Encrypt の CAA がある)。頂点にも CAA を置くと、`relay` などに他の CA が証明書を出せなくなる。Cloudflare は Universal SSL の CA の CAA を自動で足す
 
 ## 15. OpenAI dots と xAI Grok Bot (2026-11-10)
