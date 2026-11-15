@@ -19,7 +19,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation, type Locale } from "../../lib/i18n";
-import { sanitiseNextPath } from "../../lib/url/next-path";
+import { defaultApiClient } from "../../lib/api/client";
+import { sanitiseNextPath, withPairingHash } from "../../lib/url/next-path";
 
 // Message contract between the iframe (`/login/idkit`) and this
 // page. Keep the keys flat and serialisable — postMessage cannot
@@ -51,7 +52,24 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setNextPath(sanitiseNextPath(params.get("next")));
+    const next = sanitiseNextPath(params.get("next"));
+    setNextPath(next);
+    // Already signed in: go on. A link opened from another app (a QR code
+    // read by the camera) can arrive without the SameSite=Strict session
+    // cookie, so the server sent it here; this request is same-site and
+    // carries the cookie.
+    let cancelled = false;
+    void defaultApiClient
+      .getAuthSession()
+      .then((session) => {
+        if (!cancelled && session.authenticated) {
+          window.location.replace(withPairingHash(next, window.location.hash));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const redirectToNext = useCallback(() => {
@@ -62,8 +80,7 @@ export default function LoginPage() {
     finalizingRef.current = true;
     // A pairing link (docs/40 §17.4) keeps its part after `#` through the
     // sign-in redirect; carry it on to /pair, which reads it.
-    const hash = nextPath === "/pair" ? window.location.hash : "";
-    window.location.assign(nextPath + hash);
+    window.location.assign(withPairingHash(nextPath, window.location.hash));
   }, [nextPath]);
 
   const closeIframe = useCallback(() => {
@@ -146,7 +163,10 @@ export default function LoginPage() {
         navigator.userAgent,
       );
       if (isMobile) {
-        window.location.assign(iframeSrc);
+        // Keep a pairing link's part after `#` across the World ID page.
+        window.location.assign(
+          iframeSrc + withPairingHash(nextPath, window.location.hash).slice(nextPath.length),
+        );
         return;
       }
     }

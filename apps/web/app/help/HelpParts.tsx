@@ -40,7 +40,8 @@ export function PublicHelpShell({ children }: { children: ReactNode }) {
   return (
     <div className="public-help-root">
       <header className="public-help-header">
-        <Link href="/concept" className="public-help-brand" aria-label="NexusInbox">
+        {/* The top: the inbox once signed in, otherwise the sign-in page. */}
+        <Link href="/" className="public-help-brand" aria-label="NexusInbox">
           <span className="public-help-brand-mark">NEXUS</span>INBOX
         </Link>
         <div className="public-help-header-right">

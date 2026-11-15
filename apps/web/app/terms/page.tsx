@@ -32,8 +32,8 @@ export default function TermsPage() {
       <div className="ai-concept-scroll ai-legal-scroll">
         {/* Header */}
         <header className="ai-legal-header">
-          <Link href="/concept" className="ai-legal-back">
-            ← {t("legal.backToConcept")}
+          <Link href="/" className="ai-legal-back">
+            ← {t("legal.backToTop")}
           </Link>
           <h1 className="ai-legal-title">{t("terms.title")}</h1>
           <p className="ai-legal-updated">

@@ -35,10 +35,10 @@ import {
   type RpContext,
 } from "@worldcoin/idkit";
 import { useEffect, useRef, useState } from "react";
-import { ApiError } from "../../../lib/api/client";
+import { ApiError, defaultApiClient } from "../../../lib/api/client";
 import { useAuthVerifyMutation } from "../../../lib/api/hooks";
 import { toAuthVerifyRequest, extractNullifierHash } from "../../../lib/world/idkit";
-import { sanitiseNextPath } from "../../../lib/url/next-path";
+import { sanitiseNextPath, withPairingHash } from "../../../lib/url/next-path";
 
 type WorldRequestConfig = {
   app_id: `app_${string}`;
@@ -86,8 +86,8 @@ function handleStandaloneOutcome(msg: IdkitPostMessage) {
     case "idkit/auth-success":
       // Cookie has been set by /api/auth/verify; hop to the
       // requested destination. Hard navigation so any IDKit DOM
-      // is wiped.
-      window.location.assign(next);
+      // is wiped. A pairing link keeps its part after `#`.
+      window.location.assign(withPairingHash(next, window.location.hash));
       return;
     case "idkit/auth-error":
     case "idkit/auth-cancelled":
@@ -97,7 +97,9 @@ function handleStandaloneOutcome(msg: IdkitPostMessage) {
       // the user already sees something actionable. Keeping the
       // login URL stable also means a fresh redirect re-arms the
       // CTA the user originally clicked.
-      window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+      window.location.assign(
+        `/login?next=${encodeURIComponent(next)}` + withPairingHash(next, window.location.hash).slice(next.length),
+      );
       return;
   }
 }
@@ -143,7 +145,21 @@ export default function IdkitEmbeddedPage() {
   const inflightProofRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
 
   useEffect(() => {
-    setFrameState(detectFrameState());
+    const state = detectFrameState();
+    setFrameState(state);
+    // On a phone this page is opened on its own. If signing in already
+    // finished (for example the tab was reloaded on the way back from
+    // World App), go on instead of asking again.
+    if (state === "standalone") {
+      void defaultApiClient
+        .getAuthSession()
+        .then((session) => {
+          if (!session.authenticated) return;
+          const next = sanitiseNextPath(new URLSearchParams(window.location.search).get("next"));
+          window.location.replace(withPairingHash(next, window.location.hash));
+        })
+        .catch(() => undefined);
+    }
     // Third-party embedding is prevented by
     //   (a) CSP `frame-ancestors 'self'` on this route
     //   (b) X-Frame-Options: SAMEORIGIN on this route

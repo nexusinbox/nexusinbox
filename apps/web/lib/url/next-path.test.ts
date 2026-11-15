@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitiseNextPath } from "./next-path";
+import { sanitiseNextPath, withPairingHash } from "./next-path";
 
 describe("sanitiseNextPath", () => {
   it("accepts a simple site-relative path", () => {
@@ -61,5 +61,18 @@ describe("sanitiseNextPath", () => {
     expect(sanitiseNextPath("/agent/did:key:z6Mk?folder=inbox#top")).toBe(
       "/agent/did:key:z6Mk?folder=inbox#top",
     );
+  });
+});
+
+describe("withPairingHash (docs/40 §17.4)", () => {
+  it("keeps a pairing link's part after # on the way to /pair", () => {
+    expect(withPairingHash("/pair", "#ABCDE-12345.s3cr3t-Part_9")).toBe("/pair#ABCDE-12345.s3cr3t-Part_9");
+  });
+
+  it("adds nothing for other destinations or odd fragments", () => {
+    expect(withPairingHash("/", "#ABCDE.x")).toBe("/");
+    expect(withPairingHash("/pair", "")).toBe("/pair");
+    expect(withPairingHash("/pair", "#a b")).toBe("/pair");
+    expect(withPairingHash("/pair", "#a/../x")).toBe("/pair");
   });
 });

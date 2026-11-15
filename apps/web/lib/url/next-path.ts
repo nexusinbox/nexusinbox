@@ -39,3 +39,12 @@ export function sanitiseNextPath(raw: string | null | undefined): string {
   if (parsed.origin !== base) return "/";
   return parsed.pathname + parsed.search + parsed.hash;
 }
+
+/**
+ * Where to go after signing in, keeping a pairing link's part after `#`
+ * (docs/40 §17.4): the code and the secret live there, never reach the
+ * server, and so do not survive in `?next=`. Only `/pair` reads it.
+ */
+export function withPairingHash(next: string, hash: string): string {
+  return next === "/pair" && /^#[A-Za-z0-9._~-]+$/.test(hash) ? next + hash : next;
+}
