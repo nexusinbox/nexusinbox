@@ -1080,6 +1080,21 @@ button, input, textarea, select {
   .dm-layout.mobile-detail .dm-list {
     display: none;
   }
+  /* The list: the notices above it scroll away with it, so a few notices
+     cannot squeeze it to nothing on a phone. */
+  .page-content:has(.dm-layout.mobile-list) {
+    overflow-y: auto;
+  }
+  .dm-layout.mobile-list {
+    flex: none;
+  }
+  .dm-layout.mobile-list .dm-list {
+    overflow: visible;
+  }
+  /* A conversation keeps the whole height; the notices come back with the list. */
+  .page-content:has(.dm-layout.mobile-detail) .notice-group {
+    display: none;
+  }
   .dm-back {
     display: grid;
     margin-left: -8px;
