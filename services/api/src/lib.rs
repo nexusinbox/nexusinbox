@@ -2749,15 +2749,26 @@ fn verify_device_list_jws(
 
 /// The latest stored device list of `aid`, if any (it was checked when
 /// it was put): who may sign the next version, and what it named.
-async fn latest_device_list_payload(
-    pool: &PgPool,
+/// A device list that does not follow the stored latest version.
+fn version_conflict_error() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::CONFLICT,
+        Json(ErrorResponse {
+            error: "version_conflict".into(),
+            message: "a device list must be the version right after the stored latest one".into(),
+        }),
+    )
+}
+
+async fn latest_device_list_payload<'e, E: sqlx::PgExecutor<'e>>(
+    executor: E,
     aid: &str,
 ) -> Result<Option<DeviceListPayload>, String> {
     let latest: Option<String> = sqlx::query_scalar(
         "SELECT jws FROM agent_device_lists WHERE aid = $1 ORDER BY version DESC LIMIT 1",
     )
     .bind(aid)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
     .map_err(|error| format!("failed to read the latest device list: {error}"))?;
     let Some(jws) = latest else {
@@ -9111,6 +9122,20 @@ async fn put_device_list(
     let aid: String = root.get("aid");
     let root_did: String = root.get("did");
 
+    // One change to an agent's list at a time: what is checked below (the
+    // previous version's signers, the browsers it drops) must still be the
+    // latest version when this one is stored, or a request checked against
+    // an older list could undo a change made in between (review 2026-11-15).
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to start device list transaction", e))?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("device-list:{aid}"))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| internal_error("failed to lock the device list", e))?;
+
     // Active keys, and which of them the server knows as browsers: the
     // root's device and browsers added with a pairing.
     let mut active: HashMap<String, String> = HashMap::new();
@@ -9122,7 +9147,7 @@ async fn put_device_list(
          WHERE aid = $1 AND status = 'active'",
     )
     .bind(&aid)
-    .fetch_all(&pool)
+    .fetch_all(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to list devices", e))?
     {
@@ -9141,7 +9166,7 @@ async fn put_device_list(
          WHERE user_id = $1 AND expires_at > NOW() AND claimed IS NOT NULL",
     )
     .bind(user_uuid)
-    .fetch_all(&pool)
+    .fetch_all(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to read pairings", e))?
     {
@@ -9155,7 +9180,7 @@ async fn put_device_list(
             }
         }
     }
-    let previous = latest_device_list_payload(&pool, &aid)
+    let previous = latest_device_list_payload(&mut *tx, &aid)
         .await
         .map_err(|e| internal_server_error(&e))?;
     let allowed = previous
@@ -9171,6 +9196,13 @@ async fn put_device_list(
         &browsers,
     )
     .map_err(|e| validation_error(&e))?;
+
+    // The next version and no other: a list made from an older one, or
+    // one that skips versions, is refused (readers follow every version).
+    let expected_version = previous.as_ref().map_or(1, |p| p.version + 1);
+    if list.version != expected_version {
+        return Err(version_conflict_error());
+    }
 
     if list
         .devices
@@ -9206,16 +9238,12 @@ async fn put_device_list(
         ));
     }
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| internal_error("failed to start device list transaction", e))?;
     let stored: Option<i64> = sqlx::query_scalar(
         r#"
         INSERT INTO agent_device_lists (aid, version, root_did, jws)
         SELECT $1, $2, $3, $4
-        WHERE $2 > COALESCE(
-          (SELECT MAX(version) FROM agent_device_lists WHERE aid = $1), 0)
+        WHERE $2 = COALESCE(
+          (SELECT MAX(version) FROM agent_device_lists WHERE aid = $1), 0) + 1
         ON CONFLICT DO NOTHING
         RETURNING version
         "#,
@@ -9228,13 +9256,7 @@ async fn put_device_list(
     .await
     .map_err(|e| internal_error("failed to store the device list", e))?;
     let Some(version) = stored else {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "version_conflict".into(),
-                message: "a device list with this or a later version is already stored".into(),
-            }),
-        ));
+        return Err(version_conflict_error());
     };
     let mut added = Vec::new();
     for (did, (key, label)) in &pending {

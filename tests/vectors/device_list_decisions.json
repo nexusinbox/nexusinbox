@@ -598,7 +598,17 @@
       "expect": {
         "kind": "stop",
         "reason": "no_device"
-      }
+      },
+      "history": [
+        {
+          "version": 1,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoxLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoxLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9XX0.x2rgqFof_vQTmmv77z2uC62tL4Hhh6s5AFcRlPePFdsRBekrc3HOcwU4xwDV-bk61xKTDGeqIMXNXMJhAHaOBA"
+        },
+        {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoxLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9XX0.pBJDM4ZnaSJzjDqBA4jKMLwkP_obVo0J6zmL0K4MwwI7r8D0aWJlPZirDekFEpbaiodHiFynXRLNbKF4yrO1DA"
+        }
+      ]
     },
     {
       "name": "a second signer signs; seen for the first time: followed from version 1",
@@ -945,6 +955,118 @@
         "kind": "stop",
         "reason": "signature"
       }
+    },
+    {
+      "name": "a signer removed in a version between signs a later one (review 2026-11-15)",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+            "encryption_public_key": "ENC_ROOT"
+          },
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 5,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjo1LCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rbXRXdFk2M0dRVkJycE15UkpXRXpzbnhmc0drZW11NkN0TUR3R1R2NFJZajIiLCJlbmMiOiJFTkNfUEhPTkUiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rdlJYTlljRTdNTWR1eW5XVGdlS2JEYVQxaWlqRFNDOHBacVhaYzhySFByZjIiLCJlbmMiOiJFTkNfUEMxIiwia2luZCI6ImNvbXB1dGVyIn1dLCJzaWduZXJzIjpbImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIl19.c63iCxjibCf6OZx3RrHP9wMUhLUKLuouTarFuZrjRenCWU5oNqx0Hg46sM0X9cUTE3OPuynMPwAu5PKfsmVEBA"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 3,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ]
+      },
+      "history": [
+        {
+          "version": 4,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjo0LCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rbXRXdFk2M0dRVkJycE15UkpXRXpzbnhmc0drZW11NkN0TUR3R1R2NFJZajIiLCJlbmMiOiJFTkNfUEhPTkUiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rdlJYTlljRTdNTWR1eW5XVGdlS2JEYVQxaWlqRFNDOHBacVhaYzhySFByZjIiLCJlbmMiOiJFTkNfUEMxIiwia2luZCI6ImNvbXB1dGVyIn1dLCJzaWduZXJzIjpbImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIl19.wxDladuRromkPc0eL1gpx54-bHo5fES2IJ_eFgc0VV2nSEqRJztcVEt9jMzkDqYx-1IYLeqDDJFZ3KCv75LvAw"
+        },
+        {
+          "version": 5,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjo1LCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rbXRXdFk2M0dRVkJycE15UkpXRXpzbnhmc0drZW11NkN0TUR3R1R2NFJZajIiLCJlbmMiOiJFTkNfUEhPTkUiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rdlJYTlljRTdNTWR1eW5XVGdlS2JEYVQxaWlqRFNDOHBacVhaYzhySFByZjIiLCJlbmMiOiJFTkNfUEMxIiwia2luZCI6ImNvbXB1dGVyIn1dLCJzaWduZXJzIjpbImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIl19.c63iCxjibCf6OZx3RrHP9wMUhLUKLuouTarFuZrjRenCWU5oNqx0Hg46sM0X9cUTE3OPuynMPwAu5PKfsmVEBA"
+        }
+      ],
+      "expect": {
+        "kind": "stop",
+        "reason": "signature"
+      }
+    },
+    {
+      "name": "a signer the pin trusts skips a version, and the versions between cannot be fetched",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+            "encryption_public_key": "ENC_ROOT"
+          },
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          },
+          {
+            "did": "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2",
+            "encryption_public_key": "ENC_PHONE"
+          }
+        ],
+        "device_list": {
+          "version": 5,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWttdFd0WTYzR1FWQnJwTXlSSldFenNueGZzR2tlbXU2Q3RNRHdHVHY0UllqMiJ9.eyJ2IjoyLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjo1LCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rbXRXdFk2M0dRVkJycE15UkpXRXpzbnhmc0drZW11NkN0TUR3R1R2NFJZajIiLCJlbmMiOiJFTkNfUEhPTkUiLCJraW5kIjoiYnJvd3NlciJ9LHsiZGlkIjoiZGlkOmtleTp6Nk1rdlJYTlljRTdNTWR1eW5XVGdlS2JEYVQxaWlqRFNDOHBacVhaYzhySFByZjIiLCJlbmMiOiJFTkNfUEMxIiwia2luZCI6ImNvbXB1dGVyIn1dLCJzaWduZXJzIjpbImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIl19.c63iCxjibCf6OZx3RrHP9wMUhLUKLuouTarFuZrjRenCWU5oNqx0Hg46sM0X9cUTE3OPuynMPwAu5PKfsmVEBA"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": {
+        "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
+        "version": 3,
+        "signers": [
+          "did:key:z6MkmtWtY63GQVBrpMyRJWEzsnxfsGkemu6CtMDwGTv4RYj2"
+        ]
+      },
+      "history": null,
+      "expect": {
+        "kind": "stop",
+        "reason": "signature"
+      }
+    },
+    {
+      "name": "seen for the first time, the root signs version 2, and version 1 cannot be fetched",
+      "served": {
+        "aid": "aid:ai:01VECTORAGENT0000000000000",
+        "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+        "encryption_public_key": "ENC_PC1",
+        "devices": [
+          {
+            "did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
+            "encryption_public_key": "ENC_PC1"
+          }
+        ],
+        "device_list": {
+          "version": 2,
+          "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6Im5leHVzaW5ib3gtZGV2aWNlLWxpc3QiLCJraWQiOiJkaWQ6a2V5Ono2TWtvbjNOZWNkNk5ra3lmb0dvSHhpZDJ6bkdjNTlMVTNLN211YmFSY0ZiTGZMWCJ9.eyJ2IjoxLCJhaWQiOiJhaWQ6YWk6MDFWRUNUT1JBR0VOVDAwMDAwMDAwMDAwMDAiLCJyb290IjoiZGlkOmtleTp6Nk1rb24zTmVjZDZOa2t5Zm9Hb0h4aWQyem5HYzU5TFUzSzdtdWJhUmNGYkxmTFgiLCJ2ZXJzaW9uIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImRldmljZXMiOlt7ImRpZCI6ImRpZDprZXk6ejZNa29uM05lY2Q2TmtreWZvR29IeGlkMnpuR2M1OUxVM0s3bXViYVJjRmJMZkxYIiwiZW5jIjoiRU5DX1JPT1QiLCJraW5kIjoiYnJvd3NlciJ9XX0.pBJDM4ZnaSJzjDqBA4jKMLwkP_obVo0J6zmL0K4MwwI7r8D0aWJlPZirDekFEpbaiodHiFynXRLNbKF4yrO1DA"
+        }
+      },
+      "requested": "aid:ai:01VECTORAGENT0000000000000",
+      "pin": null,
+      "expect": {
+        "kind": "stop",
+        "reason": "signature"
+      },
+      "history": null
     }
   ]
 }

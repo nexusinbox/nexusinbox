@@ -297,10 +297,23 @@ pub fn follow_versions(
     Some(out)
 }
 
+/// Whether a list can be checked without the versions before it (core
+/// `signedDirectly`): the next version (or the same one) after the pin,
+/// signed by a signer the pin trusts; or, seen for the first time, version
+/// 1 signed by its root. A signer once trusted may have been removed in a
+/// version between, so a list that skips versions is always followed
+/// (review 2026-11-15).
+fn signed_directly(list: &DeviceList, signer: &str, pin: Option<&Pin>) -> bool {
+    match pin {
+        None => list.version == 1 && signer == list.root,
+        Some(p) => list.version <= p.version + 1 && p.trusted().iter().any(|s| s == signer),
+    }
+}
+
 /// Check an agent's current list against what is remembered (core
-/// `checkDeviceList`). A list signed by a signer the pin trusts (or, seen
-/// for the first time, by its root) is checked directly; any other signer
-/// is followed through `history`.
+/// `checkDeviceList`). The version right after the pin, signed by a signer
+/// the pin trusts (or, seen for the first time, version 1 signed by its
+/// root), is checked directly; anything else is followed through `history`.
 pub fn check_list(
     aid: &str,
     list_ref: &ListRef,
@@ -326,8 +339,7 @@ pub fn check_list(
     if pin.is_some_and(|p| list.version < p.version) {
         return Err((StopReason::Rollback, None));
     }
-    let trusted = pin.map_or_else(|| vec![list.root.clone()], Pin::trusted);
-    if trusted.contains(&signer) {
+    if signed_directly(&list, &signer, pin) {
         return Ok(list);
     }
     match follow_versions(aid, &list.root, pin, list.version, history) {
@@ -336,8 +348,9 @@ pub fn check_list(
     }
 }
 
-/// Whether checking `list_ref` needs the version history: it is signed by
-/// a signer the pin does not trust yet (docs/40 §17.3).
+/// Whether checking `list_ref` needs the version history: it skips versions
+/// after the pin, or is signed by a signer the pin does not trust yet
+/// (docs/40 §17.3).
 pub fn needs_history(
     aid: &str,
     list_ref: &ListRef,
@@ -356,8 +369,7 @@ pub fn needs_history(
         }
         other => other,
     };
-    !pin.map_or_else(|| vec![list.root.clone()], Pin::trusted)
-        .contains(&signer)
+    !signed_directly(&list, &signer, pin)
 }
 
 /// The pin to keep after `list` checked (it only moves forward).
@@ -620,7 +632,7 @@ mod tests {
             "/../../tests/vectors/device_list_decisions.json"
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(vectors.cases.len(), 24);
+        assert_eq!(vectors.cases.len(), 27);
         for case in &vectors.cases {
             let served = Served {
                 aid: &case.served.aid,

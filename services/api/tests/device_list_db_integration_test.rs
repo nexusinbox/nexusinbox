@@ -314,9 +314,18 @@ async fn versions_only_go_up() {
     reset_schema(&pool).await;
     let f = seed(&pool, "ver", 11).await;
 
+    // The first list is version 1.
     let jws = sign_list(&f.root, &f.root_did, &list_payload(&f, "ver", 3, true));
+    assert_eq!(
+        put_list(&app, &f, &f.auth, &jws).await.0,
+        StatusCode::CONFLICT
+    );
+    let jws = sign_list(&f.root, &f.root_did, &list_payload(&f, "ver", 1, true));
     assert_eq!(put_list(&app, &f, &f.auth, &jws).await.0, StatusCode::OK);
-    for version in [3, 2] {
+    // Only the version right after the latest: not the same or an older one
+    // (a list made from an older version), and not one that skips versions
+    // (review 2026-11-15).
+    for version in [1, 3] {
         let jws = sign_list(
             &f.root,
             &f.root_did,
@@ -324,7 +333,10 @@ async fn versions_only_go_up() {
         );
         let (status, body) = put_list(&app, &f, &f.auth, &jws).await;
         assert_eq!(status, StatusCode::CONFLICT, "version {version}: {body}");
+        assert_eq!(body["error"], "version_conflict", "{body}");
     }
+    let jws = sign_list(&f.root, &f.root_did, &list_payload(&f, "ver", 2, false));
+    assert_eq!(put_list(&app, &f, &f.auth, &jws).await.0, StatusCode::OK);
 }
 
 #[tokio::test]

@@ -304,11 +304,11 @@ export type ListCheck =
 
 /**
  * Check an agent's current list (`ref`) against what the caller
- * remembers (`pin`). A list signed by a signer the pin trusts (or, seen
- * for the first time, by the root it names) is checked directly; any
- * other signer is followed version by version from the pin (or from
- * version 1) through `history`. `acceptRoot` is a new root the person
- * has just accepted (§12.5).
+ * remembers (`pin`). The version right after the pin, signed by a signer
+ * the pin trusts (or, seen for the first time, version 1 signed by its
+ * root), is checked directly (`signedDirectly`); anything else is followed
+ * version by version from the pin (or from version 1) through `history`.
+ * `acceptRoot` is a new root the person has just accepted (§12.5).
  */
 export async function checkDeviceList(input: {
   aid: string;
@@ -328,12 +328,23 @@ export async function checkDeviceList(input: {
   }
   if (pin && list.version < pin.version) return { ok: false, reason: "rollback" };
 
-  const trusted = pin ? (pin.signers ?? [pin.root]) : [list.root];
-  if (trusted.includes(signer)) return { ok: true, list };
+  if (signedDirectly(list, signer, pin)) return { ok: true, list };
 
   const chain = await followVersions(input.aid, list.root, pin, list.version, input.history);
   if (!chain || chain[chain.length - 1].jws !== input.ref.jws) return { ok: false, reason: "signature" };
   return { ok: true, list };
+}
+
+/**
+ * Whether a list can be checked without the versions before it: the next
+ * version (or the same one) after the pin, signed by a signer the pin
+ * trusts; or, seen for the first time, version 1 signed by its root. A
+ * signer once trusted may have been removed in a version between, so a
+ * list that skips versions is always followed (review 2026-11-15).
+ */
+export function signedDirectly(list: DeviceListPayload, signer: string, pin: DevicePin | null): boolean {
+  if (!pin) return list.version === 1 && signer === list.root;
+  return list.version <= pin.version + 1 && (pin.signers ?? [pin.root]).includes(signer);
 }
 
 /**
