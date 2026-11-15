@@ -5,7 +5,8 @@
 // to / that names a conversation is sent there (next.config.ts).
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "./_components/AppShell";
 import { InboxAgentBar } from "./_components/InboxAgentBar";
 import { DeviceUpkeep } from "./_components/home/DeviceUpkeep";
@@ -22,6 +23,12 @@ export default function HomePage() {
   const agentsQuery = useAgentsQuery();
   const agents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const attention = useAttention();
+  const router = useRouter();
+  // Someone with no agent yet starts with the first-run guide (docs/41 §5.2).
+  const noAgents = agentsQuery.isSuccess && agents.length === 0;
+  useEffect(() => {
+    if (noAgents) router.replace("/onboarding");
+  }, [noAgents, router]);
   // With two or more agents, one can be picked; "" is all of them.
   const [only, setOnly] = useState("");
   const picked = agents.find((a) => a.id === only) ?? null;

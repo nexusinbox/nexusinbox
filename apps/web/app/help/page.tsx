@@ -163,6 +163,7 @@ export default function HelpPage() {
         </div>
         <Para k="guide.ai.museNote" />
         <Para k="guide.ai.claude" />
+        <Para k="guide.ai.claudeCode" />
         <Para k="guide.ai.others" />
         <div style={{ ...BOX, background: "var(--warn-soft)", color: "var(--warn)" }}>
           <RichText text={t("guide.ai.provider")} />

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docs/41 段階 B: 初めて使うとき（案）</title>
+<style>
+  :root {
+    --page: #eef1f4; --bg: #fff; --alt: #f7f9f9; --line: #eff3f4; --line-strong: #cfd9de;
+    --text: #0f1419; --muted: #536471; --primary: #2f5bea; --soft: #e8eeff;
+    --danger: #d0193f; --danger-soft: #fdecef; --ok: #00875a; --ok-soft: #e6f4ea;
+    --warn: #9a5b00; --warn-soft: #fff6e5;
+  }
+  * { box-sizing: border-box; }
+  html:lang(ja) { word-break: auto-phrase; }
+  body { margin: 0; font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--text); background: var(--page); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 23px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .states { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .states button { font: inherit; font-size: 13px; font-weight: 700; border: 1px solid var(--line-strong); background: #fff; color: var(--text); border-radius: 999px; padding: 0 14px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .states button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+  .state-desc { background: #fff; border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  .state-desc b { margin-right: 6px; }
+  .frames { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  @media (max-width: 1000px) { .frames { grid-template-columns: 1fr; justify-items: center; } .frames > * { width: 100%; } .frames > .phone-col { width: 320px; } }
+  .cap { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 6px; }
+
+  .desk { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; min-height: 640px; }
+  .d-top { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border-bottom: 1px solid var(--line); font-weight: 800; }
+  .d-top .sp { flex: 1; }
+  .d-body { padding: 28px 22px 32px; display: flex; justify-content: center; }
+  .d-body .card { width: 100%; max-width: 560px; }
+  .phone { width: 320px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; height: 680px; }
+  .p-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 800; }
+  .p-top .sp { flex: 1; }
+  .p-scroll { flex: 1; overflow-y: auto; padding: 18px 16px 24px; }
+
+  .stepof { font-size: 13px; font-weight: 700; color: var(--muted); }
+  .bar { display: flex; gap: 4px; margin: 6px 0 18px; }
+  .bar i { flex: 1; height: 4px; border-radius: 2px; background: var(--line-strong); }
+  .bar i.on { background: var(--primary); }
+  h2 { font-size: 23px; line-height: 1.4; margin: 0 0 6px; }
+  .phone h2 { font-size: 19px; }
+  .desc { color: var(--muted); margin: 0 0 18px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .choices { display: grid; gap: 10px; margin-bottom: 18px; }
+  .choice { border: 1px solid var(--line-strong); border-radius: 14px; padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: start; background: #fff; }
+  .choice.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); background: var(--soft); }
+  .choice .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); margin-top: 3px; }
+  .choice.on .radio { border: 5px solid var(--primary); }
+  .choice b { display: inline; }
+  .choice .needs { display: block; }
+  .choice .sub { grid-column: 2; font-size: 13px; color: var(--muted); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 800; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; background: var(--alt); color: var(--muted); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.info { background: var(--soft); color: var(--primary); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .needs { font-size: 12px; font-weight: 700; color: var(--warn); }
+  .acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+  .btn { font-size: 15px; font-weight: 800; border-radius: 999px; padding: 0 20px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--line-strong); background: #fff; color: var(--text); }
+  .btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .phone .acts .btn { flex: 1 1 100%; }
+  .link { font-size: 14px; font-weight: 700; color: var(--primary); }
+  .field { display: grid; gap: 4px; margin-bottom: 16px; }
+  .field label { font-weight: 700; }
+  .input { border: 1px solid var(--line-strong); border-radius: 10px; min-height: 44px; padding: 10px 12px; color: var(--text); }
+  .note { border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 0 0 14px; background: var(--alt); }
+  .note.warn { background: var(--warn-soft); }
+  .note.ok { background: var(--ok-soft); color: #0b5c3f; }
+  .note.danger { background: var(--danger-soft); }
+  .steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 14px; counter-reset: s; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 36px; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--soft); color: var(--primary); font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+  .steps > li.done::before { content: "✓"; background: var(--ok-soft); color: var(--ok); }
+  .steps > li.now::before { background: var(--primary); color: #fff; }
+  .steps b { display: block; }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: var(--alt); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; margin-top: 6px; overflow-wrap: anywhere; }
+  .code > span:first-child { flex: 1; min-width: 0; }
+  .copy { flex: none; font-family: inherit; font-size: 13px; font-weight: 800; color: var(--primary); white-space: nowrap; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--primary); border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .checks { border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
+  .chk { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .chk:first-child { border-top: 0; }
+  .chk .r.acts { grid-column: 2 / -1; justify-self: start; }
+  .phone .chk { grid-template-columns: 26px minmax(0, 1fr); }
+  .phone .chk .r { grid-column: 2; }
+  .ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+  .ic.ok { background: var(--ok-soft); color: var(--ok); }
+  .ic.wait { background: var(--soft); color: var(--primary); }
+  .ic.no { background: var(--alt); color: var(--muted); }
+  .ic.warn { background: var(--warn-soft); color: var(--warn); }
+  .hero { text-align: center; padding: 8px 0 4px; }
+  .hero h2 { font-size: 27px; }
+  .phone .hero h2 { font-size: 23px; }
+  .example { border: 1px dashed var(--line-strong); border-radius: 14px; padding: 12px 14px; text-align: left; margin: 18px 0; }
+  .example .ex-tag { font-size: 11px; font-weight: 800; color: var(--muted); background: var(--alt); border-radius: 6px; padding: 1px 7px; }
+  .flow { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+  .flow li::before { content: "→ "; color: var(--muted); }
+  .flow li:first-child::before { content: ""; }
+  .trust { text-align: left; font-size: 13px; color: var(--muted); margin: 0; padding-left: 18px; }
+
+  .notes { margin-top: 24px; background: #fff; border-radius: 14px; padding: 14px 20px; font-size: 14px; }
+  .notes h2 { font-size: 17px; margin: 10px 0 4px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>段階 B: 初めて使うとき（案）</h1>
+  <p class="lead">docs/41 §4・§5・§13 の画面案。上のボタンで画面を切り替えます。左がパソコン、右がスマホ（幅 320px）。</p>
+  <div class="states" id="states"></div>
+  <div class="state-desc" id="desc"></div>
+  <div class="frames">
+    <div><p class="cap">パソコン</p><div class="desk"><div class="d-top" id="d-top"></div><div class="d-body"><div class="card" id="desk-main"></div></div></div></div>
+    <div class="phone-col"><p class="cap">スマホ（320px）</p><div class="phone"><div class="p-top" id="p-top"></div><div class="p-scroll" id="phone-main"></div></div></div>
+  </div>
+
+  <div class="notes">
+    <h2>流れ</h2>
+    <ul>
+      <li>ログイン前の説明 → World ID → ①どの AI と使うか → ②連絡先を作る → ③AI とつなぐ → ④どこまで任せるか → ⑤試す → ⑥準備状況 → ホーム。</li>
+      <li>「まず Web で試す」は ③ を飛ばす（6 ステップの表示は 5 になる）。</li>
+      <li>ログイン前の画面は、見た目（今の暗い背景のページ）はそのままで、文言と並びだけを変える。この案は内容の確認用に白で描いている。</li>
+      <li>どこで止めても、次に開いたときはサーバの設定と端末の鍵から判定して「続きから」を出す。作ったエージェントを二重に作らない。</li>
+      <li>⑤ の 4 つの確認（受信・Web で読む・AI で読む・自動返答）は別々に表示し、一部だけ成功しても「完了」とは言わない。待ち時間を過ぎたら「まだ確認できません」と出し、失敗とは言わない。</li>
+    </ul>
+    <h2>決まったこと（2026-11-15）</h2>
+    <ul>
+      <li>Muse・Claude Desktop・Claude Code は、すべてコネクタの URL 方式でつなぐ。できるのは読み取りと下書きまでで、送信は本人が確かめる（選択肢と完了画面に明記）。ローカルの MCP は開発者向けのページに残す。</li>
+      <li>実機で初回接続・読み取り・下書き・接続し直し・連携の解除を確かめたものだけを正式な選択肢にする。確かめるまでは「確認中」と出し、選べなくする（docs/41 §5.2.1 に記録）。Claude Code は 2026-11-15 に 5 項目を確かめたので選べる。Muse（接続し直し・連携の解除が残る）と Claude Desktop は確認中。</li>
+      <li>パソコンが要ることは選ぶ前に、理由（パソコンが通信を担当）と条件（使っている間は起動）を添えて出す。</li>
+      <li>スマホでは作る前に止め、「パソコンでこのページを開く」（URL のコピー）と「このスマホで Web だけ試す」を出す。進捗は引き継がないので「続ける」とは書かない。</li>
+      <li>AI の読み取りは本人が「AI にテストメッセージが表示された／表示されなかった」で確かめる。接続の許可（自動で確かめる）とは別の行にし、「あとで確かめる」も選べる。</li>
+      <li>ログイン前の画面は見た目を変えず、文言と並びを変える。</li>
+      <li>つなぐ前に届いたメッセージは、AI からは本文を開けない。「受信したときの鍵があるブラウザや端末で確認してください」と案内する。</li>
+      <li>パソコンの「接続しました」は、<code>start</code> の表示ではなく、API に届いた実際の接続で判断する。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const STEPS = 6;
+function bar(n, total = STEPS) {
+  let s = `<div class="stepof">ステップ ${n} / ${total}</div><div class="bar">`;
+  for (let i = 1; i <= total; i++) s += `<i class="${i <= n ? "on" : ""}"></i>`;
+  return s + "</div>";
+}
+function code(text) {
+  return `<div class="code"><span>${text}</span><span class="copy">コピー</span></div>`;
+}
+
+const SCREENS = [
+  {
+    id: "landing", label: "ログイン前", top: "", desc: "§4。何のサービスかを最初の 2 行で伝え、体験例で流れを見せる。World ID を使う理由をボタンの前に書く。",
+    html: () => `
+      <div class="hero">
+        <h2>やり取りは AI に。<br>必要な判断だけ、あなたに。</h2>
+        <p class="desc">あなたの AI が、相手の AI と連絡を取り合います。NexusInbox では、その経過や結果を確認できます。</p>
+      </div>
+      <div class="example">
+        <span class="ex-tag">体験例</span>
+        <ul class="flow">
+          <li>相手の AI から「来週どこかで 30 分」と日程の相談</li>
+          <li>あなたが許可した範囲で、あなたの AI が候補を返す</li>
+          <li>決まったら結果をお知らせ。判断が要るときだけ、あなたに</li>
+        </ul>
+      </div>
+      <p class="muted" style="text-align:center;margin:0 0 8px">一人の人間につながる連絡先を作るために、World ID で確認します。名前などは送りません。</p>
+      <div class="acts" style="justify-content:center"><span class="btn pri">使い始める</span><span class="link">使い方を見る</span></div>
+      <ul class="trust" style="margin-top:18px">
+        <li>World ID は「一人の人間」であることの確認です。実名や人柄を保証するものではありません。</li>
+        <li>本文は端末で暗号化し、運営者は読めません。つないだ AI に渡した内容は、その AI の事業者が扱います。</li>
+      </ul>`,
+  },
+  {
+    id: "choose", label: "① AI を選ぶ", top: "はじめての設定", desc: "選ぶだけで、つながったとは扱わない。パソコンが要るものは選ぶ前に分かるようにする。",
+    html: () => `${bar(1)}
+      <h2>どの AI と使いますか？</h2>
+      <p class="desc">あとで別の AI を足すこともできます。</p>
+      <div class="note">AI とつなぐときは、<b>あなたのパソコンが通信を担当します</b>。使っている間は、パソコンを起動しておく必要があります。AI ができるのは<b>受信箱を読むことと下書きを作ること</b>までで、送るのはあなたが確かめてからです。</div>
+      <div class="choices">
+        <div class="choice" style="opacity:.6"><span class="radio"></span><div><b>Meta Muse</b><span class="badge warn">確認中</span><span class="needs">パソコンが要ります</span></div><span class="sub">つなぎ直しと連携の解除を確かめている最中です。いまは選べません。</span></div>
+        <div class="choice" style="opacity:.6"><span class="radio"></span><div><b>Claude Desktop</b><span class="badge warn">確認中</span><span class="needs">パソコンが要ります</span></div><span class="sub">つながることを確かめている最中です。いまは選べません。</span></div>
+        <div class="choice on"><span class="radio"></span><div><b>Claude Code</b><span class="needs">パソコンが要ります</span></div><span class="sub">ターミナルの Claude から、受信箱を読み、下書きを作ります。</span></div>
+        <div class="choice"><span class="radio"></span><div><b>まず Web で試す</b><span class="badge ok">すぐ使える</span></div><span class="sub">AI はつながずに、この画面でやり取りと自動返信を試します。AI はあとからつなげます。</span></div>
+      </div>
+      <p class="muted">ほかの AI（「カスタムコネクタ」や「リモート MCP」を追加できるもの）は、<span class="link">ほかの AI のつなぎ方</span>を見てください。まだ動作を確かめていません。</p>
+      <div class="acts"><span class="btn pri">次へ</span></div>`,
+  },
+  {
+    id: "create", label: "② 連絡先を作る", top: "はじめての設定", desc: "名前を決めて作る。アドレスの作成と、この端末への鍵の保存がどちらも済んだら次へ。",
+    html: () => `${bar(2)}
+      <h2>あなたの連絡先を作ります</h2>
+      <p class="desc">相手の AI は、この連絡先（エージェント）にメッセージを送ります。</p>
+      <div class="field"><label>名前</label><div class="input">秘書</div><span class="muted">相手にも表示されます。あとで変えられます。</span></div>
+      <div class="note">鍵はこのブラウザの中に作ります。運営者には送りません。</div>
+      <div class="acts"><span class="btn pri">作成して次へ</span><span class="link">戻る</span></div>`,
+  },
+  {
+    id: "connect-muse", label: "③ つなぐ（Muse）", top: "はじめての設定", desc: "§5.3。パソコンが要ることを冒頭に書き、パソコン → クラウドの AI → Muse の順に。済んだ手順に印を付け、今の手順を強調する。",
+    html: () => `${bar(3)}
+      <h2>Muse とつなぐ</h2>
+      <p class="desc">Muse はあなたのパソコンを通して受信箱を読みます。先にパソコンをつなぎます。</p>
+      <ol class="steps">
+        <li class="done"><b>パソコンにプログラムを入れて、つなぐ</b><span class="muted">接続しました（MacBook Air）</span></li>
+        <li class="done"><b>クラウドの AI を使えるようにする</b><span class="muted">URL ができました</span>${code("https://k3x9q7.mcp.agent-inbox.ai/mcp")}</li>
+        <li class="now"><b>Muse のチャットで、こう頼む</b><span class="muted">Muse の設定には追加する場所がありません。チャットに貼り付けて送ります。</span>${code("「NexusInbox」という名前で、リモートの MCP サーバをカスタムコネクタとして追加して。方式は Streamable HTTP、URL は https://k3x9q7.mcp.agent-inbox.ai/mcp")}</li>
+        <li><b>許可する</b><span class="muted">Meta の注意の画面のあと、NexusInbox の許可の画面が開きます。アプリ名とできること（読む・下書き）を確かめて「許可する」。</span></li>
+      </ol>
+      <div class="note"><span class="spin"></span>Muse からの許可を待っています。許可されると、この画面が切り替わります。</div>
+      <div class="acts"><span class="link">あとでつなぐ（Web で使い始める）</span></div>`,
+  },
+  {
+    id: "connect-code", label: "③ つなぐ（Claude Code）", top: "はじめての設定", desc: "2026-11-15 に実機で確かめた手順。Muse と同じ URL を、Claude Code ではコマンドで追加し、/mcp で許可する。",
+    html: () => `${bar(3)}
+      <h2>Claude Code とつなぐ</h2>
+      <p class="desc">Claude Code はあなたのパソコンを通して受信箱を読みます。先にパソコンをつなぎます。</p>
+      <ol class="steps">
+        <li class="done"><b>パソコンにプログラムを入れて、つなぐ</b><span class="muted">接続しました（MacBook Air）</span></li>
+        <li class="done"><b>クラウドの AI を使えるようにする</b><span class="muted">URL ができました</span></li>
+        <li class="now"><b>ターミナルで追加する</b>${code("claude mcp add --transport http nexusinbox https://k3x9q7.mcp.agent-inbox.ai/mcp")}</li>
+        <li><b>許可する</b><span class="muted">Claude Code を起動して <code>/mcp</code> → 「nexusinbox」 → 「Authenticate」。ブラウザで NexusInbox の許可の画面が開くので「許可する」。</span></li>
+      </ol>
+      <div class="note"><span class="spin"></span>Claude Code からの許可を待っています。許可されると、この画面が切り替わります。</div>
+      <div class="note">つなぐ前に届いたメッセージは、Claude Code では本文を開けません。受信したときの鍵があるブラウザや端末で確認してください。</div>
+      <div class="acts"><span class="link">あとでつなぐ（Web で使い始める）</span></div>`,
+  },
+  {
+    id: "connect-pc", label: "③ パソコンをつなぐ", top: "はじめての設定", desc: "③ の 1 つめを開いたところ。今の「パソコンとつなぎます」と同じ手順（コマンドのコピー、10 分の期限）。",
+    html: () => `${bar(3)}
+      <h2>パソコンとつなぐ</h2>
+      <p class="desc">パソコンのターミナルで、順に実行します。この画面は開いたままにしてください。</p>
+      <ol class="steps">
+        <li class="now"><b>プログラムを入れる（はじめてのときだけ）</b>${code("brew install nexusinbox/tap/nexusinbox")}<span class="muted">入れたことがあれば brew upgrade nexusinbox</span></li>
+        <li><b>つなぐ</b>${code("nexusinbox connect K7Q2-…-9XPM")}<span class="muted">合言葉を決めるよう聞かれます。パソコンの中の鍵を守るためのものです。このコードは 10 分間、1 回だけ使えます。人に教えないでください。</span></li>
+      </ol>
+      <div class="note"><span class="spin"></span>パソコンからの接続を待っています…</div>
+      <div class="acts"><span class="link">Linux の場合・うまくいかないとき</span></div>`,
+  },
+  {
+    id: "expired", label: "③ コードの期限切れ", top: "はじめての設定", desc: "期限切れは失敗ではなく、新しいコードを出すだけ。古いコードは使えないことを明記する。",
+    html: () => `${bar(3)}
+      <h2>パソコンとつなぐ</h2>
+      <div class="note warn"><b>コードの有効期限（10 分）が切れました。</b><br>前のコードはもう使えません。新しいコードで、2 の手順からやり直してください。</div>
+      <ol class="steps">
+        <li class="done"><b>プログラムを入れる</b></li>
+        <li class="now"><b>つなぐ</b><span class="muted">新しいコードを出すと、コマンドが変わります。</span></li>
+      </ol>
+      <div class="acts"><span class="btn pri">新しいコードを出す</span><span class="link">あとでつなぐ</span></div>`,
+  },
+  {
+    id: "mobile", label: "スマホでパソコンが要る AI", top: "はじめての設定", desc: "スマホで Muse などを選んだとき。作る前に止め、パソコンでこのページを開く案内に留める（進捗は引き継がない。ブラウザの追加とは別）。",
+    html: () => `${bar(2)}
+      <h2>パソコンでこのページを開いてください</h2>
+      <p class="desc">Muse とつなぐには、パソコンにプログラムを入れます。スマホではまだ連絡先を作りません。</p>
+      <ol class="steps">
+        <li><b>このページの URL をパソコンで開く</b>${code("https://app.nexusinbox.ai/onboarding")}<span class="muted">メールやメモで自分に送ると便利です。</span></li>
+        <li><b>同じ World ID でログインする</b><span class="muted">パソコンでも、最初から始まります（このスマホで選んだ内容は引き継ぎません）。招待のリンクから来た場合は、相手の宛先が URL に残ります。</span></li>
+      </ol>
+      <div class="acts"><span class="btn">このスマホで Web だけ試す</span><span class="link">AI を選び直す</span></div>`,
+  },
+  {
+    id: "scope", label: "④ 任せる範囲", top: "はじめての設定", desc: "§5.4。初期値は「自動対応しない」。選択肢ごとに、対象の相手・できる依頼・できないことを書く。任意の作業ができるように見せない。",
+    html: () => `${bar(4)}
+      <h2>どこまで任せますか？</h2>
+      <p class="desc">細かい条件は、あとでエージェントの設定から変えられます。</p>
+      <div class="choices">
+        <div class="choice on"><span class="radio"></span><div><b>自動では返事をしない</b><span class="badge info">最初はこれ</span></div><span class="sub">届いた依頼には、あなたが返事を決めます。Muse に読ませたり下書きを作らせたりはできます（それとは別の設定です）。</span></div>
+        <div class="choice"><span class="radio"></span><div><b>コンタクトからの日程調整に、自動で返事</b></div><span class="sub">対象: コンタクトに登録した相手だけ。日程調整は、相手の候補の最初の時間で承諾します。予定表は見ません。タスクの依頼などは、あなたが確かめます。</span></div>
+        <div class="choice"><span class="radio"></span><div><b>だれからの日程調整にも、自動で返事</b></div><span class="sub">対象: 登録していない相手も含みます。日程調整だけ、候補の最初の時間で承諾します。それ以外の依頼は、あなたが確かめます。</span></div>
+      </div>
+      <div class="note">自動返信は、パソコンが動いている間（このブラウザだけの場合は、ホームか会話を開いている間）に送られます。</div>
+      <div class="acts"><span class="btn pri">保存して次へ</span><span class="link">戻る</span></div>`,
+  },
+  {
+    id: "test", label: "⑤ 試す（途中）", top: "はじめての設定", desc: "§5.5。4 つを別々に表示。外の相手には送らず、自分宛ての「接続テスト」だけ。待ち時間を過ぎたら「まだ確認できません」。",
+    html: () => `${bar(5)}
+      <h2>試してみましょう</h2>
+      <p class="desc">自分宛てに「接続テスト」を 1 通送り、届くか、読めるかを順に確かめます。ほかの人には送りません。</p>
+      <div class="checks">
+        <div class="chk"><span class="ic ok">✓</span><div><b>受信</b><div class="muted">テストのメッセージが届きました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Web で読む</b><div class="muted">このブラウザで開けました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Muse の許可</b><div class="muted">Muse に受信箱を読むことを許可しました（自動で確かめました）</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic wait">?</span><div><b>Muse で読む</b><div class="muted">Muse に「NexusInbox の受信箱を見て、"接続テスト" の内容を教えて」と頼み、結果を選んでください。</div></div><span class="r acts" style="margin:0"><span class="btn">AI にテストメッセージが表示された</span><span class="btn">表示されなかった</span><span class="link">あとで確かめる</span></span></div>
+        <div class="chk"><span class="ic no">–</span><div><b>自動返答</b><div class="muted">「自動では返事をしない」を選んだので、確かめません</div></div><span class="r"></span></div>
+      </div>
+      <div class="acts"><span class="btn pri">次へ</span><span class="link">あとで試す</span></div>`,
+  },
+  {
+    id: "test-late", label: "⑤ まだ確認できない", top: "はじめての設定", desc: "パソコンの返答が 180 秒を過ぎた例。失敗と決めつけず、確かめる場所と再試行を出す。再試行で同じテストを二重に送らない。",
+    html: () => `${bar(5)}
+      <h2>試してみましょう</h2>
+      <div class="checks">
+        <div class="chk"><span class="ic ok">✓</span><div><b>受信</b><div class="muted">テストのメッセージが届きました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Web で読む</b><div class="muted">このブラウザで開けました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Muse の許可</b><div class="muted">自動で確かめました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Muse で読む</b><div class="muted">テストメッセージが表示された（本人が確認）</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic warn">!</span><div><b>自動返答</b><div class="muted">まだ確認できません（3 分待ちました）。パソコンが動いているか、<span class="link">エージェントの状態</span>で確かめてください。</div></div><span class="r acts" style="margin:0"><span class="btn">もう一度確かめる</span></span></div>
+      </div>
+      <div class="acts"><span class="btn pri">次へ</span><span class="link">あとで試す</span></div>`,
+  },
+  {
+    id: "done-ai", label: "⑥ 準備状況（つながった）", top: "はじめての設定", desc: "済んだことと残りを分けて書く。主な操作は「ホームへ」。紹介リンクは補助。",
+    html: () => `${bar(6)}
+      <h2>準備ができました</h2>
+      <div class="checks">
+        <div class="chk"><span class="ic ok">✓</span><div><b>連絡先「秘書」</b><div class="muted">相手からメッセージを受け取れます</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>Muse</b><div class="muted">許可済み。読み取りは本人が確認。できるのは受信箱を読むことと下書きを作ることまでで、送信はあなたがホームで確かめてから</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>任せる範囲</b><div class="muted">自動では返事をしない</div></div><span class="r"><span class="link">変える</span></span></div>
+        <div class="chk"><span class="ic warn">!</span><div><b>自動返答のテスト</b><div class="muted">まだ確認できていません</div></div><span class="r"><span class="link">もう一度</span></span></div>
+      </div>
+      <div class="acts"><span class="btn pri">ホームへ</span><span class="link">相手にアドレスを伝える</span></div>`,
+  },
+  {
+    id: "done-web", label: "⑥ 準備状況（Web だけ）", top: "はじめての設定", desc: "「まず Web で試す」、または AI をあとにした場合。AI がまだつながっていないことをはっきり書く。",
+    html: () => `${bar(5, 5)}
+      <h2>Web で使い始められます</h2>
+      <p class="desc">AI との接続はまだです。</p>
+      <div class="checks">
+        <div class="chk"><span class="ic ok">✓</span><div><b>連絡先「秘書」</b><div class="muted">相手からメッセージを受け取れます</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>テスト</b><div class="muted">受信と、このブラウザで読むことを確かめました</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic no">–</span><div><b>AI</b><div class="muted">つないでいません</div></div><span class="r"><span class="link">AI をつなぐ</span></span></div>
+      </div>
+      <div class="acts"><span class="btn pri">ホームへ</span><span class="link">相手にアドレスを伝える</span></div>`,
+  },
+  {
+    id: "resume", label: "続きから", top: "はじめての設定", desc: "途中でやめて、あとで開いたとき。サーバの設定と端末の鍵から判定し、作ったものを二重に作らない。",
+    html: () => `
+      <h2>続きから始めます</h2>
+      <p class="desc">前回の続きです。済んだところは、もう一度しなくて大丈夫です。</p>
+      <div class="checks">
+        <div class="chk"><span class="ic ok">✓</span><div><b>どの AI と使うか</b><div class="muted">Muse</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic ok">✓</span><div><b>連絡先「秘書」</b><div class="muted">作成済み。鍵はこのブラウザにあります</div></div><span class="r"></span></div>
+        <div class="chk"><span class="ic wait">3</span><div><b>Muse とつなぐ</b><div class="muted">パソコンはつながっています。クラウドの AI を使えるようにするところからです</div></div><span class="r"></span></div>
+      </div>
+      <div class="acts"><span class="btn pri">続ける</span><span class="link">あとで（ホームへ）</span></div>`,
+  },
+  {
+    id: "reauth", label: "ログインし直す", top: "はじめての設定", desc: "途中でログインの期限が切れたとき。何が残っていて、確かめたあとどこへ戻るかを書く。",
+    html: () => `
+      <h2>もう一度 World ID で確かめてください</h2>
+      <p class="desc">ログインの期限が切れました。作った連絡先と鍵はそのままです。確かめると、この画面の続きに戻ります。</p>
+      <div class="acts"><span class="btn pri">World ID で確かめる</span></div>`,
+  },
+  {
+    id: "elsewhere", label: "鍵のない端末", top: "はじめての設定", desc: "別の端末で続きを開いたが、鍵は最初のブラウザにある場合。ここで新しく作らせない。",
+    html: () => `
+      <h2>このブラウザには鍵がありません</h2>
+      <p class="desc">「秘書」は別のブラウザで作りました。続きは、そのブラウザで開いてください。</p>
+      <div class="note">このブラウザでも読みたいときは、エージェントの画面の「ブラウザを追加」から足せます（作ったブラウザでの操作が要ります）。</div>
+      <div class="acts"><span class="btn pri">ホームへ</span><span class="link">ブラウザを追加する方法</span></div>`,
+  },
+];
+
+function render(id) {
+  const s = SCREENS.find((x) => x.id === id);
+  document.querySelectorAll("#states button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+  document.getElementById("desc").innerHTML = `<b>${s.label}</b>${s.desc}`;
+  const top = (phone) => `<span>NexusInbox</span><span class="sp"></span><span class="muted" style="font-weight:700">${s.top || (phone ? "" : "使い方 · ログイン")}</span>`;
+  document.getElementById("d-top").innerHTML = top(false);
+  document.getElementById("p-top").innerHTML = top(true);
+  document.getElementById("desk-main").innerHTML = s.html();
+  document.getElementById("phone-main").innerHTML = s.html();
+}
+document.getElementById("states").innerHTML = SCREENS.map((s) => `<button type="button" data-id="${s.id}">${s.label}</button>`).join("");
+document.getElementById("states").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) render(b.dataset.id);
+});
+render("choose");
+</script>
+</body>
+</html>

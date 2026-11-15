@@ -4627,6 +4627,26 @@ details[open] .help-accordion-chevron {
   border-color: transparent;
   color: #04060e;
 }
+.lgx-example {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: rgba(140, 160, 255, 0.16);
+  color: #c9d2ff;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.lgx-result {
+  margin-top: 4px;
+  text-align: center;
+  color: #9aa7d9;
+  font-size: var(--fs-sm);
+}
+.lgx-howto {
+  color: #c9d2ff;
+  font-weight: 700;
+  text-decoration: underline;
+}
 .lgx-cta {
   margin: 28px 0 32px;
 }

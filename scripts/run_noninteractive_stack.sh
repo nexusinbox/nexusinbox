@@ -178,10 +178,14 @@ read_pid() {
 
 start() {
   # Set up to start at login: start it the same way, no passphrase asked.
+  # Say "Started" only once both programs are seen running (docs/41 §5.2.1).
   if [ "${FROM_KEYCHAIN:-0}" != 1 ] && [ -n "$AGENT_DIR" ] && [ "$(uname)" = Darwin ] && autostart_is_on; then
-    launchctl bootstrap "gui/$(id -u)" "$(launch_plist)" 2>/dev/null || launchctl kickstart "gui/$(id -u)/$(launch_label)"
-    echo "Started (this agent starts at login; see: $SELF_NAME status $AGENT_DIR)"
-    return 0
+    if start_at_login_job; then
+      echo "Started (this agent starts at login; see: $SELF_NAME status $AGENT_DIR)"
+      return 0
+    fi
+    echo "Could not start this agent. See $SIGNER_LOG, $GATEWAY_LOG and $RUNTIME_DIR/launchd.log" >&2
+    exit 1
   fi
   : "${AGENT_INBOX_AID:?AGENT_INBOX_AID is required}"
   : "${AGENT_INBOX_CREDENTIAL_ID:?AGENT_INBOX_CREDENTIAL_ID is required}"
@@ -312,6 +316,39 @@ launch_plist() {
 }
 autostart_is_on() {
   [ -f "$(launch_plist)" ]
+}
+job_loaded() {
+  launchctl print "gui/$(id -u)/$(launch_label)" >/dev/null 2>&1
+}
+# launchd unloads a job in the background. Loading it again before that is
+# done can leave nothing running (the old unload takes the new job with it),
+# so wait until it is gone (up to 10 s).
+wait_job_unloaded() {
+  i=0
+  while job_loaded && [ "$i" -lt 20 ]; do
+    sleep 0.5
+    i=$((i + 1))
+  done
+}
+both_running() {
+  is_running "$(read_pid "$SIGNER_PID_FILE" || true)" && is_running "$(read_pid "$GATEWAY_PID_FILE" || true)"
+}
+# Load (or kick) the start-at-login job and wait until both programs run,
+# then look once more a moment later. Fails if they do not stay up.
+start_at_login_job() {
+  wait_job_unloaded
+  if ! launchctl bootstrap "gui/$(id -u)" "$(launch_plist)" 2>/dev/null; then
+    job_loaded || return 1
+    launchctl kickstart "gui/$(id -u)/$(launch_label)" 2>/dev/null || true
+  fi
+  i=0
+  until both_running; do
+    i=$((i + 1))
+    [ "$i" -ge 30 ] && return 1
+    sleep 0.5
+  done
+  sleep 2
+  job_loaded && both_running
 }
 require_macos() {
   if [ "$(uname)" != Darwin ]; then
@@ -495,6 +532,7 @@ stop() {
   # Started at login: unload it (until the next login or `start`).
   if [ -n "$AGENT_DIR" ] && [ "$(uname)" = Darwin ] && autostart_is_on; then
     launchctl bootout "gui/$(id -u)/$(launch_label)" 2>/dev/null || true
+    wait_job_unloaded
   fi
   signer_pid="$(read_pid "$SIGNER_PID_FILE" || true)"
   gateway_pid="$(read_pid "$GATEWAY_PID_FILE" || true)"

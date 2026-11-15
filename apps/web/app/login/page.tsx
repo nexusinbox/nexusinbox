@@ -279,15 +279,22 @@ export default function LoginPage() {
           <p className="ai-concept-hero-sub">{t("auth.sub")}</p>
         </section>
 
-        {/* docs/36: a two-line scene of what using it looks like. */}
-        <div className="lgx-scene" aria-hidden="true">
+        {/* docs/36, docs/41 §4.1: an example of what using it looks like,
+            marked as one so it is not taken for a real message. */}
+        <div className="lgx-scene">
+          <span className="lgx-example">{t("auth.exampleTag")}</span>
           <span className="lgx-who">{t("auth.sceneThemWho")}</span>
           <span className="lgx-bubble">{t("auth.sceneThem")}</span>
           <span className="lgx-who mine">{t("auth.sceneYouWho")}</span>
           <span className="lgx-bubble mine">{t("auth.sceneYou")}</span>
+          <span className="lgx-result">{t("auth.sceneResult")}</span>
         </div>
 
         <section className="ai-concept-cta-section lgx-cta">
+          {/* Why World ID, before the button (docs/41 §4.1). */}
+          <p className="lgx-note" style={{ margin: "0 0 14px" }}>
+            {t("auth.ctaNote")}
+          </p>
           <button
             className="ai-login-cta ai-concept-cta-link"
             type="button"
@@ -312,7 +319,11 @@ export default function LoginPage() {
             </svg>
             <span>{iframeVisible ? t("auth.verifying") : t("auth.start")}</span>
           </button>
-          <p className="lgx-note">{t("auth.ctaNote")}</p>
+          <p className="lgx-note">
+            <Link href="/help" className="lgx-howto">
+              {t("auth.howTo")}
+            </Link>
+          </p>
           <p
             className="lgx-status"
             data-kind={statusKind}

@@ -545,12 +545,13 @@ export function useDeleteAgentDraftMutation() {
 }
 
 // docs/33 §10: AI apps connected to the person's agents.
-export function useOAuthGrantsQuery() {
+export function useOAuthGrantsQuery(options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: queryKeys.oauthGrants(),
     queryFn: () => defaultApiClient.listOAuthGrants(),
     staleTime: 30_000,
     retry: 1,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

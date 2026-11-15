@@ -37,6 +37,7 @@ export function ChoiceCard({
   onSelect,
   title,
   badge,
+  disabled = false,
   testId,
   children,
 }: {
@@ -44,6 +45,8 @@ export function ChoiceCard({
   onSelect: () => void;
   title: string;
   badge?: string;
+  /** Shown but not choosable (e.g. an AI tool still being checked). */
+  disabled?: boolean;
   testId: string;
   children: ReactNode;
 }) {
@@ -52,9 +55,12 @@ export function ChoiceCard({
       type="button"
       role="radio"
       aria-checked={selected}
+      aria-disabled={disabled}
+      disabled={disabled}
       onClick={onSelect}
       data-testid={testId}
       style={{
+        opacity: disabled ? 0.6 : 1,
         textAlign: "left",
         width: "100%",
         padding: "12px 14px",
@@ -62,7 +68,7 @@ export function ChoiceCard({
         border: selected ? "2px solid var(--primary)" : "1px solid var(--line)",
         background: selected ? "var(--primary-soft)" : "var(--surface)",
         color: "var(--text)",
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         flexDirection: "column",
         gap: 4,
