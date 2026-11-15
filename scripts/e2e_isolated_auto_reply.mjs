@@ -3,14 +3,19 @@
 // API, signer daemon and agent gateway (docs/29, runbook 19 §7.3).
 //
 //   agent A: created the way the web UI does it, then connected the way a
-//            person does it: the web shows a pairing code and
+//            person does it: the web shows a long connect code and
 //            `run_noninteractive_stack.sh connect <code>` enrolls the daemon
-//            and starts the daemon and gateway (docs/31)
-//   agent B: plain keypairs held by this script (the sender)
+//            and starts the daemon and gateway (docs/31, docs/40 §13.5);
+//            this script is A's browser: it checks the computer's MAC,
+//            signs it into A's device list and MACs the root back
+//   agent B: plain keypairs held by this script (the sender), with a signed
+//            device list; it signs with signature v2 (docs/40 §14)
 //   agent C: enrolled with `nexusinbox-signer --enroll --dir`, the flow the
 //            settings page still offers
 //
-// B sends A a schedule_negotiation propose. With A's policy set to
+// B sends A a schedule_negotiation propose, signed with v2 and wrapped for
+// A's listed devices. The gateway checks the sender against B's list and
+// only answers a verified, recent message. With A's policy set to
 // auto_accept, the gateway executor must reply on its own: claim the row,
 // unwrap and sign with the daemon, POST the accept, mark the row. The script
 // then opens the reply with B's X25519 key and checks no second reply follows.
@@ -25,6 +30,7 @@
 //     Keep the CSRF check on, as in production: the daemon calls the API
 //     without an Origin, and only the cookie-less routes may let it through.
 //   - `cargo build` in services/signer-daemon and services/agent-gateway
+//   - packages/core built (pnpm --filter @nexusinbox/core build)
 //
 // Usage: API=http://localhost:8080 node scripts/e2e_isolated_auto_reply.mjs
 //   Against an unpacked release instead of the checkout:
@@ -34,13 +40,17 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const API = process.env.API ?? "http://localhost:8080";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORK = process.env.WORK ?? fs.mkdtempSync(path.join(os.tmpdir(), "nxe2e-work-"));
 const A2A_CONTENT_TYPE = "application/vnd.nexusinbox.a2a+json; v=1";
+const CORE = path.join(REPO, "packages/core/dist");
+const core = await import(pathToFileURL(path.join(CORE, "index.js")).href);
+const deviceList = await import(pathToFileURL(path.join(CORE, "device-list.js")).href);
+const pairing = await import(pathToFileURL(path.join(CORE, "pairing.js")).href);
 
 // It seeds users straight into the database and relies on the dev bearer,
 // so it must never point at a deployed API.
@@ -95,18 +105,6 @@ function makeAgentKeys() {
 
 // --- envelope crypto (mirrors packages/crypto and apps/web/lib/crypto) ---
 
-function encryptText(plaintext, contentKey) {
-  const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
-  const key = crypto.pbkdf2Sync(Buffer.from(contentKey, "utf8"), salt, 120000, 32, "sha256");
-  const c = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const ct = Buffer.concat([c.update(Buffer.from(plaintext, "utf8")), c.final(), c.getAuthTag()]);
-  return {
-    serialized: `enc:v1:PBKDF2-SHA256:AES-GCM-256:120000:${b64url(salt)}:${b64url(iv)}:${b64url(ct)}`,
-    iv: b64url(iv),
-  };
-}
-
 function decryptText(serialized, contentKey) {
   const parts = serialized.split(":");
   if (parts.length !== 8 || parts[0] !== "enc") throw new Error(`not enc:v1: ${serialized.slice(0, 30)}`);
@@ -119,23 +117,6 @@ function decryptText(serialized, contentKey) {
 }
 
 const WRAP_INFO = Buffer.from("nexusinbox/x25519-wrap/v1");
-
-function wrapContentKey(contentKey, recipientEncPubB64) {
-  const recipient = crypto.createPublicKey({
-    key: Buffer.concat([Buffer.from("302a300506032b656e032100", "hex"), Buffer.from(recipientEncPubB64, "base64url")]),
-    format: "der",
-    type: "spki",
-  });
-  const eph = crypto.generateKeyPairSync("x25519");
-  const shared = crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: recipient });
-  const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
-  const wrapKey = Buffer.from(crypto.hkdfSync("sha256", shared, salt, WRAP_INFO, 32));
-  const c = crypto.createCipheriv("aes-256-gcm", wrapKey, iv);
-  const ct = Buffer.concat([c.update(Buffer.from(contentKey, "utf8")), c.final(), c.getAuthTag()]);
-  const ephPub = eph.publicKey.export({ type: "spki", format: "der" }).subarray(-32);
-  return `x25519v1:${b64url(ephPub)}:${b64url(salt)}:${b64url(iv)}:${b64url(ct)}`;
-}
 
 function unwrapContentKey(wrapped, encPrivateKey) {
   const [eph, salt, iv, ct] = wrapped.slice("x25519v1:".length).split(":");
@@ -157,11 +138,18 @@ function unwrapContentKey(wrapped, encPrivateKey) {
 async function api(method, p, { auth, body } = {}) {
   const headers = { "Content-Type": "application/json", Origin: "http://localhost:3100" };
   if (auth) headers.Authorization = auth;
-  const res = await fetch(`${API}${p}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  // The API allows 60 requests a minute from one address; the polling
+  // below can reach that, so wait out the window instead of failing.
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${API}${p}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (res.status !== 429 || attempt >= 12) break;
+    await sleep(5000);
+  }
   const text = await res.text();
   let data;
   try {
@@ -175,6 +163,30 @@ async function api(method, p, { auth, body } = {}) {
 function expectStatus(resp, ok, what) {
   if (!ok.includes(resp.status)) fail(`${what}: HTTP ${resp.status}`, resp.data);
   return resp.data;
+}
+
+/** An agent's Ed25519 key as WebCrypto wants it, for core's signing. */
+function webSigningKey(keys) {
+  return crypto.webcrypto.subtle.importKey(
+    "pkcs8",
+    keys.sign.privateKey.export({ type: "pkcs8", format: "der" }),
+    { name: "Ed25519" },
+    false,
+    ["sign"],
+  );
+}
+
+/** Sign (with the root key) and store an agent's device list (docs/40 §4.2). */
+async function putDeviceList(human, agent, root, version, devices) {
+  const jws = await deviceList.signDeviceList(await webSigningKey(root), {
+    v: 1,
+    aid: agent.aid,
+    root: root.did,
+    version,
+    issued_at: new Date().toISOString(),
+    devices,
+  });
+  expectStatus(await api("PUT", `/agents/${agent.id}/device-list`, { auth: human, body: { jws } }), [200], "device list");
 }
 
 // --- main -------------------------------------------------------------------
@@ -224,6 +236,12 @@ async function main() {
     await api("POST", "/agents", { auth: human, body: { label: "e2e-C-enroll", public_key: placeholderC.signPubB64, encryption_key: placeholderC.encPubB64 } }),
     [200, 201], "create agent C");
   console.log(`  B ${agentB.did}`);
+  // Agents without a device list are not sent to, and their messages are
+  // not answered (docs/40 §15.2). The browser each was created in signs its own.
+  B.aid = agentB.aid;
+  B.devices = [{ did: B.did, encryption_public_key: B.encPubB64 }];
+  await putDeviceList(human, agentB, B, 1, [{ did: B.did, enc: B.encPubB64, kind: "browser" }]);
+  await putDeviceList(human, agentA, placeholder, 1, [{ did: placeholder.did, enc: placeholder.encPubB64, kind: "browser" }]);
 
   const mode = (f) => (fs.statSync(f).mode & 0o777).toString(8);
   const checkAgentDir = (dir, credentialId) => {
@@ -238,7 +256,7 @@ async function main() {
     return agentEnv;
   };
 
-  step("connect A with a pairing code: run_noninteractive_stack.sh connect <code>");
+  step("connect A with a long connect code: run_noninteractive_stack.sh connect <code>");
   const cred = expectStatus(
     await api("POST", "/agent-credentials", { auth: human, body: { agent_id: agentA.id, label: "e2e-daemon", scopes: ["messages.read", "messages.send"], pairing: true } }),
     [201], "create pairing credential");
@@ -260,10 +278,11 @@ async function main() {
     AGENT_INBOX_MODE_A_EXECUTOR_INTERVAL_SECS: "5",
   };
   const agentDir = path.join(WORK, ".nexusinbox", "e2e-a-isolated");
+  // The secret only this browser and the computer know (docs/40 §13.5).
+  const secret = pairing.generatePairingSecret();
   try {
-    // Typed in lower case on purpose. The new passphrase is asked twice;
-    // stdin is not a terminal here.
-    const out = execFileSync("sh", [STACK, "connect", cred.pairing_code.toLowerCase(), API], {
+    // The new passphrase is asked twice; stdin is not a terminal here.
+    const out = execFileSync("sh", [STACK, "connect", pairing.longPairingCode(cred.pairing_code, secret), API], {
       cwd: REPO,
       env: stackEnv,
       input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
@@ -289,9 +308,33 @@ async function main() {
   const resolved = expectStatus(
     await api("GET", `/recipients/resolve?identifier=${encodeURIComponent(agentA.aid)}`, { auth: human }),
     [200], "resolve A");
-  const A = { did: resolved.did, encPubB64: resolved.encryption_public_key };
-  console.log(`  A ${A.did} (connected, labelled ${connected.label})`);
-  if (A.did === agentA.did) fail("A still answers on the placeholder keys after connecting");
+  if (resolved.did === agentA.did) fail("A still answers on the placeholder keys after connecting");
+
+  step("A's browser checks the computer's MAC, signs it into the list, and MACs the root back");
+  const listedA = expectStatus(await api("GET", "/agents", { auth: human }), [200], "list agents").agents.find(
+    (a) => a.aid === agentA.aid,
+  );
+  const computer = listedA.devices.find((d) => d.kind === "computer");
+  const mac = await pairing.pairingDeviceMac(secret, cred.credential_id, computer.did, computer.encryption_public_key);
+  if (!computer.pairing_mac || !pairing.macEqual(mac, computer.pairing_mac)) fail("the computer's keys do not match the code", computer);
+  await putDeviceList(human, agentA, placeholder, 2, [
+    { did: placeholder.did, enc: placeholder.encPubB64, kind: "browser" },
+    { did: computer.did, enc: computer.encryption_public_key, kind: "computer" },
+  ]);
+  const rootMac = await pairing.pairingRootMac(secret, cred.credential_id, agentA.aid, placeholder.did);
+  expectStatus(
+    await api("PUT", `/agent-credentials/${cred.credential_id}/pairing-root`, { auth: human, body: { mac: rootMac } }),
+    [200, 204], "pairing root");
+  const A = {
+    aid: agentA.aid,
+    did: computer.did,
+    encPubB64: computer.encryption_public_key,
+    devices: [
+      { did: placeholder.did, encryption_public_key: placeholder.encPubB64 },
+      { did: computer.did, encryption_public_key: computer.encryption_public_key },
+    ],
+  };
+  console.log(`  A ${A.did} (connected, labelled ${connected.label}; root ${placeholder.did})`);
 
   step("enroll C the classic way: nexusinbox-signer --enroll --dir");
   const credC = expectStatus(
@@ -329,8 +372,19 @@ async function main() {
   const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "+00:00");
   const candidate = { start: iso(Date.now() + 7 * day), end: iso(Date.now() + 7 * day + 3600_000) };
   const proposeId = crypto.randomUUID();
-  const a2a = {
-    v: 1,
+  // Signed with v2 and wrapped for every listed device of both agents
+  // (docs/38, docs/40 §14), as a browser sends it.
+  const envelope = await core.buildA2AEnvelope({
+    senderAid: B.aid,
+    recipientAid: A.aid,
+    senderDid: B.did,
+    recipientDid: A.did,
+    recipientEncryptionPublicKey: A.encPubB64,
+    senderSigningPrivateKey: await webSigningKey(B),
+    senderEncryptionPublicKey: B.encPubB64,
+    recipientDevices: A.devices,
+    senderDevices: B.devices,
+    subject: "E2E propose",
     body: "Can we meet next week?",
     protocol: {
       id: proposeId,
@@ -344,28 +398,12 @@ async function main() {
         response_deadline: iso(Date.now() + 3 * day),
       },
     },
-  };
-  const contentKey = b64url(crypto.randomBytes(32));
-  const body = encryptText(JSON.stringify(a2a), contentKey);
-  const subject = encryptText("E2E propose", contentKey);
-  const wrapped = wrapContentKey(contentKey, A.encPubB64);
-  const signingPayload = [B.did, A.did, subject.serialized, body.serialized, wrapped, body.iv].join("\n");
-  const signature = b64url(crypto.sign(null, Buffer.from(signingPayload, "utf8"), B.sign.privateKey));
+  });
+  if (!envelope.signature_v2) fail("the propose is not signed with v2", envelope);
   const sent = expectStatus(
     await api("POST", "/messages", {
       auth: human,
-      body: {
-        sender_did: B.did,
-        recipient_did: A.did,
-        envelope: {
-          encrypted_content: body.serialized,
-          encrypted_key: wrapped,
-          nonce: body.iv,
-          signature,
-          metadata: { subject_encrypted: subject.serialized, content_type: A2A_CONTENT_TYPE, thread_id: null, has_attachments: false },
-        },
-        priority: "normal",
-      },
+      body: { sender_did: B.did, recipient_did: A.did, envelope, priority: "normal" },
     }),
     [202], "send propose");
   console.log(`  sent ${sent.message_id}`);
