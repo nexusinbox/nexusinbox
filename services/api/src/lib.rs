@@ -11023,16 +11023,25 @@ async fn rotate_agent_credential(
     .execute(&pool)
     .await;
 
-    // Issue new enrollment secret for re-activation
+    // Issue new enrollment secret for re-activation. The credential goes
+    // back to `pending` (activation only takes pending ones) and every token
+    // minted under the old key ends now: rotation is how an owner cuts off
+    // a key they no longer trust.
     let secret = generate_enrollment_secret();
     let enrollment_hash = sha256_hex(secret.as_bytes());
     let expires = (Utc::now() + chrono::Duration::minutes(30)).to_rfc3339();
 
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("rotate failed", e))?;
     sqlx::query(
         r#"
         UPDATE agent_credentials
-        SET enrollment_hash = $1,
+        SET status = 'pending',
+            enrollment_hash = $1,
             enrollment_expires = $2::timestamptz,
+            failed_activation_attempts = 0,
             signing_public_key = NULL,
             pairing_device_mac = NULL,
             pairing_root_mac = NULL
@@ -11042,9 +11051,19 @@ async fn rotate_agent_credential(
     .bind(&enrollment_hash)
     .bind(&expires)
     .bind(credential_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("rotate update failed", e))?;
+    sqlx::query(
+        "UPDATE agent_tokens SET revoked_at = NOW() WHERE credential_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(credential_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| internal_error("rotate token revoke failed", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("rotate failed", e))?;
 
     // Audit: key_rotation_started
     record_audit_event(
@@ -11798,8 +11817,7 @@ async fn agent_auth_token(
     let cred_row = sqlx::query(
         r#"
         SELECT
-            c.id, c.aid, c.user_id, c.status, c.allowed_scopes, c.signing_public_key,
-            aik.signing_public_key AS identity_key
+            c.id, c.aid, c.user_id, c.status, c.allowed_scopes, c.signing_public_key
         FROM agent_credentials c
         JOIN agent_identity_keys aik ON aik.aid = c.aid AND aik.status = 'active'
         WHERE c.id = $1 AND c.aid = $2 AND c.status = 'active'
@@ -11822,11 +11840,19 @@ async fn agent_auth_token(
         )
     })?;
 
-    // Use credential's own signing key if set (post-activation), otherwise
-    // fall back to the identity key from agent_identity_keys.
+    // Only the credential's own key. Another device's key of the same aid
+    // must never stand in for it.
     let signing_key_b64: String = cred_row
         .get::<Option<String>, _>("signing_public_key")
-        .unwrap_or_else(|| cred_row.get("identity_key"));
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "unauthorized".into(),
+                    message: "credential has no key; activate it first".into(),
+                }),
+            )
+        })?;
 
     // ---- 4. Verify Ed25519 signature ----
     let pub_key_bytes = URL_SAFE_NO_PAD
@@ -11885,7 +11911,14 @@ async fn agent_auth_token(
 
     // ---- 5. Validate scopes ----
     let allowed: Vec<String> = cred_row.get("allowed_scopes");
-    let requested: Vec<&str> = claims.scope.split_whitespace().collect();
+    let mut requested: Vec<&str> = claims.scope.split_whitespace().collect();
+    requested.sort_unstable();
+    requested.dedup();
+    if requested.is_empty() {
+        return Err(validation_error(
+            "assertion scope must name at least one scope",
+        ));
+    }
     for scope in &requested {
         if !allowed.iter().any(|a| a == scope) {
             return Err(validation_error(&format!(
@@ -11930,7 +11963,7 @@ async fn agent_auth_token(
     .bind(&access_hash)
     .bind(&refresh_hash)
     .bind(&dpop_jkt)
-    .bind(&allowed as &[String])
+    .bind(&requested as &[&str])
     .bind(&access_expires)
     .bind(&refresh_expires)
     .fetch_one(&pool)
@@ -12192,6 +12225,28 @@ async fn agent_auth_refresh(
     // because the credential-compromise case is the right answer for a
     // stolen signing key — the attacker can otherwise mint a fresh family.
     if token_is_revoked {
+        // Only a refresh token that was rotated away (a newer token exists in
+        // its family) is reuse. One revoked without a successor was revoked
+        // on purpose (POST /agent-auth/revoke): refuse it plainly, so that
+        // revoking a token cannot be turned into compromising the credential.
+        let rotated: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM agent_tokens newer, agent_tokens t
+                WHERE t.id = $1
+                  AND newer.token_family_id = t.token_family_id
+                  AND newer.id <> t.id
+                  AND newer.issued_at >= t.issued_at
+            )
+            "#,
+        )
+        .bind(token_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| internal_error("refresh token lookup failed", e))?;
+        if !rotated {
+            return Err(unauthorized_error("refresh token has been revoked"));
+        }
         return Err(revoke_refresh_family_for_reuse(
             &pool,
             credential_id,

@@ -471,7 +471,7 @@ CREATE INDEX idx_agent_tokens_credential ON agent_tokens(credential_id) WHERE re
 
 ### 11.1 通常ローテ (Logical Agent ID があるので安定 ID は変わらない)
 1. 人間が `POST /agent-credentials/:id/rotate`
-2. 新 enrollment secret 発行
+2. 新 enrollment secret 発行。credential は `pending` に戻り、旧鍵で発行済みのトークンはこの時点で失効する (再 activate まで新しいトークンも出ない。2026-11-16)
 3. Daemon が新鍵ペアを生成、**旧秘密鍵で新公開鍵に署名** (連続性証明)
 4. Server が `agent_identity_keys` に新行を追加、旧行を `status='rotating'`
 5. 7日猶予後に旧鍵 `status='retired'`、Daemon が旧秘密鍵を削除
