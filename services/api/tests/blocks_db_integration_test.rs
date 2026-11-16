@@ -213,6 +213,11 @@ async fn blocks_crud_roundtrip_against_postgres() {
         .collect();
     assert!(levels.contains(&"l1_did"));
     assert!(levels.contains(&"l2_identity"));
+    // The person's World ID hash is never sent back.
+    assert!(
+        blocks.iter().all(|b| b.get("target_world_id").is_none()),
+        "{body}"
+    );
 
     // Delete the L1 block and verify 404 on re-delete.
     let response = app

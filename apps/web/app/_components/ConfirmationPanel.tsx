@@ -13,9 +13,13 @@ import type { Agent, ContactEntry } from "../../lib/api/types";
 import { sealForSave } from "../../lib/contacts/address-book";
 import { checkedRoot } from "../../lib/crypto/device-wraps";
 import { ownRootHere } from "../../lib/agents/device-list";
+import { loadDistrusted, rememberDistrust } from "../../lib/agents/peer-pins";
 import { useTranslation } from "../../lib/i18n";
 
-type Loaded = { kind: "loading" } | { kind: "ready"; root: string; number: string } | { kind: "unavailable" };
+type Loaded =
+  | { kind: "loading" }
+  | { kind: "ready"; aid: string; root: string; number: string }
+  | { kind: "unavailable" };
 
 export function ConfirmationPanel({
   counterpart,
@@ -54,7 +58,7 @@ export function ConfirmationPanel({
           return;
         }
         const number = await confirmationNumber(ownRoot, checked.root);
-        if (!cancelled) setLoaded({ kind: "ready", root: checked.root, number });
+        if (!cancelled) setLoaded({ kind: "ready", aid: served.aid, root: checked.root, number });
       } catch {
         if (!cancelled) setLoaded({ kind: "unavailable" });
       }
@@ -80,6 +84,7 @@ export function ConfirmationPanel({
         distrusted_root: same ? null : loaded.root,
       });
       await defaultApiClient.updateContact(contact.id, { sealed });
+      rememberDistrust(loaded.aid, loaded.root, !same);
       await queryClient.invalidateQueries({ queryKey: queryKeys.contacts() });
       setSaved(same ? "same" : "different");
     } catch {
@@ -91,7 +96,9 @@ export function ConfirmationPanel({
 
   const verifiedHere =
     loaded.kind === "ready" && contact?.verified?.root === loaded.root ? contact.verified : null;
-  const distrustedHere = loaded.kind === "ready" && contact?.distrusted_root === loaded.root;
+  const distrustedHere =
+    loaded.kind === "ready" &&
+    (contact?.distrusted_root === loaded.root || loadDistrusted(loaded.aid).includes(loaded.root));
   const date = (iso: string) =>
     new Date(iso).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { month: "numeric", day: "numeric" });
 

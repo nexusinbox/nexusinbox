@@ -15,7 +15,7 @@ vi.mock("./recipient-keyring", () => ({ hasRecipientPrivateKey: async () => fals
 
 import { createEd25519KeyPair, deriveDidKeyFromPublicKey } from "@nexusinbox/core";
 import { deviceListHash, signDeviceList } from "@nexusinbox/core/device-list";
-import { forgetContactRoots, loadPin, rememberContactRoots, savePin } from "../agents/peer-pins";
+import { forgetContactRoots, loadDistrusted, loadPin, rememberContactRoots, rememberDistrust, savePin } from "../agents/peer-pins";
 import type { ContactEntry, RecipientResolutionResponse } from "../api/types";
 import { planSend, SendStop } from "./device-wraps";
 
@@ -141,6 +141,35 @@ describe("planSend (docs/40 §12)", () => {
     expect(saved.distrusted_root).toBeNull();
     // Checked before, and the person compared the new number: checked now.
     expect(saved.verified).toMatchObject({ root: peer.did });
+  });
+
+  it("keeps stopping on a distrusted root when the server serves an older contact (docs/40 §16.2)", async () => {
+    const peer = await agent(PEER);
+    // The person said the numbers differed; the server then serves the
+    // contact from before, without distrusted_root.
+    rememberDistrust(PEER, peer.did, true);
+    rememberContactRoots([
+      {
+        id: "c1",
+        did: peer.did,
+        person_name: "Alex",
+        agent_label: null,
+        note: null,
+        aid: PEER,
+        root: peer.did,
+        verified: null,
+        distrusted_root: null,
+        readable: true,
+        created_at: "",
+        updated_at: "",
+      },
+    ]);
+    resolveRecipient.mockRejectedValue(new Error("no sender"));
+    await expect(planSend(peer.served, PEER, null)).rejects.toMatchObject({ reason: "root_changed", root: peer.did });
+    // Accepting the root on purpose clears this browser's copy too.
+    sealForSave.mockResolvedValue("cs1:sealed");
+    await planSend(peer.served, PEER, null, { acceptRoot: peer.did });
+    expect(loadDistrusted(PEER)).toEqual([]);
   });
 
   it("seals a first-seen root into the contact", async () => {

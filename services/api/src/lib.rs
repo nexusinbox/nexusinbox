@@ -221,6 +221,9 @@ struct BlockEntry {
     id: Uuid,
     level: String,
     target_did: Option<String>,
+    /// Never sent back: the same hash under two blocks would tell the owner
+    /// that two agents belong to one person.
+    #[serde(skip_serializing)]
     target_world_id: Option<String>,
     created_at: String,
 }
@@ -260,7 +263,6 @@ struct BlockFromMessageResponse {
     id: Uuid,
     level: String,
     target_did: Option<String>,
-    target_world_id: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -6395,7 +6397,6 @@ async fn create_block_from_message(
             id,
             level,
             target_did,
-            target_world_id,
         }),
     ))
 }

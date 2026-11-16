@@ -55,7 +55,7 @@ type GlossaryItem = {
 const blockGlossary: GlossaryItem[] = [
   { termKey: "help.l1Term", descriptionKey: "help.l1Desc" },
   { termKey: "help.l2Term", descriptionKey: "help.l2Desc" },
-  { termKey: "help.l3Term", descriptionKey: "help.l3Desc" },
+  { termKey: "help.stealthTerm", descriptionKey: "help.stealthDesc" },
 ];
 
 const conceptGlossary: GlossaryItem[] = [

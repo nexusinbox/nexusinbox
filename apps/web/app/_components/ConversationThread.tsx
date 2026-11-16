@@ -131,7 +131,6 @@ export function BlockSenderPanel({
         [
           ["l1_did", "blockLevelL1", "blockLevelL1Desc"],
           ["l2_identity", "blockLevelL2", "blockLevelL2Desc"],
-          ["l3_stealth", "blockLevelL3", "blockLevelL3Desc"],
         ] as const
       ).map(([lvl, labelKey, descKey]) => (
         <button

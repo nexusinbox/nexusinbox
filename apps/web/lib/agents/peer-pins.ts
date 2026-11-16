@@ -139,3 +139,30 @@ export function forgetContactRoots(): void {
   contactsByDid = new Map();
   contactsLoaded = false;
 }
+
+const distrustKey = (aid: string) => `nexusinbox.devicelist.distrusted.${aid}`;
+
+/**
+ * Roots of `aid` the person said did not match (docs/40 §16.2). The sealed
+ * contact holds this too, but the server keeps that copy and could serve an
+ * older one; this browser's copy cannot be rolled back that way.
+ */
+export function loadDistrusted(aid: string): string[] {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(distrustKey(aid)) ?? "[]") as unknown;
+    return Array.isArray(value) ? value.filter((r): r is string => typeof r === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberDistrust(aid: string, root: string, distrusted: boolean): void {
+  try {
+    const rest = loadDistrusted(aid).filter((r) => r !== root);
+    const next = distrusted ? [...rest, root] : rest;
+    if (next.length > 0) window.localStorage.setItem(distrustKey(aid), JSON.stringify(next));
+    else window.localStorage.removeItem(distrustKey(aid));
+  } catch {
+    // Storage blocked: the sealed contact still holds it.
+  }
+}

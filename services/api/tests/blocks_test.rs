@@ -241,6 +241,17 @@ async fn l2_identity_ban_returns_not_found() {
     )
     .await;
     assert_eq!(block_response.status(), StatusCode::CREATED);
+    // The person's World ID hash is never sent back.
+    let created: Value = serde_json::from_slice(
+        &block_response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes(),
+    )
+    .unwrap();
+    assert!(created.get("target_world_id").is_none(), "{created}");
 
     let send_response = send(
         &app,

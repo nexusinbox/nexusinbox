@@ -31,20 +31,15 @@ export default function BlocksSettingsPage() {
   const createBlock = useCreateBlockMutation();
   const deleteBlock = useDeleteBlockMutation();
 
+  // Blocks made as "hide completely" do what the person-wide block does
+  // (docs/05 §1.4), and are shown as one.
   const levelLabels: Record<BlockLevel, string> = {
     l1_did: t("blocks.l1Label"),
     l2_identity: t("blocks.l2Label"),
-    l3_stealth: t("blocks.l3Label"),
-  };
-  const levelDescriptions: Record<BlockLevel, string> = {
-    l1_did: t("blocks.l1Desc"),
-    l2_identity: t("blocks.l2Desc"),
-    l3_stealth: t("blocks.l3Desc"),
+    l3_stealth: t("blocks.l2Label"),
   };
 
-  const [level, setLevel] = useState<BlockLevel>("l1_did");
   const [targetDid, setTargetDid] = useState("");
-  const [targetWorldId, setTargetWorldId] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
   const blocks = blocksQuery.data?.blocks ?? [];
@@ -56,23 +51,13 @@ export default function BlocksSettingsPage() {
   const handleCreate = async () => {
     setStatusMessage("");
     try {
-      if (level === "l1_did") {
-        const did = targetDid.trim();
-        if (!did) {
-          setStatusMessage(t("blocks.validationDid"));
-          return;
-        }
-        await createBlock.mutateAsync({ level, target_did: did });
-      } else {
-        const wid = targetWorldId.trim();
-        if (!wid) {
-          setStatusMessage(t("blocks.validationWorldId"));
-          return;
-        }
-        await createBlock.mutateAsync({ level, target_world_id: wid });
+      const did = targetDid.trim();
+      if (!did) {
+        setStatusMessage(t("blocks.validationDid"));
+        return;
       }
+      await createBlock.mutateAsync({ level: "l1_did", target_did: did });
       setTargetDid("");
-      setTargetWorldId("");
       setStatusMessage(t("blocks.added"));
     } catch {
       setStatusMessage(t("blocks.addFailed"));
@@ -157,46 +142,20 @@ export default function BlocksSettingsPage() {
         <details className="bl-manual">
           <summary>{t("blocks.addTitle")}</summary>
           <p className="ct-help">{t("blocks.addMeta")}</p>
-          <label className="ap-field">
-            {t("blocks.levelTitle")}
-            <select
-              className="select"
-              value={level}
-              onChange={(event) => setLevel(event.target.value as BlockLevel)}
-            >
-              <option value="l1_did">{levelLabels.l1_did}</option>
-              <option value="l2_identity">{levelLabels.l2_identity}</option>
-              <option value="l3_stealth">{levelLabels.l3_stealth}</option>
-            </select>
+          <p className="ct-help">{t("blocks.manualScope")}</p>
+          <p className="ct-help">{t("blocks.l1Desc")}</p>
+          <label className="ap-field" htmlFor="block-target-did">
+            {t("blocks.didTitle")}
+            <input
+              id="block-target-did"
+              className="input"
+              value={targetDid}
+              onChange={(event) => setTargetDid(event.target.value)}
+              placeholder={t("blocks.didPlaceholder")}
+              spellCheck={false}
+              autoComplete="off"
+            />
           </label>
-          <p className="ct-help">{levelDescriptions[level]}</p>
-          {level === "l1_did" ? (
-            <label className="ap-field" htmlFor="block-target-did">
-              {t("blocks.didTitle")}
-              <input
-                id="block-target-did"
-                className="input"
-                value={targetDid}
-                onChange={(event) => setTargetDid(event.target.value)}
-                placeholder={t("blocks.didPlaceholder")}
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </label>
-          ) : (
-            <label className="ap-field" htmlFor="block-target-world-id">
-              {t("blocks.worldIdTitle")}
-              <input
-                id="block-target-world-id"
-                className="input"
-                value={targetWorldId}
-                onChange={(event) => setTargetWorldId(event.target.value)}
-                placeholder={t("blocks.worldIdPlaceholder")}
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </label>
-          )}
           <button
             className="dm-btn primary"
             type="button"

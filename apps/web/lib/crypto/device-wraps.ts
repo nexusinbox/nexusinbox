@@ -18,8 +18,10 @@ import {
   contactForAid,
   contactsOpened,
   knownAidFor,
+  loadDistrusted,
   loadPin,
   rememberDidAid,
+  rememberDistrust,
   savePin,
 } from "../agents/peer-pins";
 import { defaultApiClient, deviceListHistory, type SendSigning } from "../api/client";
@@ -139,10 +141,12 @@ async function decide(
   const root = decision.list.root;
   // The contact remembers another root than this browser does, or the
   // person found its confirmation number did not match (docs/40 §16.2).
-  const distrusted = contactForAid(served.aid)?.distrusted_root === root;
+  const distrusted =
+    contactForAid(served.aid)?.distrusted_root === root || loadDistrusted(served.aid).includes(root);
   if (((contactRoot && contactRoot !== root) || distrusted) && acceptRoot !== root) {
     return { kind: "stop", reason: "root_changed", root };
   }
+  if (acceptRoot === root) rememberDistrust(served.aid, root, false);
   const next = pinAfter(pin, decision);
   if (next) savePin(served.aid, next);
   void sealRootIntoContact(served.aid, root, acceptRoot === root);
