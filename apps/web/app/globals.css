@@ -5340,3 +5340,22 @@ details[open] .help-accordion-chevron {
   color: var(--primary-text);
   font-weight: 700;
 }
+
+/* ご意見・お問い合わせ (docs/42, mock docs/42_feedback_link_mock.html) */
+.help-feedback {
+  margin: 24px 0 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-alt);
+  word-break: auto-phrase;
+}
+.help-feedback-title {
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+}
+.help-feedback p {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}

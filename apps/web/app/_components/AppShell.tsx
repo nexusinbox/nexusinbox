@@ -19,6 +19,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Logo } from "./Logo";
 import { RealtimeSubscriber } from "./RealtimeSubscriber";
 import { useAttention } from "../../lib/home/use-attention";
+import { CONTACT_FORM_URL } from "../../lib/legal/contact";
 import { CONVERSATIONS_PATH, conversationsHref } from "../../lib/url/conversations";
 
 /** Unread is a quieter number than what needs the person. */
@@ -45,6 +46,8 @@ type NavItem = {
   tabKey?: string;
   /** Home counts what needs the person; the conversations, what is unread (docs/41 §3). */
   countKey: "attention" | "inboxUnread" | null;
+  /** A page outside the app: opens in a new tab (docs/42). */
+  external?: boolean;
   icon: ReactNode;
 };
 
@@ -140,6 +143,18 @@ const navItems: NavItem[] = [
         <circle cx="12" cy="12" r="10" />
         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    ),
+  },
+  {
+    href: CONTACT_FORM_URL,
+    labelKey: "nav.feedback",
+    countKey: null,
+    external: true,
+    icon: (
+      <svg {...ICON}>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <polyline points="3 7 12 13 21 7" />
       </svg>
     ),
   },
@@ -296,6 +311,21 @@ export function AppShell({
         <nav className="x-nav-list">
           {navItems.map((item) => {
             const count = countFor(item);
+            if (item.external) {
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="x-nav-item"
+                  data-testid="nav-feedback"
+                >
+                  {item.icon}
+                  <span className="x-nav-label">{t(item.labelKey)} ↗</span>
+                </a>
+              );
+            }
             return (
               <Link
                 key={item.href}

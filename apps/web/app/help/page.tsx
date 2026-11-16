@@ -10,6 +10,7 @@ import { AppShell } from "../_components/AppShell";
 import { useAuthSessionQuery } from "../../lib/api/hooks";
 import { useTranslation } from "../../lib/i18n";
 import { AccordionChevron, PublicHelpShell, RichText } from "./HelpParts";
+import { CONTACT_FORM_URL, SECURITY_POLICY_URL } from "../../lib/legal/contact";
 
 const SECTIONS = ["what", "start", "daily", "ai", "safe", "trouble", "words"] as const;
 
@@ -192,6 +193,22 @@ export default function HelpPage() {
       <Section id="words">
         <Terms prefix="words" keys={["address", "review", "cloud", "history", "technical"]} />
       </Section>
+
+      {/* Where to write to us (docs/42): feedback and requests to the form,
+          vulnerabilities through the reporting steps, never in public. */}
+      <section className="help-feedback" data-testid="help-feedback">
+        <h2 className="help-feedback-title">{t("guide.feedback.title")}</h2>
+        <p>{t("guide.feedback.body")}</p>
+        <p>
+          {t("guide.feedback.private")}{" "}
+          <a href={SECURITY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="help-step-link">
+            {t("guide.feedback.securityLink")} ↗
+          </a>
+        </p>
+        <a href={CONTACT_FORM_URL} target="_blank" rel="noopener noreferrer" className="help-step-link">
+          {t("guide.feedback.formLink")} ↗
+        </a>
+      </section>
 
       <p className="help-card-desc" style={{ textAlign: "center" }}>
         {t("guide.developersNote")}{" "}

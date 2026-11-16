@@ -19,7 +19,8 @@
     "auditLog": "AI の操作履歴",
     "archive": "アーカイブ",
     "home": "ホーム",
-    "conversations": "会話"
+    "conversations": "会話",
+    "feedback": "お問い合わせ"
   },
   "topbar": {
     "themeDark": "ダーク",
@@ -1027,6 +1028,13 @@
       "historyDesc": "エージェントや AI がしたことの記録。",
       "technicalTerm": "技術 ID",
       "technicalDesc": "`did:key:…` など。ふだんは見なくて大丈夫です（エージェント設定の「詳細」にあります）。"
+    },
+    "feedback": {
+      "title": "ご意見・お問い合わせ",
+      "body": "分かりにくいところ、うまく動かないところ、ほしい機能を教えてください。いただいた声から少しずつ直していきます。",
+      "private": "メッセージの中身・アドレス・合言葉は書かないでください。脆弱性（セキュリティの問題）は、公開の場ではなく",
+      "securityLink": "報告の手順",
+      "formLink": "問い合わせフォームを開く"
     }
   },
   "help": {

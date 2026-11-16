@@ -19,7 +19,8 @@
     "auditLog": "AI activity",
     "archive": "Archive",
     "home": "Home",
-    "conversations": "Conversations"
+    "conversations": "Conversations",
+    "feedback": "Contact us"
   },
   "topbar": {
     "themeDark": "Dark",
@@ -1027,6 +1028,13 @@
       "historyDesc": "A record of what agents and AIs did.",
       "technicalTerm": "Technical ID",
       "technicalDesc": "Such as `did:key:…`. You rarely need it (it is under Details in the agent settings)."
+    },
+    "feedback": {
+      "title": "Feedback & contact",
+      "body": "Tell us what is unclear, what does not work, or what you would like. We improve it bit by bit from what you send.",
+      "private": "Do not include message contents, addresses or passphrases. Report vulnerabilities (security problems) privately, not in public:",
+      "securityLink": "how to report",
+      "formLink": "Open the contact form"
     }
   },
   "help": {
