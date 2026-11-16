@@ -532,10 +532,13 @@ async fn ensure_token(state: &GatewayState) -> Result<String, String> {
         return Ok(at);
     }
 
-    // Try refresh first
+    // Try refresh first. The refresh token is taken out before it is sent:
+    // it is presented at most once. If the request reached the API but the
+    // answer was lost (network drop), the API has already rotated it, and
+    // presenting it again would read as theft and stop the credential.
     let maybe_rt = {
-        let ts = state.token.lock().unwrap();
-        ts.refresh_token.clone()
+        let mut ts = state.token.lock().unwrap();
+        ts.refresh_token.take()
     };
     if let Some(rt) = maybe_rt {
         match refresh_token(state, &rt).await {
@@ -2600,6 +2603,44 @@ mod tests {
         // touching the API at all.
         assert_eq!(ensure_token(&state).await.unwrap(), "agt_rotated");
         assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_is_never_presented_twice() {
+        // Regression (2026-11-16): a refresh whose answer was lost (the
+        // API rotated it, the connection dropped) kept the old refresh
+        // token, and the next attempt presented it again: reuse, and the
+        // credential went to `compromised`.
+        use tokio::io::AsyncReadExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = hits.clone();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                // Drop the connection without answering.
+            }
+        });
+        let mut state = make_test_state();
+        state.api_url = format!("http://{addr}");
+        {
+            let mut ts = state.token.lock().unwrap();
+            ts.access_token = Some("agt_expired".into());
+            ts.refresh_token = Some("agr_original".into());
+            ts.expires_at = Some(Utc::now() - chrono::Duration::seconds(60));
+        }
+        // No signer in tests: the assertion fallback fails both times.
+        assert!(ensure_token(&state).await.is_err());
+        assert!(ensure_token(&state).await.is_err());
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the old refresh token must not be presented again"
+        );
+        assert!(state.token.lock().unwrap().refresh_token.is_none());
     }
 
     #[test]
