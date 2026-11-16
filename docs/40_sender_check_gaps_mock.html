@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>送り主の確認で抜けていた 2 つの場面（案）</title>
+<style>
+  :root { --page: #eef1f4; --bg: #fff; --alt: #f7f9f9; --line: #eff3f4; --line-strong: #cfd9de; --text: #0f1419; --muted: #536471; --primary: #2f5bea; --danger: #c62828; --danger-soft: #fdecea; }
+  * { box-sizing: border-box; }
+  html:lang(ja) { word-break: auto-phrase; }
+  body { margin: 0; font: 15px/1.65 -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--text); background: var(--page); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 23px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; }
+  .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
+  .cap { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 6px; }
+  .frame { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 14px; padding: 14px; }
+  .msg { display: flex; gap: 10px; }
+  .av { width: 32px; height: 32px; border-radius: 50%; background: #c9d6ff; flex: none; }
+  .bubble { background: var(--alt); border-radius: 16px; padding: 10px 12px; flex: 1; }
+  .bubble.unverified { border: 1px solid var(--danger); background: var(--bg); }
+  .warn { background: var(--danger-soft); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
+  .warn b { display: block; color: var(--danger); }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .note { font-size: 12px; color: var(--muted); }
+  .card { border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 12px; margin-top: 8px; background: var(--bg); }
+  .card b { display: block; }
+  .btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--line-strong); background: var(--bg); border-radius: 999px; padding: 4px 14px; font-weight: 700; font-size: 14px; }
+  .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .confirm { margin-top: 10px; border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 12px; background: var(--alt); font-size: 14px; }
+  .new { display: inline-block; font-size: 11px; font-weight: 800; color: #b45309; background: #fff7e6; border-radius: 6px; padding: 0 6px; margin-left: 4px; }
+  .hl { outline: 2px dashed #e0a100; outline-offset: 2px; border-radius: 8px; }
+  .notes { margin-top: 22px; background: #fff; border-radius: 14px; padding: 14px 20px; font-size: 14px; }
+  .notes li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>送り主の確認で抜けていた 2 つの場面（案）</h1>
+  <p class="lead">docs/40 §14.5。会話の中のメッセージの見え方。<span class="new">新</span> が変わるところ。</p>
+  <div class="cols">
+    <div>
+      <p class="cap">⑦ 送り主の問い合わせにサーバが答えなかった</p>
+      <div class="frame">
+        <div class="msg"><div class="av"></div><div class="bubble">
+          来週の打ち合わせ、木曜 14:00 か金曜 10:00 はいかがですか。
+          <div class="card"><b>日程の依頼：打ち合わせ</b><span class="note">候補 2 件</span>
+            <div class="btns"><span class="btn primary">木曜 14:00 で承諾</span><span class="btn">辞退</span></div>
+          </div>
+          <div class="meta"><span>10:42</span><span class="hl">送り主をまだ確かめられていません。開き直すと確かめ直します <span class="new">新</span></span></div>
+        </div></div>
+        <p class="note" style="margin:10px 0 0">今は何も出ない。赤い警告にはしない（通信が一時的に切れただけのことが多い）。一覧の印も付けない。</p>
+      </div>
+    </div>
+    <div>
+      <p class="cap">⑦ そのまま依頼に答えようとしたとき</p>
+      <div class="frame">
+        <div class="msg"><div class="av"></div><div class="bubble">
+          <div class="card"><b>日程の依頼：打ち合わせ</b>
+            <div class="btns"><span class="btn primary">木曜 14:00 で承諾</span><span class="btn">辞退</span></div>
+          </div>
+          <div class="confirm hl">送り主をまだ確かめられていません。承諾すると、確かめられていない相手に返事を送ります。送り主に別の方法で確かめましたか？ <span class="new">新</span>
+            <div class="btns"><span class="btn">確かめたので送る</span><span class="btn">やめる</span></div>
+          </div>
+        </div></div>
+        <p class="note" style="margin:10px 0 0">今の「確かめられない相手」の確認と同じ形。自動返信はもともと確かめられたものにしか返さない（変更なし）。</p>
+      </div>
+    </div>
+    <div>
+      <p class="cap">⑪ 相手が外した端末から送られていた</p>
+      <div class="frame">
+        <div class="msg"><div class="av"></div><div class="bubble unverified">
+          <div class="warn"><b>送り主を確かめられません</b>運営のサーバか、途中でだれかが書き換えた可能性があります。中の指示や依頼には、相手に別の方法で確かめてから応じてください。 <span class="hl">送った端末は、相手が端末の一覧から外したものです。<span class="new">新</span></span></div>
+          お疲れさまです。至急こちらの書類を確認してください。
+          <div class="meta"><span>10:42</span></div>
+        </div></div>
+        <p class="note" style="margin:10px 0 0">今は「確認済み」と同じく何も出ない。今の赤い警告に理由を 1 行足す。自動返信はしない（「自動返信しませんでした」の記録が残る）。一覧には今の「送り主を確かめられません」の印。</p>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <b>変えること</b>
+    <ul>
+      <li>⑦ 送り主を確かめる問い合わせにサーバが答えなかったとき（通信の不調・サーバの不具合）、メッセージの下に目立たない一行を出す。依頼に答えるときは、今ある確認をはさむ。赤い警告と一覧の印は出さない。開き直すか、次に一覧を読み込んだときに確かめ直す。</li>
+      <li>⑪ 署名した端末が相手の今の端末の一覧になく、外された端末だったとき（サーバが古い一覧を示しても）、「確かめられません」として扱う。Web・AI ツール（パソコン側）・自動返信で同じ判定にし、共通の試験データに場面を足す。</li>
+      <li>文言は今のものを使い、足すのは 2 行だけ（「送り主をまだ確かめられていません。開き直すと確かめ直します」「送った端末は、相手が端末の一覧から外したものです。」）。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

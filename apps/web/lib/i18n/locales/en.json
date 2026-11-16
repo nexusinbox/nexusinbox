@@ -1722,6 +1722,8 @@
     "downgraded": "They used to sign what they sent.",
     "missingSignature": "It has no signature.",
     "confirmBody": "Answering sends a reply to a sender who could not be verified. Did you check with them another way?",
+    "uncheckedNote": "The sender has not been checked yet. Open the conversation again to check again",
+    "confirmBodyUnchecked": "The sender has not been checked yet. Accepting sends a reply to a sender who is not checked. Did you check with them another way?",
     "confirmSend": "I checked, send it",
     "confirmCancel": "Cancel",
     "notSent": "Not sent.",

@@ -301,6 +301,9 @@ export async function checkSender(input: {
     sentWith = old.list;
   }
   if (!sentWith.devices.some((d) => d.did === content.sender_did)) return { state: "not_listed", list, hash };
+  // Removed since: whoever holds a removed device's key can date a message
+  // before the removal, and the server can name the old version.
+  if (!list.devices.some((d) => d.did === content.sender_did)) return { state: "not_listed", list, hash };
   return { state: "verified", list, hash };
 }
 

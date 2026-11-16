@@ -260,7 +260,7 @@
       }
     },
     {
-      "name": "verified: removed since, but listed when sent",
+      "name": "not_listed: removed since, even though listed when sent",
       "content": {
         "sender_did": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
         "recipient_did": "did:key:z6MkRecipientVectorBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
@@ -337,7 +337,7 @@
         "version": 1
       },
       "expected": {
-        "state": "verified",
+        "state": "not_listed",
         "pin_after": {
           "root": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
           "version": 2,

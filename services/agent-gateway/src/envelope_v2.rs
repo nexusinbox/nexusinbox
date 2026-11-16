@@ -449,7 +449,11 @@ pub fn check_sender(
         }
         _ => list.clone(),
     };
-    let state = if sent_with.devices.iter().any(|d| d.did == fields.sender_did) {
+    // Removed since: whoever holds a removed device's key can date a message
+    // before the removal, and the server can name the old version.
+    let state = if sent_with.devices.iter().any(|d| d.did == fields.sender_did)
+        && list.devices.iter().any(|d| d.did == fields.sender_did)
+    {
         SenderState::Verified
     } else {
         SenderState::NotListed

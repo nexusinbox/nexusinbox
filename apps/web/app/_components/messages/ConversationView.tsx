@@ -658,7 +658,9 @@ export function ConversationView({
                     mine
                       ? undefined
                       : (reply) =>
-                          receivedWarns(r.sender)
+                          // Not checked just now (the lookup failed) asks too:
+                          // a forged sender must not slip through an outage.
+                          receivedWarns(r.sender) || r.sender === "unchecked"
                             ? confirmUnverified(entry.id).then(() =>
                                 handleProtocolRespond(entry, protocol.type, protocol.id, r.subject, reply),
                               )
@@ -667,7 +669,7 @@ export function ConversationView({
                 />
                 {confirming?.id === entry.id ? (
                   <div className="dm-confirm" role="alertdialog" data-testid="sender-unverified-confirm">
-                    {t("senderCheck.confirmBody")}
+                    {r.sender === "unchecked" ? t("senderCheck.confirmBodyUnchecked") : t("senderCheck.confirmBody")}
                     <div className="dm-confirm-actions">
                       <button type="button" className="danger" onClick={() => settleConfirm(true)}>
                         {t("senderCheck.confirmSend")}
@@ -721,6 +723,11 @@ export function ConversationView({
                     {isAutoReply ? `${t("messages.autoReplyMark")} · ` : ""}
                     {mine && !isAutoReply && fromDraftIds.has(entry.id) ? `${t("requests.originDraft")} · ` : ""}
                     {time}
+                    {!mine && r.sender === "unchecked" ? (
+                      <span className="dm-oldformat" data-testid="sender-unchecked">
+                        {` · ${t("senderCheck.uncheckedNote")}`}
+                      </span>
+                    ) : null}
                     {!mine && receivedNoList(r.sender) ? (
                       <span className="dm-oldformat" data-testid="sender-no-list">
                         {` · ${t("senderCheck.noListNote")}`}
