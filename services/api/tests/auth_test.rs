@@ -527,3 +527,19 @@ async fn auth_verify_rejects_another_action_or_signal_inside_the_idkit_result() 
         StatusCode::UNPROCESSABLE_ENTITY
     );
 }
+
+#[tokio::test]
+async fn auth_verify_rejects_an_idkit_response_without_the_orb_identifier() {
+    let mut missing = orb("0xnullifier-no-identifier");
+    missing.as_object_mut().unwrap().remove("identifier");
+    assert_eq!(
+        verify_status(idkit(json!([missing]), json!({}))).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let mut device = orb("0xnullifier-device");
+    device["identifier"] = json!("device");
+    assert_eq!(
+        verify_status(idkit(json!([device]), json!({}))).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}

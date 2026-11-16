@@ -4353,6 +4353,25 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
 /// `"unknown"` bucket instead of minting a fresh, forgeable per-IP bucket.
 /// Outside production (local / docker) the usual proxy headers are
 /// accepted for convenience.
+/// How a client address is counted and logged: an IPv4 address as is, an
+/// IPv6 one by its /64 (a single subscriber usually holds a whole /64, so
+/// full addresses would hand one client endless per-IP budgets).
+fn ip_source(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.to_string(),
+        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => {
+                let s = v6.segments();
+                format!(
+                    "{}/64",
+                    std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0)
+                )
+            }
+        },
+    }
+}
+
 fn client_ip_from_headers(
     headers: &HeaderMap,
     trusted_header: Option<&str>,
@@ -4360,9 +4379,7 @@ fn client_ip_from_headers(
 ) -> String {
     fn header_ip(headers: &HeaderMap, name: &str) -> Option<String> {
         let raw = headers.get(name)?.to_str().ok()?.trim();
-        raw.parse::<std::net::IpAddr>()
-            .ok()
-            .map(|ip| ip.to_string())
+        raw.parse::<std::net::IpAddr>().ok().map(ip_source)
     }
 
     if let Some(name) = trusted_header {
@@ -4383,7 +4400,7 @@ fn client_ip_from_headers(
     if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         if let Some(first) = xff.split(',').next() {
             if let Ok(ip) = first.trim().parse::<std::net::IpAddr>() {
-                return ip.to_string();
+                return ip_source(ip);
             }
         }
     }
@@ -4939,10 +4956,12 @@ async fn auth_verify(
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        // IDKit always names the credential; a missing one is not taken as
+        // the Orb (the check below then refuses it).
         let vl = first
             .and_then(|r| r.get("identifier"))
             .and_then(|v| v.as_str())
-            .unwrap_or("orb")
+            .unwrap_or("")
             .to_string();
         (nullifier, vl)
     } else {
@@ -11979,7 +11998,7 @@ async fn agent_auth_token(
         )
         SELECT $1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz
         FROM agent_credentials
-        WHERE id = $1 AND status = 'active'
+        WHERE id = $1 AND status = 'active' AND signing_public_key = $8
         FOR SHARE
         RETURNING id, token_family_id
         "#,
@@ -11991,6 +12010,9 @@ async fn agent_auth_token(
     .bind(&requested as &[&str])
     .bind(&access_expires)
     .bind(&refresh_expires)
+    // The key the assertion was verified with: a rotation and a new
+    // activation in between leave no token for the old key.
+    .bind(&signing_key_b64)
     .fetch_optional(&pool)
     .await
     .map_err(|e| internal_error("failed to insert token", e))?
@@ -12383,9 +12405,13 @@ async fn agent_auth_refresh(
             token_family_id
         )
         SELECT $1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz, $8
-        FROM agent_credentials
-        WHERE id = $1 AND status = 'active'
-        FOR SHARE
+        FROM agent_credentials c
+        WHERE c.id = $1 AND c.status = 'active'
+          -- Only a family from the current activation: one minted before a
+          -- rotation and re-activation is not carried over.
+          AND COALESCE(c.activated_at, '-infinity'::timestamptz)
+              <= (SELECT issued_at FROM agent_tokens WHERE id = $9)
+        FOR SHARE OF c
         "#,
     )
     .bind(credential_id)
@@ -12396,6 +12422,7 @@ async fn agent_auth_refresh(
     .bind(&access_expires)
     .bind(&refresh_expires)
     .bind(token_family_id)
+    .bind(token_id)
     .execute(&pool)
     .await
     .map_err(|e| internal_error("failed to insert new token", e))?;
@@ -17654,6 +17681,19 @@ mod internal_tests {
             client_ip_from_headers(&spoofed, Some("cf-connecting-ip"), true),
             "198.51.100.7"
         );
+    }
+
+    #[test]
+    fn ipv6_clients_are_counted_by_their_slash_64() {
+        let a = headers_with(&[("fly-client-ip", "2001:db8:1:2:aaaa::1")]);
+        let b = headers_with(&[("fly-client-ip", "2001:db8:1:2:bbbb::9")]);
+        let c = headers_with(&[("fly-client-ip", "2001:db8:1:3::1")]);
+        let ip = |h: &HeaderMap| client_ip_from_headers(h, Some("fly-client-ip"), true);
+        assert_eq!(ip(&a), "2001:db8:1:2::/64");
+        assert_eq!(ip(&a), ip(&b));
+        assert_ne!(ip(&a), ip(&c));
+        let mapped = headers_with(&[("fly-client-ip", "::ffff:203.0.113.7")]);
+        assert_eq!(ip(&mapped), "203.0.113.7");
     }
 
     #[test]

@@ -166,3 +166,27 @@ export function rememberDistrust(aid: string, root: string, distrusted: boolean)
     // Storage blocked: the sealed contact still holds it.
   }
 }
+
+const ownRootKey = (aid: string) => `nexusinbox.ownroot.${aid}`;
+
+/**
+ * The root of one of the person's own agents, recorded where this browser
+ * learned it for itself (a second browser, from the MAC the first one sent;
+ * docs/40 §17.4). Kept apart from the pins of other agents, so a server
+ * naming another aid cannot make another agent's pin count as the own root.
+ */
+export function rememberOwnRoot(aid: string, root: string): void {
+  try {
+    window.localStorage.setItem(ownRootKey(aid), root);
+  } catch {
+    // Storage blocked: the confirmation number is not shown here.
+  }
+}
+
+export function loadOwnRoot(aid: string): string | null {
+  try {
+    return window.localStorage.getItem(ownRootKey(aid));
+  } catch {
+    return null;
+  }
+}

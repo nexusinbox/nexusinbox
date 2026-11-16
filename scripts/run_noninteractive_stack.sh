@@ -89,7 +89,10 @@ if [ -n "$AGENT_DIR" ]; then
   export AGENT_INBOX_RUNTIME_DIR AGENT_INBOX_SIGNER_SOCKET AGENT_INBOX_GATEWAY_SOCKET
 fi
 
-RUNTIME_DIR="${AGENT_INBOX_RUNTIME_DIR:-/tmp/nexusinbox-noninteractive}"
+# Per user, never a shared fixed name: in a world-writable /tmp another
+# account could create it first and plant PID files or log symlinks.
+USER_TMP="${TMPDIR:-/tmp}"
+RUNTIME_DIR="${AGENT_INBOX_RUNTIME_DIR:-${USER_TMP%/}/nexusinbox-$(id -u)}"
 SIGNER_PID_FILE="$RUNTIME_DIR/signer.pid"
 GATEWAY_PID_FILE="$RUNTIME_DIR/gateway.pid"
 SIGNER_LOG="$RUNTIME_DIR/signer.log"
@@ -160,8 +163,19 @@ EOF
 }
 
 ensure_runtime_dir() {
-  mkdir -p "$RUNTIME_DIR"
+  mkdir -p -m 700 "$RUNTIME_DIR"
+  if ! runtime_dir_is_mine; then
+    echo "$RUNTIME_DIR is not a directory of your own; set AGENT_INBOX_RUNTIME_DIR to a private one." >&2
+    exit 1
+  fi
+  chmod 700 "$RUNTIME_DIR"
   mkdir -p "$(dirname "$KEY_FILE")"
+}
+
+# The runtime directory is used only when it is a real directory this
+# account owns (not a symlink, not someone else's).
+runtime_dir_is_mine() {
+  [ -d "$RUNTIME_DIR" ] && [ ! -L "$RUNTIME_DIR" ] && [ -O "$RUNTIME_DIR" ]
 }
 
 is_running() {
@@ -171,7 +185,8 @@ is_running() {
 
 read_pid() {
   file="$1"
-  if [ -f "$file" ]; then
+  # A PID file someone else could have written names no process to stop.
+  if runtime_dir_is_mine && [ -f "$file" ] && [ ! -L "$file" ] && [ -O "$file" ]; then
     cat "$file"
   fi
 }

@@ -7,20 +7,22 @@
 
 import { useEffect, useState } from "react";
 import { confirmationNumber } from "@nexusinbox/core/confirmation";
+import { ownRootHere } from "../../../lib/agents/device-list";
 import { contactForAid } from "../../../lib/agents/peer-pins";
+import type { Agent } from "../../../lib/api/types";
 import type { SendStop } from "../../../lib/crypto/device-wraps";
 import { useTranslation } from "../../../lib/i18n";
 
 export function SendStopNotice({
   stop,
   name,
-  ownRoot,
+  ownAgent,
   onClose,
   onAccept,
 }: {
   stop: SendStop;
-  /** The sending agent's root, for the new confirmation number (docs/40 §16.2). */
-  ownRoot?: string | null;
+  /** The sending agent, whose root this browser knows, for the new confirmation number (docs/40 §16.2). */
+  ownAgent?: Pick<Agent, "aid" | "did" | "dids" | "devices"> | null;
   /** The recipient as the person knows them. */
   name?: string | null;
   onClose: () => void;
@@ -34,17 +36,27 @@ export function SendStopNotice({
   // number to read aloud (docs/40 §16.2).
   const verified = stop.reason === "root_changed" ? (contactForAid(stop.aid)?.verified ?? null) : null;
   const [newNumber, setNewNumber] = useState<string | null>(null);
+  const verifiedRoot = verified?.root ?? null;
+  const ownAid = ownAgent?.aid;
+  const ownDid = ownAgent?.did;
+  const ownDids = ownAgent?.dids;
+  const ownDevices = ownAgent?.devices;
   useEffect(() => {
     let cancelled = false;
-    if (verified && ownRoot && stop.root) {
-      void confirmationNumber(ownRoot, stop.root).then((n) => {
+    if (verifiedRoot && ownAid && ownDid && stop.root) {
+      const root = stop.root;
+      void ownRootHere({ aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices }).then(async (ownRoot) => {
+        const n = ownRoot ? await confirmationNumber(ownRoot, root) : null;
         if (!cancelled) setNewNumber(n);
       });
     }
     return () => {
       cancelled = true;
     };
-  }, [verified?.root, ownRoot, stop.root]);
+  }, [verifiedRoot, ownAid, ownDid, ownDids, ownDevices, stop.root]);
+  // Accepting in one step rests on the new number; without one, the usual
+  // second confirmation.
+  const byNumber = !!verified && !!newNumber;
   const danger = stop.reason !== "no_device";
 
   let title: string;
@@ -139,10 +151,10 @@ export function SendStopNotice({
                 className="btn"
                 style={{ borderColor: "transparent", color: "var(--text-muted)" }}
                 // Checked before: the number shown above is the confirmation.
-                onClick={() => (verified ? onAccept(stop.root as string) : setConfirming(true))}
+                onClick={() => (byNumber ? onAccept(stop.root as string) : setConfirming(true))}
                 data-testid="send-stop-proceed"
               >
-                {verified ? t("confirm.changedProceedVerified") : t("sendStop.changedProceed")}
+                {byNumber ? t("confirm.changedProceedVerified") : t("sendStop.changedProceed")}
               </button>
             </>
           )

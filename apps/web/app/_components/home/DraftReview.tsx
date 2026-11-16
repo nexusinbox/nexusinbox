@@ -87,7 +87,13 @@ export function DraftReview({ draft, onDone }: { draft: AgentDraft; onDone: (tex
         </p>
       )}
       {sendStop ? (
-        <SendStopNotice stop={sendStop} name={name} onClose={() => setSendStop(null)} onAccept={(root) => void send(root)} />
+        <SendStopNotice
+          stop={sendStop}
+          name={name}
+          ownAgent={agentsQuery.data?.agents.find((a) => a.aid === draft.aid)}
+          onClose={() => setSendStop(null)}
+          onAccept={(root) => void send(root)}
+        />
       ) : null}
       <div className="home-acts">
         <button type="button" className="home-btn primary" onClick={() => void send()} disabled={!plain || sendDraft.isPending}>

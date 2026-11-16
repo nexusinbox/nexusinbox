@@ -750,7 +750,7 @@ export function ConversationView({
         {protocolStop ? (
           <SendStopNotice
             stop={protocolStop.stop}
-            ownRoot={conversation.ownAgent?.did}
+            ownAgent={conversation.ownAgent}
             name={name}
             onClose={() => setProtocolStop(null)}
             onAccept={(root) => void protocolStop.retry(root).catch(() => undefined)}
@@ -922,7 +922,7 @@ function ConversationDrafts({
                 <SendStopNotice
                   stop={sendStop.stop}
                   name={name}
-                  ownRoot={conversation.ownAgent?.did}
+                  ownAgent={conversation.ownAgent}
                   onClose={() => setSendStop(null)}
                   onAccept={(root) => void handleSend(draft, root)}
                 />
@@ -1105,7 +1105,7 @@ function Composer({
         <SendStopNotice
           stop={sendStop}
           name={name}
-          ownRoot={ownAgent?.did}
+          ownAgent={ownAgent}
           onClose={() => setSendStop(null)}
           onAccept={(root) => void send(root)}
         />

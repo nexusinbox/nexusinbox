@@ -1,16 +1,18 @@
-// The own root behind the confirmation number (docs/40 §16.2) comes from
-// this browser, never from the server alone.
+// The own root behind confirmation numbers (docs/40 §16.2) comes from this
+// browser, never from the server alone.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { keys } = vi.hoisted(() => ({ keys: new Set<string>() }));
 vi.mock("../crypto/signing-keyring", () => ({
   getSigningPrivateKey: async (did: string) => (keys.has(did) ? ({} as CryptoKey) : null),
+  hasSigningPrivateKeyMaterial: async (did: string) => keys.has(did),
 }));
 
-import { savePin } from "./peer-pins";
+import { rememberOwnRoot, savePin } from "./peer-pins";
 import { ownRootHere } from "./device-list";
 
 const AID = "aid:ai:own";
+const agent = (did: string, dids: string[] = []) => ({ aid: AID, did, dids, devices: [] });
 
 beforeEach(() => {
   keys.clear();
@@ -26,14 +28,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ownRootHere", () => {
-  it("uses the pin this browser keeps, whatever the server names", async () => {
-    savePin(AID, { root: "did:key:zPinned", version: 3 });
-    expect(await ownRootHere({ aid: AID, did: "did:key:zServerSays" })).toBe("did:key:zPinned");
-  });
-
   it("takes the server's DID only when this browser holds that key", async () => {
     keys.add("did:key:zMine");
-    expect(await ownRootHere({ aid: AID, did: "did:key:zMine" })).toBe("did:key:zMine");
-    expect(await ownRootHere({ aid: AID, did: "did:key:zSomeoneElse" })).toBeNull();
+    expect(await ownRootHere(agent("did:key:zMine"))).toBe("did:key:zMine");
+    expect(await ownRootHere(agent("did:key:zSomeoneElse"))).toBeNull();
+  });
+
+  it("uses the root recorded when this browser joined, whatever the server names", async () => {
+    rememberOwnRoot(AID, "did:key:zJoinedRoot");
+    expect(await ownRootHere(agent("did:key:zServerSays"))).toBe("did:key:zJoinedRoot");
+  });
+
+  it("never takes another agent's pin as the own root", async () => {
+    // The server names another person's aid as ours; this browser has a pin
+    // for that aid but no key of the agent.
+    savePin(AID, { root: "did:key:zTheirRoot", version: 3 });
+    expect(await ownRootHere(agent("did:key:zServerSays", ["did:key:zServerSays"]))).toBeNull();
+  });
+
+  it("falls back to the pin of a browser that joined earlier while it holds a device key", async () => {
+    keys.add("did:key:zThisBrowser");
+    savePin(AID, { root: "did:key:zPinnedRoot", version: 2 });
+    expect(await ownRootHere(agent("did:key:zPinnedRoot", ["did:key:zThisBrowser"]))).toBe("did:key:zPinnedRoot");
   });
 });

@@ -26,7 +26,7 @@ import { fromBase64Url, toBase64Url } from "../crypto/keystore";
 import { generateX25519KeyPairMaterial, storeRecipientPrivateKey } from "../crypto/recipient-keyring";
 import { generateEd25519SigningKeyPairMaterial, storeSigningPrivateKey } from "../crypto/signing-keyring";
 import { approvedWith, checkDeviceList, listSignerHere, storeDeviceList } from "./device-list";
-import { savePin } from "./peer-pins";
+import { rememberOwnRoot, savePin } from "./peer-pins";
 
 /** Signed over by each new key, as the server checks it. */
 const PROOF_PREFIX = "nexusinbox-browser-pair-v1\n";
@@ -233,6 +233,7 @@ export async function finishJoining(joining: Joining, agents: Agent[]): Promise<
     if (!macEqual(mac, sent.mac)) return { kind: "mismatch" };
     // The root, from the browser that signed; the list is followed from it.
     savePin(aid, { root: agent.did, version: 0 });
+    rememberOwnRoot(aid, agent.did);
     const status = await checkDeviceList(agent);
     const own = pairing.claimed?.find((k) => k.aid === aid)?.did;
     if (status.kind !== "ok" || !status.list.devices.some((d) => d.did === own)) return { kind: "mismatch" };

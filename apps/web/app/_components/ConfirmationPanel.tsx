@@ -31,7 +31,7 @@ export function ConfirmationPanel({
   counterpart: string;
   /** The other agent as the person knows it. */
   name: string;
-  ownAgent: Pick<Agent, "aid" | "did" | "label">;
+  ownAgent: Pick<Agent, "aid" | "did" | "dids" | "devices" | "label">;
   /** The contact the result is sealed into; without one, the number only. */
   contact: ContactEntry | null;
 }) {
@@ -42,6 +42,7 @@ export function ConfirmationPanel({
   const [saved, setSaved] = useState<"same" | "different" | null>(null);
   const [failed, setFailed] = useState(false);
 
+  const { aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices } = ownAgent;
   useEffect(() => {
     let cancelled = false;
     setLoaded({ kind: "loading" });
@@ -51,7 +52,7 @@ export function ConfirmationPanel({
         const checked = await checkedRoot(served.aid);
         // The own agent's root is the DID it was created with (docs/40 §4.1),
         // as this browser knows it, not as the server says.
-        const ownRoot = await ownRootHere({ aid: ownAgent.aid, did: ownAgent.did });
+        const ownRoot = await ownRootHere({ aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices });
         if (cancelled) return;
         if ("stop" in checked || !ownRoot) {
           setLoaded({ kind: "unavailable" });
@@ -66,12 +67,15 @@ export function ConfirmationPanel({
     return () => {
       cancelled = true;
     };
-  }, [counterpart, ownAgent.aid, ownAgent.did]);
+  }, [counterpart, ownAid, ownDid, ownDids, ownDevices]);
 
   const record = async (same: boolean) => {
     if (!contact || loaded.kind !== "ready") return;
     setSaving(true);
     setFailed(false);
+    // "Different" is kept in this browser first: it must hold even when the
+    // server does not store the contact.
+    if (!same) rememberDistrust(loaded.aid, loaded.root, true);
     try {
       const sealed = await sealForSave(defaultApiClient, contact.did, {
         person_name: contact.person_name,
@@ -84,7 +88,7 @@ export function ConfirmationPanel({
         distrusted_root: same ? null : loaded.root,
       });
       await defaultApiClient.updateContact(contact.id, { sealed });
-      rememberDistrust(loaded.aid, loaded.root, !same);
+      if (same) rememberDistrust(loaded.aid, loaded.root, false);
       await queryClient.invalidateQueries({ queryKey: queryKeys.contacts() });
       setSaved(same ? "same" : "different");
     } catch {

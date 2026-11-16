@@ -503,3 +503,80 @@ async fn a_token_issued_while_the_credential_is_being_rotated_is_not_stored() {
             .expect("count");
     assert_eq!(tokens, 0);
 }
+
+#[tokio::test]
+#[serial]
+async fn a_token_for_the_old_key_is_not_stored_once_a_new_key_is_activated() {
+    let (app, pool) = db_test_setup!();
+    let f = seed(&pool, "rekey-race", &["messages.read", "messages.send"]).await;
+
+    // A new key is being activated: changed, not yet committed, so the
+    // token request still verifies the old key's assertion.
+    let new = new_key();
+    let mut tx = pool.begin().await.expect("begin");
+    sqlx::query(
+        "UPDATE agent_credentials SET signing_public_key = $2, activated_at = NOW() WHERE id = $1",
+    )
+    .bind(f.credential_id)
+    .bind(public_key(&new))
+    .execute(&mut *tx)
+    .await
+    .expect("re-key in tx");
+    let request = {
+        let app = app.clone();
+        let key = f.computer_key.clone();
+        let f = Fixture {
+            auth: f.auth.clone(),
+            aid: f.aid.clone(),
+            credential_id: f.credential_id,
+            computer_key: key.clone(),
+            browser_key: f.browser_key.clone(),
+        };
+        tokio::spawn(async move { issue(&app, &f, &key, "messages.read").await })
+    };
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    tx.commit().await.expect("commit");
+
+    let (status, body) = request.await.expect("join");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "issued for the old key: {body}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn a_family_from_before_a_rotation_is_not_refreshed_after_re_activation() {
+    let (app, pool) = db_test_setup!();
+    let f = seed(&pool, "rotate-refresh", &["messages.read", "messages.send"]).await;
+    let (status, body) = issue(&app, &f, &f.computer_key, "messages.read").await;
+    assert_eq!(status, StatusCode::OK, "issue failed: {body}");
+    let refresh_token = token_of(&body, "refresh_token");
+
+    // Rotated and activated again with a new key ...
+    sqlx::query(
+        "UPDATE agent_credentials SET signing_public_key = $2, activated_at = NOW() + INTERVAL '1 second' \
+         WHERE id = $1",
+    )
+    .bind(f.credential_id)
+    .bind(public_key(&new_key()))
+    .execute(&pool)
+    .await
+    .expect("re-activate");
+    // ... while a refresh of the old family was already past its checks.
+    let (status, body) = refresh(&app, &refresh_token).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "old family refreshed: {body}"
+    );
+    let live: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_tokens WHERE credential_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(f.credential_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count");
+    assert_eq!(live, 0);
+}
