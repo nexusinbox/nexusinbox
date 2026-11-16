@@ -74,6 +74,12 @@ struct Cli {
     #[arg(long)]
     allowed_uid: Option<u32>,
 
+    /// The account the signer daemon runs as, when it is not this one.
+    /// The signer socket is only used when this account, root, or this
+    /// UID serves it (a socket in /tmp may be another user's).
+    #[arg(long)]
+    signer_uid: Option<u32>,
+
     /// Serve the remote MCP endpoint for cloud-hosted agents on this
     /// loopback address, e.g. 127.0.0.1:8787 (docs/33 §7). Callers use
     /// OAuth tokens from the API (docs/33 §10).
@@ -374,6 +380,16 @@ fn key_wraps_from(body: &serde_json::Value, field: &str) -> Vec<auto_reply_execu
 // Signer Daemon IPC client
 // ---------------------------------------------------------------------------
 
+/// `--signer-uid`, set once at startup.
+static SIGNER_UID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+/// Whether the process serving the signer socket may be trusted with
+/// signing requests and wrapped keys: this account, root, or the
+/// configured signer account.
+fn signer_peer_allowed(peer_uid: u32, my_uid: u32, signer_uid: Option<u32>) -> bool {
+    peer_uid == my_uid || peer_uid == 0 || Some(peer_uid) == signer_uid
+}
+
 async fn call_signer(
     socket_path: &str,
     method: &str,
@@ -382,6 +398,19 @@ async fn call_signer(
     let stream = tokio::net::UnixStream::connect(socket_path)
         .await
         .map_err(|e| format!("cannot connect to signer daemon at {}: {}", socket_path, e))?;
+    #[cfg(unix)]
+    {
+        let peer_uid = stream
+            .peer_cred()
+            .map_err(|e| format!("cannot check who serves {}: {}", socket_path, e))?
+            .uid();
+        let my_uid = unsafe { libc::getuid() };
+        if !signer_peer_allowed(peer_uid, my_uid, SIGNER_UID.get().copied()) {
+            return Err(format!(
+                "{socket_path} is served by another account (uid {peer_uid}); not using it"
+            ));
+        }
+    }
 
     let (reader, mut writer) = stream.into_split();
 
@@ -1561,6 +1590,9 @@ async fn api_patch(
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    if let Some(uid) = cli.signer_uid {
+        let _ = SIGNER_UID.set(uid);
+    }
     if let (Some(target), Some(dir)) = (cli.verify.as_deref(), cli.state_dir.as_deref()) {
         let own_aid = std::env::var("AGENT_INBOX_AID").unwrap_or_default();
         std::process::exit(run_verify(dir, &own_aid, target));
@@ -2641,6 +2673,15 @@ mod tests {
             "the old refresh token must not be presented again"
         );
         assert!(state.token.lock().unwrap().refresh_token.is_none());
+    }
+
+    #[test]
+    fn signer_socket_must_be_served_by_this_account_root_or_the_configured_one() {
+        assert!(signer_peer_allowed(501, 501, None));
+        assert!(signer_peer_allowed(0, 501, None));
+        assert!(signer_peer_allowed(600, 501, Some(600)));
+        assert!(!signer_peer_allowed(502, 501, None));
+        assert!(!signer_peer_allowed(502, 501, Some(600)));
     }
 
     #[test]

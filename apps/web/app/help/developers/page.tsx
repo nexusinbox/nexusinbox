@@ -178,7 +178,7 @@ AGENT_KEYSTORE_PASSPHRASE="a strong passphrase" \\
       ],
       "env": {
         "AGENT_INBOX_MCP_MODE": "mode_a_gateway_daemon",
-        "AGENT_INBOX_GATEWAY_SOCKET": "/tmp/nexusinbox-gateway.sock"
+        "AGENT_INBOX_GATEWAY_SOCKET": "/ABSOLUTE/PATH/TO/.nexusinbox/<agent>/run/gateway.sock"
       }
     }
   }

@@ -3,13 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { api, storeDeviceList, putPin } = vi.hoisted(() => ({
+const { api, storeDeviceList, putPin, checkDeviceList } = vi.hoisted(() => ({
   api: {
     getBrowserPairing: vi.fn(),
     putBrowserPairingRoot: vi.fn(),
   },
   storeDeviceList: vi.fn(),
   putPin: vi.fn(),
+  checkDeviceList: vi.fn(),
 }));
 vi.mock("../api/client", () => ({
   defaultApiClient: api,
@@ -24,7 +25,7 @@ vi.mock("../api/client", () => ({
 }));
 vi.mock("./device-list", () => ({
   approvedWith: () => new Set<string>(),
-  checkDeviceList: async () => ({ kind: "ok", list: { devices: [] } }),
+  checkDeviceList,
   listSignerHere: async () => "did:key:zRoot",
   storeDeviceList,
 }));
@@ -59,6 +60,8 @@ beforeEach(() => {
   api.putBrowserPairingRoot.mockReset();
   storeDeviceList.mockReset();
   putPin.mockReset();
+  checkDeviceList.mockReset();
+  checkDeviceList.mockResolvedValue({ kind: "ok", list: { devices: [] } });
 });
 
 describe("a second browser (docs/40 §17.4)", () => {
@@ -86,6 +89,23 @@ describe("a second browser (docs/40 §17.4)", () => {
       }),
     );
     expect(await settleAddedBrowser(showing)).toEqual({ kind: "mismatch" });
+    expect(storeDeviceList).not.toHaveBeenCalled();
+    expect(api.putBrowserPairingRoot).not.toHaveBeenCalled();
+  });
+
+  it("signs nothing when the agent's device list does not check out", async () => {
+    const mac = await browserPairDeviceMac(SECRET, "p1", agent.aid, "did:key:zPhone", "PHONE_ENC");
+    api.getBrowserPairing.mockResolvedValue(
+      pairing({
+        claimed: [
+          { aid: agent.aid, did: "did:key:zPhone", signing_public_key: "", encryption_public_key: "PHONE_ENC", mac },
+        ],
+      }),
+    );
+    for (const reason of ["signature", "rollback"] as const) {
+      checkDeviceList.mockResolvedValue({ kind: "broken", reason });
+      expect(await settleAddedBrowser(showing)).toEqual({ kind: "list_broken" });
+    }
     expect(storeDeviceList).not.toHaveBeenCalled();
     expect(api.putBrowserPairingRoot).not.toHaveBeenCalled();
   });

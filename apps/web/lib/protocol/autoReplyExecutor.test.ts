@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runAutoReplyExecutor,
+  MAX_REFUSED_SENDS,
   AUTO_REPLY_ORIGIN_CLIENT,
   type AutoReplyExecutorApi,
   type SendProtocolReplyFn,
@@ -561,8 +562,13 @@ describe("runAutoReplyExecutor: only answers live, well-formed requests", () => 
 });
 
 describe("runAutoReplyExecutor claim (docs/29 §2.5)", () => {
-  async function run(api: AutoReplyExecutorApi, sendProtocolReply: SendProtocolReplyFn) {
+  async function run(
+    api: AutoReplyExecutorApi,
+    sendProtocolReply: SendProtocolReplyFn,
+    refusals?: Map<string, number>,
+  ) {
     await runAutoReplyExecutor({
+      refusals,
       viewerAgentDid: "did:key:zViewer",
       viewerHasSigningKey: true,
       messages: [makeEntry()],
@@ -618,5 +624,27 @@ describe("runAutoReplyExecutor claim (docs/29 §2.5)", () => {
     } else {
       expect(api.releaseAutoReplyClaim).not.toHaveBeenCalled();
     }
+  });
+
+  it("stops retrying a message whose reply keeps being refused, keeping the claim", async () => {
+    // A sender that blocked us after the first reply: every send is refused
+    // (404), and each attempt would cost this person's daily send budget.
+    // The server's claim: taken by a claim, given back by a release.
+    let held = false;
+    const api = makeApi({
+      claimAutoReply: vi.fn(async () => (held ? false : (held = true))),
+      releaseAutoReplyClaim: vi.fn(async () => {
+        held = false;
+      }),
+    });
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {
+      throw Object.assign(new Error("not found"), { status: 404 });
+    });
+    const refusals = new Map<string, number>();
+    for (let i = 0; i < 5; i++) await run(api, sendProtocolReply, refusals);
+    // Three attempts; the first two give the claim back, the third keeps it.
+    expect(api.releaseAutoReplyClaim).toHaveBeenCalledTimes(MAX_REFUSED_SENDS - 1);
+    expect(sendProtocolReply).toHaveBeenCalledTimes(MAX_REFUSED_SENDS);
+    expect(api.markAutoReplySent).not.toHaveBeenCalled();
   });
 });

@@ -135,6 +135,8 @@ export function AddBrowserPanel({ onClose, onDone }: { onClose: () => void; onDo
         ? t("addBrowser.done", { name: result.label ?? t("agentStatus.deviceBrowser") })
         : result.kind === "mismatch"
           ? t("addBrowser.mismatch")
+          : result.kind === "list_broken"
+            ? t("addBrowser.listBroken")
           : result.kind === "reauth"
             ? t("addBrowser.reauth")
             : t("addBrowser.expired");
@@ -146,7 +148,7 @@ export function AddBrowserPanel({ onClose, onDone }: { onClose: () => void; onDo
           borderRadius: 12,
           padding: "10px 12px",
           background: result.kind === "done" ? "var(--ok-soft)" : "var(--danger-soft)",
-          border: result.kind === "mismatch" ? "1px solid var(--danger)" : undefined,
+          border: result.kind === "mismatch" || result.kind === "list_broken" ? "1px solid var(--danger)" : undefined,
         }}
       >
         <p style={{ margin: 0 }}>{message}</p>

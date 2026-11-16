@@ -23,6 +23,9 @@ import { findFirstFreeCandidate } from "../../lib/calendar/gcalFreebusy";
 import { checkReceived } from "../../lib/agents/sender-check";
 import { answeredReplies } from "../../lib/protocol/answered";
 
+// Refused automatic replies per message, for the page's life.
+const refusedReplies = new Map<string, number>();
+
 export function BrowserAutoReply({ agent, deviceDid }: { agent: Agent; deviceDid: string }) {
   const currentAgent = agent;
   const messagesQuery = useMessagesQuery({
@@ -99,6 +102,7 @@ export function BrowserAutoReply({ agent, deviceDid }: { agent: Agent; deviceDid
           },
           checkSender: (content) => checkReceived(content, [agent]),
           answered: answeredReplies,
+          refusals: refusedReplies,
           sendProtocolReply: (input) =>
             realSendProtocolReply({
               protocolType: input.protocolType,

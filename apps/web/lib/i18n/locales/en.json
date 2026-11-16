@@ -1803,6 +1803,7 @@
     "agents": "It works for every agent this browser can add devices to: {names}",
     "done": "\"{name}\" is ready. It can read messages that arrive from now on.",
     "mismatch": "The browser you are adding is not the one the server shows. It was not added. The server, or someone else, may be trying to swap it.",
+    "listBroken": "The device list could not be checked, so the browser was not added. The operator's server or someone else may be trying to swap a device.",
     "reauth": "More than 10 minutes have passed since you confirmed with World ID. Confirm again.",
     "reauthLink": "Confirm with World ID",
     "expired": "The link has expired. Start again from \"Use it on your phone too\".",

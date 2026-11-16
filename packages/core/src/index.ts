@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lstatSync } from "node:fs";
 import net from "node:net";
 
 import {
@@ -1225,6 +1226,36 @@ type GatewayRpcResponse<T> = {
   error?: { code: number; message: string };
 };
 
+/**
+ * Why the gateway socket at `path` must not be used, or null. A socket in a
+ * shared directory such as /tmp may have been put there by another account
+ * on the machine; it is only trusted when this account, root, or the
+ * account named by AGENT_INBOX_GATEWAY_SOCKET_UID owns it.
+ */
+export function gatewaySocketProblem(path: string, ownerUid?: number): string | null {
+  const getuid = process.getuid;
+  if (!getuid) return null; // No Unix accounts to tell apart.
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return null; // Not there: connecting fails with the usual error.
+  }
+  if (!stat.isSocket()) return `${path} is not a socket`;
+  const allowed = [getuid.call(process), 0];
+  if (ownerUid !== undefined) allowed.push(ownerUid);
+  if (!allowed.includes(stat.uid)) {
+    return `${path} belongs to another account (uid ${stat.uid}); not connecting`;
+  }
+  return null;
+}
+
+function socketOwnerFromEnv(): number | undefined {
+  const raw = process.env.AGENT_INBOX_GATEWAY_SOCKET_UID?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  return Number(raw);
+}
+
 export class NexusInboxGatewayClient {
   private readonly socketPath: string;
   private readonly rpcTransport?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -1241,6 +1272,8 @@ export class NexusInboxGatewayClient {
     if (this.rpcTransport) {
       return this.rpcTransport(method, params).then((result) => result as T);
     }
+    const problem = gatewaySocketProblem(this.socketPath, socketOwnerFromEnv());
+    if (problem) return Promise.reject(new Error(problem));
     return new Promise((resolve, reject) => {
       const socket = net.createConnection(this.socketPath);
       let buffer = "";

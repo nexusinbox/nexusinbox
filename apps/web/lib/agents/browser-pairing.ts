@@ -98,6 +98,8 @@ export type Settled =
   | { kind: "done"; label: string | null }
   /** A key the server shows is not one the new browser MACed: nothing signed. */
   | { kind: "mismatch" }
+  /** An agent's device list did not check out: nothing was signed. */
+  | { kind: "list_broken" }
   /** The server wants a recent World ID sign-in to change the signers. */
   | { kind: "reauth" }
   | { kind: "expired" };
@@ -126,10 +128,20 @@ export async function settleAddedBrowser(showing: Showing): Promise<Settled> {
     if (!macEqual(mac, key.mac)) return { kind: "mismatch" };
   }
 
-  const roots: Array<{ aid: string; mac: string }> = [];
+  // A list that does not check out (bad signature, older than one seen
+  // here) is never signed over: the new list would be built from what the
+  // server says now. Check every agent before signing any.
+  const statuses = [];
   for (const agent of showing.agents) {
-    const key = claimed.find((k) => k.aid === agent.aid) as BrowserPairingKey;
     const status = await checkDeviceList(agent);
+    if (status.kind === "broken") return { kind: "list_broken" };
+    statuses.push(status);
+  }
+
+  const roots: Array<{ aid: string; mac: string }> = [];
+  for (const [i, agent] of showing.agents.entries()) {
+    const key = claimed.find((k) => k.aid === agent.aid) as BrowserPairingKey;
+    const status = statuses[i];
     const device: AgentDevice = {
       did: key.did,
       encryption_public_key: key.encryption_public_key,

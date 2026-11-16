@@ -107,6 +107,12 @@ pub fn decrypt_envelope_text(serialized: &str, content_key: &str) -> Result<Stri
         return Err("unsupported envelope header".into());
     }
     let iterations: u32 = parts[4].parse().map_err(|_| "bad iter".to_string())?;
+    // The sender writes the count: keep it in the band packages/crypto
+    // accepts, so an envelope can neither weaken the KDF nor tie up the
+    // executor with a derivation that runs for hours.
+    if !(100_000..=1_000_000).contains(&iterations) {
+        return Err("iteration count out of range".into());
+    }
     let salt = URL_SAFE_NO_PAD
         .decode(parts[5])
         .map_err(|e| format!("salt: {e}"))?;
@@ -116,6 +122,10 @@ pub fn decrypt_envelope_text(serialized: &str, content_key: &str) -> Result<Stri
     let ct = URL_SAFE_NO_PAD
         .decode(parts[7])
         .map_err(|e| format!("ct: {e}"))?;
+    // from_slice below panics on any other length.
+    if iv.len() != 12 {
+        return Err("iv must be 12 bytes".into());
+    }
     let key = derive_key(content_key, &salt, iterations)?;
     let cipher =
         Aes256Gcm::new_from_slice(&key).map_err(|e| format!("AES-GCM init failed: {e}"))?;
@@ -157,6 +167,29 @@ mod tests {
         assert_eq!(k.len(), 43);
         let bytes = URL_SAFE_NO_PAD.decode(&k).expect("b64url decode");
         assert_eq!(bytes.len(), 32);
+    }
+
+    #[test]
+    fn decrypt_rejects_sender_chosen_iterations_and_iv_lengths() {
+        let key = generate_content_key();
+        let env = encrypt_envelope_text("hello", &key)
+            .expect("encrypt")
+            .serialized;
+        let parts: Vec<&str> = env.split(':').collect();
+        let with = |i: usize, value: &str| {
+            let mut p = parts.clone();
+            p[i] = value;
+            p.join(":")
+        };
+        for iter in ["1", "99999", "1000001", "4294967295"] {
+            let err = decrypt_envelope_text(&with(4, iter), &key).unwrap_err();
+            assert!(err.contains("iteration"), "{iter}: {err}");
+        }
+        for iv in ["", "AAAA", "AAAAAAAAAAAAAAAAAAAAAAAA"] {
+            let err = decrypt_envelope_text(&with(6, iv), &key).unwrap_err();
+            assert!(err.contains("iv"), "{iv:?}: {err}");
+        }
+        assert_eq!(decrypt_envelope_text(&env, &key).unwrap(), "hello");
     }
 
     #[test]

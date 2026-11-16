@@ -39,6 +39,10 @@ const SESSION_TTL: Duration = Duration::from_secs(3600);
 const SESSION_GRACE: Duration = Duration::from_secs(300);
 const MAX_CONNECTIONS: usize = 4096;
 const MAX_PER_IP: usize = 64;
+/// Streams one source may hold to one computer at a time, of its
+/// session::STREAMS_PER_HOST: no single source can take them all before
+/// the computer authenticates anything.
+const MAX_PER_SOURCE_PER_HOST: usize = 8;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -98,6 +102,7 @@ struct Relay {
     registry: session::Registry,
     connections: Arc<Semaphore>,
     per_ip: Mutex<HashMap<IpAddr, usize>>,
+    per_source_host: Mutex<HashMap<(IpAddr, String), usize>>,
     counters: Counters,
 }
 
@@ -161,6 +166,7 @@ async fn run(args: Args) -> Result<(), String> {
         registry: session::Registry::default(),
         connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
         per_ip: Mutex::new(HashMap::new()),
+        per_source_host: Mutex::new(HashMap::new()),
         counters: Counters::default(),
     });
 
@@ -244,6 +250,49 @@ impl Drop for IpSlot<'_> {
     }
 }
 
+/// The source a client is counted as: its IPv4 address, or the /64 of an
+/// IPv6 one (a single subscriber usually holds a whole /64).
+fn source_of(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+    }
+}
+
+struct HostSlot<'a> {
+    relay: &'a Relay,
+    key: (IpAddr, String),
+}
+
+impl Drop for HostSlot<'_> {
+    fn drop(&mut self) {
+        let mut map = self.relay.per_source_host.lock().unwrap();
+        if let Some(n) = map.get_mut(&self.key) {
+            *n -= 1;
+            if *n == 0 {
+                map.remove(&self.key);
+            }
+        }
+    }
+}
+
+fn take_host_slot<'a>(relay: &'a Relay, source: IpAddr, host: &str) -> Option<HostSlot<'a>> {
+    let key = (source, host.to_string());
+    let mut map = relay.per_source_host.lock().unwrap();
+    let n = map.entry(key.clone()).or_insert(0);
+    if *n >= MAX_PER_SOURCE_PER_HOST {
+        return None;
+    }
+    *n += 1;
+    Some(HostSlot { relay, key })
+}
+
 fn take_ip_slot(relay: &Relay, ip: IpAddr) -> Option<IpSlot<'_>> {
     let mut map = relay.per_ip.lock().unwrap();
     let n = map.entry(ip).or_insert(0);
@@ -264,6 +313,7 @@ async fn handle(relay: Arc<Relay>, mut tcp: TcpStream, peer: IpAddr) {
     } else {
         peer
     };
+    let ip = source_of(ip);
     let Some(_slot) = take_ip_slot(&relay, ip) else {
         relay.counters.rejected.fetch_add(1, Ordering::Relaxed);
         return;
@@ -300,13 +350,17 @@ async fn handle(relay: Arc<Relay>, mut tcp: TcpStream, peer: IpAddr) {
     if name == relay.relay_host {
         control(&relay, io::Prefixed::new(buf, tcp)).await;
     } else if ticket::is_mcp_host(&name, &relay.mcp_domain) {
-        forward(&relay, &name, buf, tcp).await;
+        forward(&relay, ip, &name, buf, tcp).await;
     } else {
         relay.counters.rejected.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-async fn forward(relay: &Relay, host: &str, hello: Vec<u8>, tcp: TcpStream) {
+async fn forward(relay: &Relay, source: IpAddr, host: &str, hello: Vec<u8>, tcp: TcpStream) {
+    let Some(_host_slot) = take_host_slot(relay, source, host) else {
+        relay.counters.rejected.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
     let opened = tokio::time::timeout(CONTROL_TIMEOUT, relay.registry.open(host)).await;
     let Ok(Some(opened)) = opened else {
         relay.counters.no_computer.fetch_add(1, Ordering::Relaxed);
@@ -408,4 +462,22 @@ fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipv6_clients_are_counted_by_their_slash_64() {
+        let a: IpAddr = "2001:db8:1:2:aaaa::1".parse().unwrap();
+        let b: IpAddr = "2001:db8:1:2:bbbb::9".parse().unwrap();
+        let c: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+        assert_eq!(source_of(a), source_of(b));
+        assert_ne!(source_of(a), source_of(c));
+        let v4: IpAddr = "203.0.113.7".parse().unwrap();
+        assert_eq!(source_of(v4), v4);
+        let mapped: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        assert_eq!(source_of(mapped), v4);
+    }
 }

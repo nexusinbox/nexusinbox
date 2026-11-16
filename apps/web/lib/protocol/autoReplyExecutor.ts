@@ -59,6 +59,8 @@ export type AutoReplyExecutorApi = {
  * A 5xx or a network failure may have happened after the server stored
  * the reply, so the claim is kept rather than risk a duplicate.
  */
+export const MAX_REFUSED_SENDS = 3;
+
 function sendCertainlyFailed(error: unknown): boolean {
   if (error instanceof TypeError) return false; // fetch network failure
   // Stopped by the other agent's device list (docs/40 §12.5): nothing was
@@ -127,6 +129,13 @@ export type RunAutoReplyExecutorInput = {
   checkSender: (content: MessageContentResponse) => Promise<SenderCheckState | "unchecked">;
   /** Signed messages already answered, so a delivery again is not answered twice. */
   answered: { has(signature: string): boolean; add(signature: string): void };
+  /**
+   * Refused sends per message, kept across passes. After
+   * MAX_REFUSED_SENDS the claim is kept and the message left to the
+   * person, as the gateway does (docs/29 §2.7): a refusal the other side
+   * controls (a block) must not drain this person's daily send budget.
+   */
+  refusals?: Map<string, number>;
   onProgress?: (event: AutoReplyExecutorEvent) => void;
 };
 
@@ -428,7 +437,14 @@ export async function runAutoReplyExecutor(
         });
       } catch (error) {
         if (sendCertainlyFailed(error)) {
-          await input.api.releaseAutoReplyClaim(entry.id).catch(() => undefined);
+          const refused = (input.refusals?.get(entry.id) ?? 0) + 1;
+          if (input.refusals && refused >= MAX_REFUSED_SENDS) {
+            // Keep the claim: no more attempts, the person takes it.
+            input.refusals.delete(entry.id);
+          } else {
+            input.refusals?.set(entry.id, refused);
+            await input.api.releaseAutoReplyClaim(entry.id).catch(() => undefined);
+          }
         }
         if (error instanceof Error && error.name === "SendStop" && input.api.skipAutoReply) {
           const reason = String((error as { reason?: unknown }).reason ?? "");

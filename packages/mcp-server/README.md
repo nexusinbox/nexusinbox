@@ -223,7 +223,9 @@ Requires a local Agent Gateway + Signer Daemon already running per
 `docs/19_non_interactive_agent_runbook_2026-04-18.md`. The daemon must
 be started with `--encryption-key-file` so it can fulfil
 `unwrap_content_key`. Gateway socket defaults to
-`/tmp/nexusinbox-gateway.sock`.
+`/tmp/nexusinbox-gateway.sock`; point it at the agent's own directory
+instead (`nexusinbox status <dir>` shows it). The client only uses a
+socket owned by this account, root, or `AGENT_INBOX_GATEWAY_SOCKET_UID`.
 
 ```jsonc
 {
@@ -236,7 +238,7 @@ be started with `--encryption-key-file` so it can fulfil
       ],
       "env": {
         "AGENT_INBOX_MCP_MODE": "mode_a_gateway_daemon",
-        "AGENT_INBOX_GATEWAY_SOCKET": "/tmp/nexusinbox-gateway.sock"
+        "AGENT_INBOX_GATEWAY_SOCKET": "/ABSOLUTE/PATH/TO/.nexusinbox/<agent>/run/gateway.sock"
       }
     }
   }
