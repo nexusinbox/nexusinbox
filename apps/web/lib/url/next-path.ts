@@ -37,6 +37,10 @@ export function sanitiseNextPath(raw: string | null | undefined): string {
     return "/";
   }
   if (parsed.origin !== base) return "/";
+  // Dot segments can resolve to a path that starts with "//" again
+  // ("/.//evil.test" → "//evil.test"), which a navigation reads as
+  // protocol-relative: off-site.
+  if (parsed.pathname.startsWith("//")) return "/";
   return parsed.pathname + parsed.search + parsed.hash;
 }
 

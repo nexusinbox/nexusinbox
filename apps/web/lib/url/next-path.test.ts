@@ -57,6 +57,14 @@ describe("sanitiseNextPath", () => {
     expect(sanitiseNextPath(fromQuery)).toBe("/");
   });
 
+  it("rejects dot segments that resolve back to a protocol-relative //host", () => {
+    for (const raw of ["/.//evil.test", "/.//evil.test/x?y#z", "/a/..//evil.test", "/%2e//evil.test", "/././/evil.test"]) {
+      expect(sanitiseNextPath(raw)).toBe("/");
+    }
+    // Ordinary dot segments inside the site still work.
+    expect(sanitiseNextPath("/a/../settings/agents")).toBe("/settings/agents");
+  });
+
   it("keeps the query and fragment of a same-origin path", () => {
     expect(sanitiseNextPath("/agent/did:key:z6Mk?folder=inbox#top")).toBe(
       "/agent/did:key:z6Mk?folder=inbox#top",
