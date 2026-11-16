@@ -11,7 +11,7 @@ describe("confirmation numbers (docs/40 §16.2)", () => {
     for (const c of vectors.cases) {
       expect(await confirmationNumber(c.a, c.b)).toBe(c.number);
       expect(await confirmationNumber(c.b, c.a)).toBe(c.number);
-      expect(c.number).toMatch(/^\d{5} \d{5} \d{5} \d{5}$/);
+      expect(c.number).toMatch(/^\d{5}( \d{5}){7}$/);
     }
   });
 

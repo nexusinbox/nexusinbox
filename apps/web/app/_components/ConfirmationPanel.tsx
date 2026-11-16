@@ -139,7 +139,7 @@ export function ConfirmationPanel({
               letterSpacing: 1,
             }}
           >
-            {loaded.number}
+            <ConfirmationDigits number={loaded.number} />
           </p>
           {!contact ? (
             <p className="item-sub" style={{ margin: 0 }}>
@@ -185,5 +185,16 @@ export function ConfirmationPanel({
         </>
       )}
     </div>
+  );
+}
+
+/** A confirmation number as two lines of four groups, so no group breaks. */
+export function ConfirmationDigits({ number }: { number: string }) {
+  const groups = number.split(" ");
+  return (
+    <>
+      <span style={{ display: "block", whiteSpace: "nowrap" }}>{groups.slice(0, 4).join(" ")}</span>
+      <span style={{ display: "block", whiteSpace: "nowrap" }}>{groups.slice(4).join(" ")}</span>
+    </>
   );
 }

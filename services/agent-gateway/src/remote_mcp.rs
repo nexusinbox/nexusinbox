@@ -1267,7 +1267,7 @@ async fn create_draft(
     };
 
     // Only for a device the recipient's signed list names (docs/40 §13.2).
-    let recipient = crate::check_recipient(gateway, &token, &recipient_ref)
+    let recipient = crate::check_recipient(gateway, &token, &recipient_ref, None)
         .await
         .map_err(|e| e.message())?;
     let recipient_key = recipient
@@ -1290,7 +1290,7 @@ async fn create_draft(
         });
     }
     // The person reads the draft on this agent's listed devices (§16.3).
-    let own_devices = crate::check_recipient(gateway, &token, &me.did)
+    let own_devices = crate::check_recipient(gateway, &token, &me.did, Some(&me.aid))
         .await
         .map_err(|e| {
             format!(

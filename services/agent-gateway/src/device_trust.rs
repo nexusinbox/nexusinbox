@@ -528,6 +528,8 @@ pub struct PeerStore {
     path: Option<PathBuf>,
     /// Without a directory (settings given by hand), kept for this run only.
     memory: Mutex<Peers>,
+    /// Held across a load, change and save within this process.
+    writing: Mutex<()>,
 }
 
 pub const PEERS_FILE: &str = "peers.json";
@@ -537,7 +539,42 @@ impl PeerStore {
         Self {
             path: dir.map(|d| d.join(PEERS_FILE)),
             memory: Mutex::new(Peers::default()),
+            writing: Mutex::new(()),
         }
+    }
+
+    /// Load, change and save as one step: under a lock in this process and
+    /// a file lock against others (`nexusinbox trust`), and always on the
+    /// file as it is now. A check that saved a copy it read before a slow
+    /// network call could otherwise erase a pin written meanwhile, such as
+    /// this agent's own root.
+    pub fn update<T>(&self, change: impl FnOnce(&mut Peers) -> T) -> Result<T, String> {
+        let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        let _file = self.lock_file()?;
+        let mut peers = self.load()?;
+        let out = change(&mut peers);
+        self.save(&peers)?;
+        Ok(out)
+    }
+
+    fn lock_file(&self) -> Result<Option<std::fs::File>, String> {
+        let Some(path) = &self.path else {
+            return Ok(None);
+        };
+        let lock_path = path.with_extension("json.lock");
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).truncate(false).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let file = options
+            .open(&lock_path)
+            .map_err(|e| format!("cannot open {}: {e}", lock_path.display()))?;
+        file.lock()
+            .map_err(|e| format!("cannot lock {}: {e}", lock_path.display()))?;
+        Ok(Some(file))
     }
 
     pub fn load(&self) -> Result<Peers, String> {
@@ -590,11 +627,16 @@ pub fn confirmation_number(root_a: &str, root_b: &str) -> String {
     } else {
         (root_b, root_a)
     };
-    let digest = Sha256::digest(format!("nexusinbox-confirm-v1\n{first}\n{second}").as_bytes());
-    let value = digest[..9]
-        .iter()
-        .fold(0u128, |acc, byte| (acc << 8) | u128::from(*byte));
-    let digits = format!("{:020}", value % 10u128.pow(20));
+    // v2: 40 digits, two halves of 20 (docs/40 §16.2): 20 digits fell to a
+    // server swapping both roots at first contact (audit run-4).
+    let digest = Sha256::digest(format!("nexusinbox-confirm-v2\n{first}\n{second}").as_bytes());
+    let half = |bytes: &[u8]| {
+        let value = bytes
+            .iter()
+            .fold(0u128, |acc, byte| (acc << 8) | u128::from(*byte));
+        format!("{:020}", value % 10u128.pow(20))
+    };
+    let digits = half(&digest[..9]) + &half(&digest[9..18]);
     digits
         .as_bytes()
         .chunks(5)
@@ -754,5 +796,34 @@ mod tests {
             assert_eq!(confirmation_number(a, b), c["number"].as_str().unwrap());
             assert_eq!(confirmation_number(b, a), c["number"].as_str().unwrap());
         }
+    }
+    #[test]
+    fn update_changes_the_file_as_it_is_now() {
+        let dir = std::env::temp_dir().join(format!("peers-update-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = PeerStore::new(Some(&dir));
+        // A check read the file, then another writer added the own root.
+        let stale = store.load().unwrap();
+        store
+            .update(|p| {
+                p.pins
+                    .insert("aid:own".into(), Pin::root("did:key:zOwnRoot", 0));
+            })
+            .unwrap();
+        // The check saves its own change through update, not its stale copy.
+        let _ = stale;
+        store
+            .update(|p| {
+                p.dids.insert("did:key:zPeer".into(), "aid:peer".into());
+            })
+            .unwrap();
+        let peers = store.load().unwrap();
+        assert!(peers.pins.contains_key("aid:own"));
+        assert_eq!(
+            peers.dids.get("did:key:zPeer").map(String::as_str),
+            Some("aid:peer")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

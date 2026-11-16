@@ -1,20 +1,20 @@
 {
-  "description": "Confirmation numbers (docs/40 \u00a716.2): SHA-256(\"nexusinbox-confirm-v1\\n\" + smaller root + \"\\n\" + larger root), first 9 bytes big-endian mod 10^20, 20 digits in groups of 5. The same either way round. Shared by core and the gateway.",
+  "description": "Confirmation numbers (docs/40 §16.2): SHA-256(\"nexusinbox-confirm-v2\\n\" + smaller root + \"\\n\" + larger root); bytes 0-8 and 9-17, each big-endian mod 10^20 as 20 digits, joined: 40 digits in groups of 5. The same either way round. 40 digits so that a server swapping both roots at first contact cannot find a pair that matches (about 10^20 tries each side). Shared by core and the gateway.",
   "cases": [
     {
       "a": "did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX",
       "b": "did:key:z6Mko9hTggMwjSTEaJaPUfE6tqcy2xvU6BnNq3e3o8qVBiyH",
-      "number": "44750 00596 61516 65069"
+      "number": "30654 68131 93741 48966 28078 56569 18703 29696"
     },
     {
       "a": "did:key:z6MkuRmCjnFz7MKmU9KPmqXBeGE2Doq4ykLNzssYSwKXyroM",
       "b": "did:key:z6MksRLCg2L8xE6ryVrNiqFSnvuPq3DEkYQShuiWNPgweede",
-      "number": "45622 19583 80683 67291"
+      "number": "74064 22178 36204 84750 09242 21737 08726 08266"
     },
     {
       "a": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
       "b": "did:key:z6MkvRXNYcE7MMduynWTgeKbDaT1iijDSC8pZqXZc8rHPrf2",
-      "number": "89522 06397 48782 96969"
+      "number": "83413 80301 76907 03181 35451 24052 47729 61666"
     }
   ]
 }

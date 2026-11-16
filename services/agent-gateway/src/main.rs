@@ -878,11 +878,22 @@ async fn check_recipient(
     state: &GatewayState,
     token: &str,
     requested: &str,
+    // This computer's own agent (its signer's AID) when `requested` is its
+    // own DID: the server must not name another agent for it, or that
+    // agent's devices would get every sender copy.
+    expected_aid: Option<&str>,
 ) -> Result<RecipientResolution, CheckError> {
     let mut resolution = resolve_recipient_identifier(state, token, requested)
         .await
         .map_err(CheckError::Failed)?;
-    let mut peers = state.peers.load().map_err(CheckError::Failed)?;
+    if expected_aid.is_some_and(|own| own != resolution.aid) {
+        return Err(CheckError::Stop {
+            reason: device_trust::StopReason::Signature,
+            aid: resolution.aid.clone(),
+            root: None,
+        });
+    }
+    let peers = state.peers.load().map_err(CheckError::Failed)?;
     let aid = resolution.aid.clone();
     let pin = peers.pins.get(&aid).cloned();
     let stop = |reason, root| CheckError::Stop {
@@ -930,8 +941,9 @@ async fn check_recipient(
     let (targets, single) = match &decision {
         device_trust::Decision::Stop { reason, root } => {
             if let Some(root) = root {
-                peers.changed.insert(aid.clone(), root.clone());
-                if let Err(e) = state.peers.save(&peers) {
+                if let Err(e) = state.peers.update(|peers| {
+                    peers.changed.insert(aid.clone(), root.clone());
+                }) {
                     eprintln!("[WARN] {e}");
                 }
             }
@@ -941,14 +953,21 @@ async fn check_recipient(
             targets, single, ..
         } => (targets.clone(), single.clone()),
     };
-    if requested.starts_with("did:") {
-        peers.dids.insert(requested.to_string(), aid.clone());
-    }
-    if let Some(next) = device_trust::pin_after(pin.as_ref(), &decision) {
-        peers.pins.insert(aid.clone(), next);
-        peers.changed.remove(&aid);
-    }
-    if let Err(e) = state.peers.save(&peers) {
+    let next = device_trust::pin_after(pin.as_ref(), &decision);
+    let saved = state.peers.update(|peers| {
+        if requested.starts_with("did:") {
+            peers.dids.insert(requested.to_string(), aid.clone());
+        }
+        // Only over the pin this check started from: a pin written
+        // meanwhile (another check, the own root) is not rolled back.
+        if let Some(next) = next {
+            if peers.pins.get(&aid) == pin.as_ref() {
+                peers.pins.insert(aid.clone(), next);
+                peers.changed.remove(&aid);
+            }
+        }
+    });
+    if let Err(e) = saved {
         // Sending still uses the checked devices; the next check reads the
         // old file and may trust the list afresh.
         eprintln!("[WARN] {e}");
@@ -1003,7 +1022,7 @@ async fn check_message_sender(
         Err(e) if e.contains("API returned 404") => None,
         Err(e) => return Err(e),
     };
-    let mut peers = state.peers.load()?;
+    let peers = state.peers.load()?;
     let pin = peers.pins.get(sender_aid).cloned();
     // This computer's own agent, connected with a long code: its root comes
     // from the browser, never from the server alone (§13.4).
@@ -1036,34 +1055,36 @@ async fn check_message_sender(
         now,
         history.as_deref(),
     );
-    let mut changed = false;
-    // Seen signing: from now on a message from it without a signature is a
-    // warning (docs/40 §15.2).
-    if check.state == envelope_v2::SenderState::Verified {
-        if let Some(did) = content.get("sender_did").and_then(|v| v.as_str()) {
-            changed |= peers
-                .dids
-                .insert(did.to_string(), sender_aid.to_string())
-                .as_deref()
-                != Some(sender_aid);
-        }
-        changed |= peers.signed.insert(sender_aid.to_string());
-    }
-    if let Some(root) = &check.changed_root {
-        changed = peers
-            .changed
-            .insert(sender_aid.to_string(), root.clone())
-            .as_ref()
-            != Some(root);
-    } else if let Some(next) = envelope_v2::pin_after_check(pin.as_ref(), &check) {
-        if pin.as_ref() != Some(&next) {
-            peers.pins.insert(sender_aid.to_string(), next);
-            peers.changed.remove(sender_aid);
-            changed = true;
-        }
-    }
-    if changed {
-        if let Err(e) = state.peers.save(&peers) {
+    // What to remember, written to the file as it is now (not to the copy
+    // read before the network calls above).
+    let verified_did = (check.state == envelope_v2::SenderState::Verified)
+        .then(|| content.get("sender_did").and_then(|v| v.as_str()))
+        .flatten();
+    let next = envelope_v2::pin_after_check(pin.as_ref(), &check);
+    let remember = check.state == envelope_v2::SenderState::Verified
+        || check.changed_root.is_some()
+        || next.as_ref().is_some_and(|n| pin.as_ref() != Some(n));
+    if remember {
+        let saved = state.peers.update(|peers| {
+            // Seen signing: from now on a message from it without a
+            // signature is a warning (docs/40 §15.2).
+            if check.state == envelope_v2::SenderState::Verified {
+                if let Some(did) = verified_did {
+                    peers.dids.insert(did.to_string(), sender_aid.to_string());
+                }
+                peers.signed.insert(sender_aid.to_string());
+            }
+            if let Some(root) = &check.changed_root {
+                peers.changed.insert(sender_aid.to_string(), root.clone());
+            } else if let Some(next) = next {
+                // Only over the pin this check started from.
+                if peers.pins.get(sender_aid) == pin.as_ref() && pin.as_ref() != Some(&next) {
+                    peers.pins.insert(sender_aid.to_string(), next);
+                    peers.changed.remove(sender_aid);
+                }
+            }
+        });
+        if let Err(e) = saved {
             eprintln!("[WARN] {e}");
         }
     }
@@ -1128,7 +1149,7 @@ async fn handle_resolve_recipient(state: &GatewayState, req: &RpcRequest) -> Rpc
 
     // Callers wrap for what this returns, so it returns only devices the
     // agent's signed list names (docs/40 §13.2).
-    match check_recipient(state, &token, identifier).await {
+    match check_recipient(state, &token, identifier, None).await {
         Ok(body) => {
             let mut json = serde_json::to_value(&body).unwrap_or_else(|_| serde_json::json!({}));
             sanitise_json(&mut json);
@@ -1304,7 +1325,7 @@ async fn handle_send_message(state: &GatewayState, req: &RpcRequest) -> RpcRespo
     // Check the recipient again before signing (docs/40 §13.2): the
     // envelope must go to the device the check names, with extra copies
     // only for listed devices of either agent.
-    let resolved_recipient = match check_recipient(state, &token, recipient_did).await {
+    let resolved_recipient = match check_recipient(state, &token, recipient_did, None).await {
         Ok(recipient) => recipient,
         Err(e) => return RpcResponse::error(req.id.clone(), -32000, e.message()),
     };
@@ -1318,7 +1339,13 @@ async fn handle_send_message(state: &GatewayState, req: &RpcRequest) -> RpcRespo
             ),
         );
     }
-    let own_devices: Vec<String> = match check_recipient(state, &token, &signer_identity.did).await
+    let own_devices: Vec<String> = match check_recipient(
+        state,
+        &token,
+        &signer_identity.did,
+        Some(&signer_identity.aid),
+    )
+    .await
     {
         Ok(me) => me.devices.into_iter().map(|d| d.did).collect(),
         Err(_) => Vec::new(),
@@ -1956,7 +1983,7 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
     ) -> Result<auto_reply_executor::RecipientPubkey, auto_reply_executor::ResolveError> {
         use auto_reply_executor::ResolveError;
         let token = ensure_token(&self.state).await?;
-        let checked = check_recipient(&self.state, &token, did)
+        let checked = check_recipient(&self.state, &token, did, None)
             .await
             .map_err(|e| match e {
                 CheckError::Stop { reason, .. } => ResolveError::Stopped(reason.code()),
@@ -2211,14 +2238,20 @@ async fn confirm_own_root(state: Arc<GatewayState>) {
                     );
                     return;
                 }
-                let saved = state.peers.load().and_then(|mut peers| {
-                    peers
-                        .pins
-                        .insert(aid.clone(), device_trust::Pin::root(&root, 0));
-                    state.peers.save(&peers)
-                });
+                let saved = state
+                    .peers
+                    .update(|peers| {
+                        peers
+                            .pins
+                            .insert(aid.clone(), device_trust::Pin::root(&root, 0));
+                    })
+                    // The secret goes only once the pin reads back from the file.
+                    .and_then(|()| state.peers.load())
+                    .map(|peers| peers.pins.get(&aid).is_some_and(|p| p.root == root));
                 if let Err(e) = saved {
                     eprintln!("[WARN] {e}");
+                } else if saved == Ok(false) {
+                    eprintln!("[WARN] The agent's key was not kept; asking again.");
                 } else if let Some(dir) = state.state_dir.as_deref() {
                     let _ = std::fs::remove_file(pairing::pairing_path(dir));
                     eprintln!("[INFO] Checked the agent's key the browser sent ({root}).");
@@ -2287,7 +2320,7 @@ fn run_verify(dir: &std::path::Path, own_aid: &str, target: &str) -> i32 {
 
 fn run_trust(dir: &std::path::Path, target: &str) -> i32 {
     let store = device_trust::PeerStore::new(Some(dir));
-    let mut peers = match store.load() {
+    let peers = match store.load() {
         Ok(peers) => peers,
         Err(e) => {
             eprintln!("[ERROR] {e}");
@@ -2324,11 +2357,14 @@ fn run_trust(dir: &std::path::Path, target: &str) -> i32 {
         println!("Nothing changed.");
         return 1;
     }
-    peers
-        .pins
-        .insert(aid.clone(), device_trust::Pin::root(&new_root, 0));
-    peers.changed.remove(&aid);
-    if let Err(e) = store.save(&peers) {
+    // Written to the file as it is now: the running gateway may have
+    // changed it while the question was open.
+    if let Err(e) = store.update(|peers| {
+        peers
+            .pins
+            .insert(aid.clone(), device_trust::Pin::root(&new_root, 0));
+        peers.changed.remove(&aid);
+    }) {
         eprintln!("[ERROR] {e}");
         return 1;
     }
@@ -2673,6 +2709,35 @@ mod tests {
             "the old refresh token must not be presented again"
         );
         assert!(state.token.lock().unwrap().refresh_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_own_did_is_never_taken_under_another_agent() {
+        // The server names someone else's agent for this computer's own DID.
+        let (api_url, _) = spawn_api_mock(|_, path, _| {
+            if path.starts_with("/recipients/resolve") {
+                (
+                    200,
+                    r#"{"input":"did:key:z6MkDaemonViewer","aid":"aid:ai:operator","did":"did:key:z6MkDaemonViewer","signing_public_key":"s","encryption_public_key":"e","devices":[]}"#
+                        .into(),
+                )
+            } else {
+                (500, "{}".into())
+            }
+        })
+        .await;
+        let mut state = make_test_state();
+        state.api_url = api_url;
+        let checked = check_recipient(&state, "tok", DAEMON_DID, Some("aid:ai:mine")).await;
+        assert!(matches!(
+            checked,
+            Err(CheckError::Stop {
+                reason: device_trust::StopReason::Signature,
+                ..
+            })
+        ));
+        // Nothing about it is remembered.
+        assert!(state.peers.load().unwrap().dids.is_empty());
     }
 
     #[test]

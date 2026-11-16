@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { confirmationNumber } from "@nexusinbox/core/confirmation";
 import { ownRootHere } from "../../../lib/agents/device-list";
+import { ConfirmationDigits } from "../ConfirmationPanel";
 import { contactForAid } from "../../../lib/agents/peer-pins";
 import type { Agent } from "../../../lib/api/types";
 import type { SendStop } from "../../../lib/crypto/device-wraps";
@@ -117,7 +118,7 @@ export function SendStopNotice({
               letterSpacing: 1,
             }}
           >
-            {newNumber}
+            <ConfirmationDigits number={newNumber} />
           </p>
           <p className="item-sub" style={{ margin: 0 }}>
             {t("confirm.changedNumberNote")}
