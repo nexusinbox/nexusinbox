@@ -160,3 +160,17 @@ export function onlyRootDevice(agent: Agent): boolean {
   const devices = agent.devices ?? [];
   return devices.length === 1 && devices[0].did === agent.did;
 }
+
+/**
+ * The agent's own root as this browser knows it (docs/40 §16.2): the pin it
+ * keeps for the agent, or the DID the server names only when this browser
+ * holds that key. Null when it knows neither. The confirmation number is
+ * computed from this, so a server cannot name a root that makes both
+ * people's numbers match.
+ */
+export async function ownRootHere(agent: Pick<Agent, "aid" | "did">): Promise<string | null> {
+  const pinned = loadPin(agent.aid)?.root;
+  if (pinned) return pinned;
+  const key = await getSigningPrivateKey(agent.did).catch(() => null);
+  return key ? agent.did : null;
+}

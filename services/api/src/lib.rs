@@ -4923,6 +4923,14 @@ async fn auth_verify(
     // Extract nullifier and verification_level from idkit_result or legacy fields
     let (nullifier_hash, verification_level) = if let Some(ref idkit) = payload.idkit_result {
         let responses = idkit.get("responses").and_then(|v| v.as_array());
+        // The login asks for one credential (orb). The account is taken from
+        // this response, so it must be the only one World verifies: a valid
+        // proof must not carry an extra, unverified entry in front of it.
+        if responses.map(Vec::len) != Some(1) {
+            return Err(validation_error(
+                "idkit_result must carry exactly one response",
+            ));
+        }
         let first = responses.and_then(|r| r.first());
         let nullifier = first
             .and_then(|r| r.get("nullifier"))
@@ -4969,6 +4977,18 @@ async fn auth_verify(
     if signal != expected_signal {
         audit_fail(422, "invalid_signal");
         return Err(validation_error("invalid signal"));
+    }
+    // What World verifies is the IDKit result itself: its own action and
+    // signal must be ours too, not only the top-level fields.
+    if let Some(idkit) = payload.idkit_result.as_ref() {
+        for (key, expected) in [("action", &expected_action), ("signal", &expected_signal)] {
+            if let Some(value) = idkit.get(key) {
+                if value.as_str() != Some(expected.as_str()) {
+                    audit_fail(422, &format!("invalid_idkit_{key}"));
+                    return Err(validation_error(&format!("invalid {key} in idkit_result")));
+                }
+            }
+        }
     }
 
     if !is_valid_verification_level(&verification_level) {
@@ -11955,7 +11975,11 @@ async fn agent_auth_token(
         INSERT INTO agent_tokens (
             credential_id, access_hash, refresh_hash, dpop_jkt,
             scopes, issued_at, access_expires_at, refresh_expires_at
-        ) VALUES ($1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz)
+        )
+        SELECT $1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz
+        FROM agent_credentials
+        WHERE id = $1 AND status = 'active'
+        FOR SHARE
         RETURNING id, token_family_id
         "#,
     )
@@ -11966,9 +11990,12 @@ async fn agent_auth_token(
     .bind(&requested as &[&str])
     .bind(&access_expires)
     .bind(&refresh_expires)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await
-    .map_err(|e| internal_error("failed to insert token", e))?;
+    .map_err(|e| internal_error("failed to insert token", e))?
+    // Rotated or revoked since the lookup above: no token. The row lock
+    // orders this against rotate/revoke, so their token revoke sees it.
+    .ok_or_else(|| unauthorized_error("agent credential is not active"))?;
     let new_token_id: Uuid = inserted.get("id");
     let new_token_family_id: Uuid = inserted.get("token_family_id");
 
@@ -12347,13 +12374,17 @@ async fn agent_auth_refresh(
 
     // Rotation: new token INHERITS the parent's token_family_id so the
     // whole rotation chain can be revoked as a unit on reuse detection.
-    sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO agent_tokens (
             credential_id, access_hash, refresh_hash, dpop_jkt,
             scopes, issued_at, access_expires_at, refresh_expires_at,
             token_family_id
-        ) VALUES ($1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz, $8)
+        )
+        SELECT $1, $2, $3, $4, $5, NOW(), $6::timestamptz, $7::timestamptz, $8
+        FROM agent_credentials
+        WHERE id = $1 AND status = 'active'
+        FOR SHARE
         "#,
     )
     .bind(credential_id)
@@ -12367,6 +12398,10 @@ async fn agent_auth_refresh(
     .execute(&pool)
     .await
     .map_err(|e| internal_error("failed to insert new token", e))?;
+    // Rotated or revoked since the lookup above: no new pair (see token).
+    if inserted.rows_affected() == 0 {
+        return Err(unauthorized_error("agent credential is not active"));
+    }
 
     // Update last_used_at on credential
     let _ = sqlx::query("UPDATE agent_credentials SET last_used_at = NOW() WHERE id = $1")

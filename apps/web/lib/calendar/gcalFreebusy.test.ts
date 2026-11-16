@@ -149,6 +149,18 @@ describe("findFirstFreeCandidate — API shape", () => {
     ).rejects.toThrow(/401/);
   });
 
+  it.each([
+    ["the calendar could not be read", { calendars: { primary: { errors: [{ domain: "global", reason: "notFound" }] } } }],
+    ["no busy list", { calendars: { primary: {} } }],
+    ["no primary calendar", { calendars: {} }],
+    ["a malformed busy entry", { calendars: { primary: { busy: [{ start: "2026-05-01T09:00:00Z" }] } } }],
+  ])("throws rather than call a slot free when %s", async (_, body) => {
+    const fetcher: FreebusyFetcher = async () => ({ ok: true, status: 200, body: JSON.stringify(body) });
+    await expect(
+      findFirstFreeCandidate([c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z")], "tok", fetcher),
+    ).rejects.toThrow(/freebusy/);
+  });
+
   it("returns null for empty candidate list without calling API", async () => {
     const fetcher: FreebusyFetcher = vi.fn();
     expect(await findFirstFreeCandidate([], "tok", fetcher)).toBeNull();

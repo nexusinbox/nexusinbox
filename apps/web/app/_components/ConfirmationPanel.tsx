@@ -12,6 +12,7 @@ import { queryKeys } from "../../lib/api/hooks";
 import type { Agent, ContactEntry } from "../../lib/api/types";
 import { sealForSave } from "../../lib/contacts/address-book";
 import { checkedRoot } from "../../lib/crypto/device-wraps";
+import { ownRootHere } from "../../lib/agents/device-list";
 import { useTranslation } from "../../lib/i18n";
 
 type Loaded = { kind: "loading" } | { kind: "ready"; root: string; number: string } | { kind: "unavailable" };
@@ -26,7 +27,7 @@ export function ConfirmationPanel({
   counterpart: string;
   /** The other agent as the person knows it. */
   name: string;
-  ownAgent: Pick<Agent, "did" | "label">;
+  ownAgent: Pick<Agent, "aid" | "did" | "label">;
   /** The contact the result is sealed into; without one, the number only. */
   contact: ContactEntry | null;
 }) {
@@ -44,13 +45,15 @@ export function ConfirmationPanel({
       try {
         const served = await defaultApiClient.resolveRecipient(counterpart);
         const checked = await checkedRoot(served.aid);
+        // The own agent's root is the DID it was created with (docs/40 §4.1),
+        // as this browser knows it, not as the server says.
+        const ownRoot = await ownRootHere({ aid: ownAgent.aid, did: ownAgent.did });
         if (cancelled) return;
-        if ("stop" in checked) {
+        if ("stop" in checked || !ownRoot) {
           setLoaded({ kind: "unavailable" });
           return;
         }
-        // The own agent's root is the DID it was created with (docs/40 §4.1).
-        const number = await confirmationNumber(ownAgent.did, checked.root);
+        const number = await confirmationNumber(ownRoot, checked.root);
         if (!cancelled) setLoaded({ kind: "ready", root: checked.root, number });
       } catch {
         if (!cancelled) setLoaded({ kind: "unavailable" });
@@ -59,7 +62,7 @@ export function ConfirmationPanel({
     return () => {
       cancelled = true;
     };
-  }, [counterpart, ownAgent.did]);
+  }, [counterpart, ownAgent.aid, ownAgent.did]);
 
   const record = async (same: boolean) => {
     if (!contact || loaded.kind !== "ready") return;

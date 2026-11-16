@@ -457,3 +457,49 @@ async fn a_token_carries_the_scopes_its_assertion_asked_for() {
     let (status, _) = issue(&app, &f, &f.computer_key, "").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+#[serial]
+async fn a_token_issued_while_the_credential_is_being_rotated_is_not_stored() {
+    let (app, pool) = db_test_setup!();
+    let f = seed(&pool, "rotate-race", &["messages.read", "messages.send"]).await;
+
+    // A rotation in progress: the credential row is changed but not yet
+    // committed, so the token request's lookup still sees it active.
+    let mut tx = pool.begin().await.expect("begin");
+    sqlx::query(
+        "UPDATE agent_credentials SET status = 'pending', signing_public_key = NULL WHERE id = $1",
+    )
+    .bind(f.credential_id)
+    .execute(&mut *tx)
+    .await
+    .expect("rotate in tx");
+    let request = {
+        let app = app.clone();
+        let key = f.computer_key.clone();
+        let f = Fixture {
+            auth: f.auth.clone(),
+            aid: f.aid.clone(),
+            credential_id: f.credential_id,
+            computer_key: key.clone(),
+            browser_key: f.browser_key.clone(),
+        };
+        tokio::spawn(async move { issue(&app, &f, &key, "messages.read").await })
+    };
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    tx.commit().await.expect("commit");
+
+    let (status, body) = request.await.expect("join");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "issued during rotation: {body}"
+    );
+    let tokens: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM agent_tokens WHERE credential_id = $1")
+            .bind(f.credential_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+    assert_eq!(tokens, 0);
+}

@@ -465,3 +465,65 @@ async fn auth_session_rejects_invalid_cookie_and_clears_session_cookie() {
     assert!(clear_cookie.contains("nexusinbox_session="));
     assert!(clear_cookie.contains("Max-Age=0"));
 }
+
+async fn verify_status(payload: Value) -> StatusCode {
+    let app = common::test_app_with_mock_world_verify();
+    app.oneshot(
+        Request::builder()
+            .method("POST")
+            .uri("/auth/verify")
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+    .status()
+}
+
+fn idkit(responses: Value, extra: Value) -> Value {
+    let mut result = json!({ "protocol_version": "3.0", "responses": responses });
+    for (k, v) in extra.as_object().unwrap() {
+        result[k] = v.clone();
+    }
+    json!({ "action": "login", "idkit_result": result })
+}
+
+fn orb(nullifier: &str) -> Value {
+    json!({ "identifier": "orb", "nullifier": nullifier, "proof": "0xproof", "merkle_root": "0xroot" })
+}
+
+#[tokio::test]
+async fn auth_verify_takes_an_idkit_result_with_one_response() {
+    let status = verify_status(idkit(json!([orb("0xnullifier-idkit-one")]), json!({}))).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn auth_verify_rejects_extra_idkit_responses() {
+    // A fabricated first entry in front of a valid one must not choose the account.
+    let both = json!([orb("0xnullifier-forged"), orb("0xnullifier-real")]);
+    assert_eq!(
+        verify_status(idkit(both, json!({}))).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        verify_status(idkit(json!([]), json!({}))).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
+async fn auth_verify_rejects_another_action_or_signal_inside_the_idkit_result() {
+    let one = json!([orb("0xnullifier-idkit-action")]);
+    assert_eq!(
+        verify_status(idkit(one.clone(), json!({ "action": "other-action" }))).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let mut with_signal = idkit(one, json!({ "signal": "other-signal" }));
+    with_signal["signal"] = json!("");
+    assert_eq!(
+        verify_status(with_signal).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}

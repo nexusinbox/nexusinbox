@@ -116,19 +116,27 @@ export async function findFirstFreeCandidate(
   return pickFirstFreeCandidate(candidates, busy);
 }
 
+/**
+ * The primary calendar's busy times. Anything else than a clean answer
+ * throws: an unread calendar is never taken as free, since a free slot is
+ * accepted automatically. Google reports a calendar it could not read in
+ * `errors` with no `busy` (still HTTP 200).
+ */
 function extractPrimaryBusy(parsed: unknown): IsoInterval[] {
-  if (!parsed || typeof parsed !== "object") return [];
-  const calendars = (parsed as { calendars?: Record<string, unknown> }).calendars;
-  if (!calendars || typeof calendars !== "object") return [];
-  const primary = (calendars as Record<string, { busy?: unknown }>).primary;
-  if (!primary || typeof primary !== "object") return [];
-  const busy = primary.busy;
-  if (!Array.isArray(busy)) return [];
-  return busy.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const start = (entry as { start?: unknown }).start;
-    const end = (entry as { end?: unknown }).end;
-    if (typeof start !== "string" || typeof end !== "string") return [];
-    return [{ start, end }];
+  const calendars = (parsed as { calendars?: unknown } | null)?.calendars;
+  const primary = (calendars as Record<string, unknown> | null | undefined)?.primary as
+    | { busy?: unknown; errors?: unknown }
+    | null
+    | undefined;
+  if (!primary || typeof primary !== "object") throw new Error("freebusy: no primary calendar");
+  if (Array.isArray(primary.errors) && primary.errors.length > 0) {
+    throw new Error("freebusy: the primary calendar could not be read");
+  }
+  if (!Array.isArray(primary.busy)) throw new Error("freebusy: no busy list");
+  return primary.busy.map((entry) => {
+    const start = (entry as { start?: unknown } | null)?.start;
+    const end = (entry as { end?: unknown } | null)?.end;
+    if (typeof start !== "string" || typeof end !== "string") throw new Error("freebusy: malformed busy entry");
+    return { start, end };
   });
 }
