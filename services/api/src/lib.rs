@@ -16712,6 +16712,24 @@ async fn claim_auto_reply(
     // At most AUTO_REPLY_DAILY_CAP_PER_AGENT automatic replies a UTC day per
     // agent (docs/25 §7.2): requests from others cannot spend the person's
     // whole send budget through it. Past that, the message is the person's.
+    // Counting and claiming happen under one lock per agent, so claims racing
+    // at the cap are counted one after another (each statement reads what
+    // the one before it committed).
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| internal_error("failed to claim auto-reply", e))?;
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('auto-reply-cap:' || COALESCE( \
+           (SELECT k.aid FROM agent_identity_keys k WHERE k.did = m.recipient_did LIMIT 1), \
+           m.recipient_did), 0)) \
+         FROM message_index m WHERE m.id = $1 AND m.owner_user_id = $2",
+    )
+    .bind(message_id)
+    .bind(user_uuid)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| internal_error("failed to claim auto-reply", e))?;
     let claimed = sqlx::query(
         "WITH target AS ( \
            SELECT recipient_did FROM message_index WHERE id = $1 AND owner_user_id = $2 \
@@ -16733,10 +16751,13 @@ async fn claim_auto_reply(
     .bind(message_id)
     .bind(user_uuid)
     .bind(AUTO_REPLY_DAILY_CAP_PER_AGENT)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| internal_error("failed to claim auto-reply", e))?
     .rows_affected();
+    tx.commit()
+        .await
+        .map_err(|e| internal_error("failed to claim auto-reply", e))?;
     if claimed == 0 {
         return Err(conflict_error(
             "auto-reply already claimed or sent, or this agent's automatic replies for today are used up",

@@ -29,6 +29,7 @@ export type RequestMessage = {
     action: RequestAction;
     reply_to: string | null;
     payload?: {
+      candidates?: { start: string; end: string }[];
       response_deadline?: string;
       selected_candidate?: { start: string; end: string };
       result?: string;
@@ -188,6 +189,40 @@ export function conversationRequests(messages: RequestMessage[], now: string): C
   return { requests, unverified };
 }
 
+/**
+ * A reply no valid exchange makes (review 2026-11-17): answering one's own
+ * offer, accepting a slot the answered offer did not name, or a task taken
+ * on, declined or reported done by the side that asked for it. A good
+ * signature does not make such a step valid.
+ */
+function outOfTurn(type: RequestType, events: Event[]): boolean {
+  if (type === "task_delegation") {
+    const opener = events[0].message.mine;
+    return events
+      .slice(1)
+      .some((e) => ["accept", "decline", "complete"].includes(e.protocol.action) && e.message.mine === opener);
+  }
+  const same = (a: { start: string; end: string }, b: { start: string; end: string }) => {
+    const [as, ae, bs, be] = [time(a.start), time(a.end), time(b.start), time(b.end)];
+    return as !== null && ae !== null && as === bs && ae === be;
+  };
+  let offer: Event | null = null;
+  for (const e of events) {
+    const action = e.protocol.action;
+    if (action === "propose" || action === "counter") {
+      offer = e;
+    } else if (action === "accept" || action === "decline") {
+      if (!offer || offer.message.mine === e.message.mine) return true;
+      if (action === "accept") {
+        const pick = e.protocol.payload?.selected_candidate;
+        const offered = offer.protocol.payload?.candidates ?? [];
+        if (!pick || !offered.some((c) => same(c, pick))) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function summarise(root: string, found: boolean, events: Event[], nowMs: number): RequestSummary {
   const type = events[0].protocol.type;
   const last = events[events.length - 1];
@@ -208,6 +243,7 @@ function summarise(root: string, found: boolean, events: Event[], nowMs: number)
 
   if (!found) return done("missing_original", "you");
   if (events.some((e) => e.protocol.type !== type)) return done("conflict", "you");
+  if (outOfTurn(type, events)) return done("conflict", "you");
 
   const terminal = TERMINAL[type];
   const firstTerminal = events.findIndex((e) => terminal.includes(e.protocol.action));

@@ -898,3 +898,38 @@ async fn an_agent_claims_at_most_fifty_automatic_replies_a_day() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn claims_racing_at_the_daily_cap_let_only_one_through() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xclaim-race").await;
+    let agent = seed_agent(&pool, &owner, "racing", true).await;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+    // 49 claimed today already.
+    for i in 0..49 {
+        let row = seed_pending_row(&pool, &owner, &format!("did:key:zdone{i}"), &agent).await;
+        sqlx::query("UPDATE message_index SET auto_reply_claimed_at = NOW() WHERE id = $1")
+            .bind(row)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    // Ten different messages claimed at once: one fits under the cap.
+    let mut rows = Vec::new();
+    for i in 0..10 {
+        rows.push(seed_pending_row(&pool, &owner, &format!("did:key:zrace{i}"), &agent).await);
+    }
+    let claims = rows.iter().map(|row| {
+        let app = app.clone();
+        let token = token.clone();
+        let uri = format!("/messages/{row}/auto-reply-claim");
+        async move { call(&app, "POST", &uri, &token).await.0 }
+    });
+    let statuses = futures_util::future::join_all(claims).await;
+    let won = statuses.iter().filter(|s| **s == StatusCode::OK).count();
+    assert_eq!(won, 1, "{statuses:?}");
+}

@@ -1,6 +1,7 @@
 // The requests panel at the top of a conversation (docs/41 §7.3). The
-// mocked bodies are plain A2A JSON (the reader shows them as is), so the
-// person's own messages count and received ones stay unverified.
+// mocked bodies are plain A2A JSON without signatures: none of them can be
+// verified, the person's own copies included (the server keeps those too,
+// review 2026-11-17), so no request is counted as under way or agreed.
 import { expect, test, type Page } from "@playwright/test";
 import { seedAuthSessionCookie } from "./_helpers/auth";
 import { mockNexusInboxBackend, SEED_AGENT } from "./_helpers/mocks";
@@ -64,7 +65,7 @@ async function setup(page: Page, rows: Row[]) {
   });
 }
 
-test("conversation: our proposal waits for them, an unverified reply is left out", async ({ page, context, baseURL }) => {
+test("conversation: unsigned requests, ours included, are left out and counted as unverified", async ({ page, context, baseURL }) => {
   const deadline = iso(60 * 24);
   await setup(page, [
     {
@@ -98,14 +99,13 @@ test("conversation: our proposal waits for them, an unverified reply is left out
   await page.getByTestId("dm-row").first().click();
 
   const panel = page.getByTestId("request-panel");
-  // The unverified accept does not finish it: still waiting for them.
-  await expect(panel.locator('[data-state="waiting_for_them"]')).toContainText("打ち合わせ");
-  await expect(panel.locator('[data-state="waiting_for_them"]')).toContainText("次は");
-  await expect(panel.getByTestId("request-unverified")).toContainText("確かめられない依頼 1 件");
+  // Neither our unsigned proposal nor their unsigned accept counts.
+  await expect(panel.getByTestId("request-unverified")).toContainText("確かめられない依頼 2 件");
+  await expect(panel.locator('[data-state="waiting_for_them"]')).toHaveCount(0);
   await expect(panel.locator('[data-state="agreed"]')).toHaveCount(0);
-  // The list: under way, and something to check, never mixed.
+  // The list: something to check, nothing under way.
   const row = page.getByTestId("dm-row-requests").first();
-  await expect(row).toContainText("進行中 1");
   await expect(row).toContainText("確かめが必要な依頼");
+  await expect(row).not.toContainText("進行中");
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT, fullPage: true });
 });

@@ -39,7 +39,9 @@ async function readFact(
     const parsed = parseA2APayload(body.text, content.content_type ?? null);
     const p = parsed.protocol;
     if (!p) return { protocol: null, verified: true };
-    const check = m.mine ? "verified" : await checkReceived(content, agents).catch(() => "unchecked" as const);
+    // The person's own copies are checked too: the server keeps them, and
+    // reading one does not show its recipient or thread are as signed.
+    const check = await checkReceived(content, agents).catch(() => "unchecked" as const);
     // Not checked just now: try again next time rather than call it unverified.
     if (check === "unchecked") {
       facts.delete(m.entry.id);

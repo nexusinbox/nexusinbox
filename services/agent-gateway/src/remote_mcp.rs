@@ -1011,12 +1011,12 @@ async fn request_state_for(
             reply_to: p.reply_to,
             payload: p.payload,
         });
-        // The person's own messages count; others' must verify.
-        let verified = *mine
-            || matches!(
-                crate::check_message_sender(gateway, token, &row_content).await,
-                Ok(ref c) if c.state == envelope_v2::SenderState::Verified
-            );
+        // Every message must verify, the person's own copies included: the
+        // server keeps those too (review 2026-11-17).
+        let verified = matches!(
+            crate::check_message_sender(gateway, token, &row_content).await,
+            Ok(ref c) if c.state == envelope_v2::SenderState::Verified
+        );
         messages.push(crate::request_state::RequestMessage {
             id: row_id.to_string(),
             at: row_field(row, "created_at").unwrap_or_default(),

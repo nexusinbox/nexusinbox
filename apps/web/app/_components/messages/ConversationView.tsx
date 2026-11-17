@@ -108,8 +108,14 @@ type Rendered = {
   subject: string;
   protocol: A2AProtocolBlock | null;
   key: ViewerKey | null;
-  /** Who sent it, for received messages (docs/40 §14.5). */
+  /** Who sent it, for received messages (docs/40 §14.5): what is shown. */
   sender?: ReceivedCheck;
+  /**
+   * The same check for every message, the person's own copies included:
+   * what request states rest on. Not marking one's own copies is a display
+   * choice; it does not mean they were checked (review 2026-11-17).
+   */
+  checked?: ReceivedCheck;
 };
 
 const LOADING: Rendered = { state: "loading", text: "", subject: "", protocol: null, key: null };
@@ -270,8 +276,10 @@ export function ConversationView({
             staleTime: 30_000,
           });
           const body = await decryptMessageBody(content, m.entry, m.mine, conversation.ownDids);
-          // Who sent it (docs/40 §14.5); the person's own copies are not marked.
-          const sender = m.mine ? undefined : await checkReceived(content, agents).catch(() => "unchecked" as const);
+          // Who sent it (docs/40 §14.5), checked for the person's own copies
+          // too (the server keeps those as well); only received ones are marked.
+          const checked = await checkReceived(content, agents).catch(() => "unchecked" as const);
+          const sender = m.mine ? undefined : checked;
           if (body.state === "readable" && body.key) {
             const parsed = parseProtocolBody(body.text, content.content_type ?? null);
             let subject = "";
@@ -290,9 +298,10 @@ export function ConversationView({
               protocol: parsed?.protocol ?? null,
               key: body.key,
               sender,
+              checked,
             };
           } else {
-            result = { ...LOADING, state: body.state === "readable" ? "error" : body.state, sender };
+            result = { ...LOADING, state: body.state === "readable" ? "error" : body.state, sender, checked };
           }
         } catch {
           result = { ...LOADING, state: "error" };
@@ -325,7 +334,7 @@ export function ConversationView({
     let incomplete = false;
     for (const m of messages) {
       const r = rendered[m.entry.id];
-      if (!r || r.state === "loading" || r.state !== "readable" || (!m.mine && r.sender === "unchecked")) {
+      if (!r || r.state === "loading" || r.state !== "readable" || r.checked === "unchecked") {
         incomplete = true;
         continue;
       }
@@ -334,7 +343,7 @@ export function ConversationView({
         id: m.entry.id,
         at: m.entry.created_at,
         mine: m.mine,
-        verified: m.mine || r.sender === "verified",
+        verified: r.checked === "verified",
         protocol: p
           ? {
               id: p.id,

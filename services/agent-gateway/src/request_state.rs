@@ -216,6 +216,58 @@ fn payload_str(protocol: &ProtocolFacts, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// A reply no valid exchange makes (review 2026-11-17): answering one's own
+/// offer, accepting a slot the answered offer did not name, or a task taken
+/// on, declined or reported done by the side that asked for it. A good
+/// signature does not make such a step valid.
+fn out_of_turn(kind: &str, events: &[&Event]) -> bool {
+    fn action<'a>(e: &'a Event) -> &'a str {
+        e.protocol.action.as_str()
+    }
+    if kind == "task_delegation" {
+        let opener = events[0].message.mine;
+        return events[1..].iter().any(|e| {
+            matches!(action(e), "accept" | "decline" | "complete") && e.message.mine == opener
+        });
+    }
+    let same = |a: &Value, b: &Value| {
+        let at = |v: &Value, k: &str| time(v.get(k).and_then(Value::as_str));
+        at(a, "start").is_some()
+            && at(a, "start") == at(b, "start")
+            && at(a, "end").is_some()
+            && at(a, "end") == at(b, "end")
+    };
+    let mut offer: Option<&Event> = None;
+    for e in events {
+        match action(e) {
+            "propose" | "counter" => offer = Some(e),
+            "accept" | "decline" => {
+                let Some(o) = offer else { return true };
+                if o.message.mine == e.message.mine {
+                    return true;
+                }
+                if action(e) == "accept" {
+                    let pick = e.protocol.payload.get("selected_candidate");
+                    let offered = o
+                        .protocol
+                        .payload
+                        .get("candidates")
+                        .and_then(Value::as_array);
+                    let named = match (pick, offered) {
+                        (Some(pick), Some(offered)) => offered.iter().any(|c| same(c, pick)),
+                        _ => false,
+                    };
+                    if !named {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn summarise(root: String, found: bool, events: &[&Event], now_ms: i64) -> RequestSummary {
     let kind = events[0].protocol.kind.clone();
     let last = events[events.len() - 1];
@@ -247,6 +299,9 @@ fn summarise(root: String, found: bool, events: &[&Event], now_ms: i64) -> Reque
         return done("missing_original", "you");
     }
     if events.iter().any(|e| e.protocol.kind != kind) {
+        return done("conflict", "you");
+    }
+    if out_of_turn(&kind, events) {
         return done("conflict", "you");
     }
 
@@ -426,7 +481,7 @@ mod tests {
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(vectors.ai_started_window_seconds, AI_STARTED_WINDOW_SECS);
-        assert_eq!(vectors.cases.len(), 32);
+        assert_eq!(vectors.cases.len(), 37);
         for case in &vectors.cases {
             let out = conversation_requests(&case.messages, &vectors.now);
             assert_eq!(out.unverified, case.expect.unverified, "{}", case.name);
