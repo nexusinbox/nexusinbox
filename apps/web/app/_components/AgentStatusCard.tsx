@@ -30,6 +30,7 @@ import type { Agent, AgentCredential, AgentDevice } from "../../lib/api/types";
 import { formatListTimestamp } from "../../lib/format/messageTime";
 import { useTranslation } from "../../lib/i18n";
 import { AgentDevices, connectedTheOldWay } from "./AgentDevices";
+import { needsReauth, ReauthNotice } from "./ReauthNotice";
 import { acknowledgeDevicesAfterConnect } from "../../lib/home/device-attention";
 import {
   AutoReplyPresetChoices,
@@ -354,15 +355,18 @@ function CloudAccess({
     setFailed(false);
   }, [agentId]);
 
+  const [reauth, setReauth] = useState(false);
   const apply = async (credentialId: string, enabled: boolean) => {
     setFailed(false);
+    setReauth(false);
     setMessage("");
     try {
       const out = await setCloudAccess.mutateAsync({ credentialId, enabled });
       setStage("idle");
       if (!enabled) setMessage(t("cloudAccess.turnedOff", { n: out.disconnected }));
-    } catch {
-      setFailed(true);
+    } catch (e) {
+      if (needsReauth(e)) setReauth(true);
+      else setFailed(true);
     }
   };
   const busy = setCloudAccess.isPending;
@@ -372,7 +376,11 @@ function CloudAccess({
     </p>
   );
   const done = message ? sub(message) : null;
-  const error = failed ? <ErrorLine>{t("cloudAccess.failed")}</ErrorLine> : null;
+  const error = reauth ? (
+    <ReauthNotice reason="readAccess" />
+  ) : failed ? (
+    <ErrorLine>{t("cloudAccess.failed")}</ErrorLine>
+  ) : null;
 
   if (status.kind === "unavailable") {
     // A computer connected the old way is not counted as running the agent;

@@ -60,6 +60,7 @@ export type AutoReplyExecutorApi = {
  * the reply, so the claim is kept rather than risk a duplicate.
  */
 export const MAX_REFUSED_SENDS = 3;
+export const MAX_CALENDAR_FAILURES = 3;
 
 function sendCertainlyFailed(error: unknown): boolean {
   if (error instanceof TypeError) return false; // fetch network failure
@@ -136,6 +137,12 @@ export type RunAutoReplyExecutorInput = {
    * controls (a block) must not drain this person's daily send budget.
    */
   refusals?: Map<string, number>;
+  /**
+   * Failed calendar checks per message, kept across passes: after
+   * MAX_CALENDAR_FAILURES the message is left to the person instead of
+   * asking Google again on every inbox change.
+   */
+  calendarFailures?: Map<string, number>;
   onProgress?: (event: AutoReplyExecutorEvent) => void;
 };
 
@@ -331,6 +338,10 @@ export async function runAutoReplyExecutor(
           | ScheduleProposePayload
           | undefined;
         const candidates = proposePayload?.candidates ?? [];
+        if ((input.calendarFailures?.get(entry.id) ?? 0) >= MAX_CALENDAR_FAILURES) {
+          progress({ kind: "skipped", messageId: entry.id, reason: "calendar_api_error" });
+          continue;
+        }
         try {
           const free = await input.calendarFreebusy(candidates);
           if (!free) {
@@ -347,6 +358,7 @@ export async function runAutoReplyExecutor(
           resolvedAction = "auto_accept";
           chosenScheduleCandidate = { start: free.start, end: free.end };
         } catch {
+          input.calendarFailures?.set(entry.id, (input.calendarFailures.get(entry.id) ?? 0) + 1);
           progress({
             kind: "skipped",
             messageId: entry.id,

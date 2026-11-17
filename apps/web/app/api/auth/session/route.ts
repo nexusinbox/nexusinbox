@@ -1,3 +1,4 @@
+import { CLIENT_IP_HEADER } from "../../../../lib/edge/client-ip";
 import { NextRequest, NextResponse } from "next/server";
 
 // Session state is per-user and per-request. A cached copy would leak
@@ -51,6 +52,7 @@ function clearSessionCookie(request: NextRequest): string {
 
 export async function GET(request: NextRequest) {
   const forwardedCookie = request.headers.get("cookie") ?? "";
+  const clientHeader = request.headers.get(CLIENT_IP_HEADER);
 
   let upstream: Response;
   try {
@@ -58,6 +60,8 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         cookie: forwardedCookie,
+        // Signed by the middleware: who the client is, for the API's rate limits.
+        ...(clientHeader ? { [CLIENT_IP_HEADER]: clientHeader } : {}),
       },
       cache: "no-store",
     });

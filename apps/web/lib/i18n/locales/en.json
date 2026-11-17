@@ -2284,5 +2284,12 @@
         }
       }
     }
+  },
+  "reauth": {
+    "title": "Confirm with World ID",
+    "readAccess": "This hands out access to read messages, so confirm with World ID again (good for 10 minutes).",
+    "readAccessReturn": "This hands out access to read messages, so confirm with World ID again. You come back to this page afterwards.",
+    "irreversible": "This cannot be undone, so confirm with World ID again (good for 10 minutes).",
+    "button": "Confirm with World ID"
   }
 }

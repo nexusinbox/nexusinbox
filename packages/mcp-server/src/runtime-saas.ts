@@ -434,11 +434,15 @@ async function sendViaClient(
   // message still goes out with the single sender copy.
   const senderDevices = await client
     .resolveRecipient(credential.did)
-    .then((me) =>
-      checkRecipient(me, credential.did, peersFile, (aid, after) =>
+    .then((me) => {
+      // This credential's own DID must resolve to its own agent: a server
+      // naming another one would get its devices a copy of every message
+      // (as the gateway's check_recipient requires).
+      if (me.aid !== credential.aid) throw new Error("own DID resolved to another agent");
+      return checkRecipient(me, credential.did, peersFile, (aid, after) =>
         client.deviceListHistory(aid, after).catch(() => null),
-      ),
-    )
+      );
+    })
     .then((me) => me.devices)
     .catch(() => undefined);
   const response = await client.sendTextMessage({

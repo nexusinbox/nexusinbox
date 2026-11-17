@@ -2284,5 +2284,12 @@
         }
       }
     }
+  },
+  "reauth": {
+    "title": "World ID で確かめてください",
+    "readAccess": "メッセージを読む権限を渡す操作なので、World ID でもう一度確かめます（確かめてから 10 分有効）。",
+    "readAccessReturn": "メッセージを読む権限を渡す操作なので、World ID でもう一度確かめます。確かめたあと、この画面に戻ります。",
+    "irreversible": "元に戻せない操作なので、World ID でもう一度確かめます（確かめてから 10 分有効）。",
+    "button": "World ID で確かめる"
   }
 }

@@ -853,3 +853,48 @@ async fn a_skipped_auto_reply_is_recorded_with_its_reason() {
             .unwrap();
     assert_eq!(claimed, None);
 }
+
+#[tokio::test]
+#[serial]
+async fn an_agent_claims_at_most_fifty_automatic_replies_a_day() {
+    skip_without_db!();
+    let app = common::test_app();
+    let pool = db_pool().await;
+    reset_schema(&pool).await;
+    let owner = seed_owner(&pool, "0xclaim-cap").await;
+    let agent = seed_agent(&pool, &owner, "capped", true).await;
+    let other = seed_agent(&pool, &owner, "other", true).await;
+    let token = seed_agent_token(&pool, &owner, &agent, &["messages.read", "messages.send"]).await;
+
+    for i in 0..50 {
+        let row = seed_pending_row(&pool, &owner, &format!("did:key:zsender{i}"), &agent).await;
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/messages/{row}/auto-reply-claim"),
+            &token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "claim {i}: {body}");
+    }
+    // The 51st request today is the person's.
+    let row = seed_pending_row(&pool, &owner, "did:key:zsender-late", &agent).await;
+    let claim = format!("/messages/{row}/auto-reply-claim");
+    assert_eq!(
+        call(&app, "POST", &claim, &token).await.0,
+        StatusCode::CONFLICT
+    );
+    // Another agent of the same person has its own fifty.
+    let row = seed_pending_row(&pool, &owner, "did:key:zsender-other", &other).await;
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/messages/{row}/auto-reply-claim"),
+            &owner.session
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+}

@@ -167,3 +167,22 @@ async fn one_ipv6_48_cannot_spread_over_its_64s_to_reach_the_global_budget() {
     // Another /48 is not held back by it.
     assert_eq!(status_from(&app, "2001:db8:bb::1").await, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn a_full_48_refuses_new_64s_before_they_take_a_table_entry() {
+    let app = common::test_app();
+    // Spend the /48 from ten /64s at their cap.
+    for net in 0..10u16 {
+        for host in 0..60u16 {
+            status_from(&app, &format!("2001:db8:cc:{net:x}::{:x}", host + 1)).await;
+        }
+    }
+    // Fresh /64s of the same /48 are refused, a fresh /48 is not.
+    for net in 100..110u16 {
+        assert_eq!(
+            status_from(&app, &format!("2001:db8:cc:{net:x}::1")).await,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+    assert_eq!(status_from(&app, "2001:db8:dd::1").await, StatusCode::OK);
+}

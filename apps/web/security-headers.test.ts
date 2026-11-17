@@ -124,13 +124,13 @@ describe("web security headers", () => {
     expect(csp).not.toContain("frame-ancestors 'none'");
   });
 
-  it("sets dynamic CSP + X-Frame-Options on /login (parent of the iframe)", () => {
+  it("sets dynamic CSP + X-Frame-Options on /login (parent of the iframe)", async () => {
     // middleware uses the module-level IS_DEV (NODE_ENV !== "production"),
     // so the exact `'unsafe-eval'` presence depends on how tests are run.
     // Eval vs. no-eval is exhaustively covered by the buildCsp unit
     // tests above — here we only pin the route-invariant shape.
     const request = new NextRequest("https://app.nexusinbox.ai/login");
-    const response = middleware(request);
+    const response = await middleware(request);
     const csp = response.headers.get("Content-Security-Policy");
     const xfo = response.headers.get("X-Frame-Options");
 
@@ -181,18 +181,43 @@ describe("web security headers", () => {
     }
   });
 
-  it("serves an agent's intro page (/to/<aid>) without a session, and nothing else under /to", () => {
-    const open = middleware(new NextRequest("https://app.nexusinbox.ai/to/aid%3Aai%3A01ABC"));
+  it("serves an agent's intro page (/to/<aid>) without a session, and nothing else under /to", async () => {
+    const open = await middleware(new NextRequest("https://app.nexusinbox.ai/to/aid%3Aai%3A01ABC"));
     expect(open.headers.get("location")).toBeNull();
     for (const path of ["/to", "/to/", "/to/aid%3Aai%3A01ABC/more", "/topics"]) {
-      const gated = middleware(new NextRequest("https://app.nexusinbox.ai" + path));
+      const gated = await middleware(new NextRequest("https://app.nexusinbox.ai" + path));
       expect(gated.headers.get("location"), path).toContain("/login?next=");
     }
   });
 
-  it("sets X-Frame-Options: SAMEORIGIN on /login/idkit", () => {
+  it("names the client to the API in a signed header, never the one the client sent", async () => {
+    const saved = process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY;
+    process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY = "0123456789abcdef0123456789abcdef";
+    try {
+      const request = new NextRequest("https://app.nexusinbox.ai/api/messages", {
+        headers: { "x-real-ip": "203.0.113.9", "x-nexusinbox-client": "198.51.100.1.1.forged" },
+      });
+      const response = await middleware(request);
+      const forwarded = response.headers.get("x-middleware-request-x-nexusinbox-client");
+      expect(forwarded).toMatch(/^203\.0\.113\.9\.\d+\.[A-Za-z0-9_-]+$/);
+      // No login redirect or page headers for API calls.
+      expect(response.headers.get("location")).toBeNull();
+      delete process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY;
+      const unsigned = await middleware(
+        new NextRequest("https://app.nexusinbox.ai/api/messages", {
+          headers: { "x-nexusinbox-client": "198.51.100.1.1.forged" },
+        }),
+      );
+      expect(unsigned.headers.get("x-middleware-request-x-nexusinbox-client")).toBeNull();
+    } finally {
+      if (saved === undefined) delete process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY;
+      else process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY = saved;
+    }
+  });
+
+  it("sets X-Frame-Options: SAMEORIGIN on /login/idkit", async () => {
     const request = new NextRequest("https://app.nexusinbox.ai/login/idkit");
-    const response = middleware(request);
+    const response = await middleware(request);
     const csp = response.headers.get("Content-Security-Policy");
     const xfo = response.headers.get("X-Frame-Options");
 

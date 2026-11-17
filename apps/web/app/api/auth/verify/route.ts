@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CLIENT_IP_HEADER } from "../../../../lib/edge/client-ip";
 
 const apiOrigin = process.env.API_ORIGIN ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:8080");
 if (!apiOrigin) {
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
   if (originHeader) forwardHeaders["origin"] = originHeader;
   const refererHeader = request.headers.get("referer");
   if (refererHeader) forwardHeaders["referer"] = refererHeader;
+  // Signed by the middleware: who the client is, for the API's rate limits.
+  const clientHeader = request.headers.get(CLIENT_IP_HEADER);
+  if (clientHeader) forwardHeaders[CLIENT_IP_HEADER] = clientHeader;
 
   const upstream = await fetch(`${apiOrigin}/auth/verify`, {
     method: "POST",

@@ -474,6 +474,8 @@ struct WorldVerifyItem {
     #[serde(default)]
     success: bool,
     nullifier: Option<String>,
+    /// The credential World checked this entry as.
+    identifier: Option<String>,
 }
 
 /// Whether World's answer covers the login being made (docs: POST
@@ -485,9 +487,12 @@ fn world_result_matches(result: &WorldVerifyResult, nullifier: &str, action: &st
     result.action.as_deref().is_none_or(|a| a == action)
         && result.nullifier.as_deref().is_none_or(same)
         && result.results.as_ref().is_none_or(|items| {
-            items
-                .iter()
-                .any(|i| i.success && i.nullifier.as_deref().is_some_and(same))
+            items.iter().any(|i| {
+                i.success
+                    && i.nullifier.as_deref().is_some_and(same)
+                    // The login takes the Orb credential only.
+                    && i.identifier.as_deref().is_none_or(|id| id == "orb")
+            })
         })
 }
 
@@ -4365,12 +4370,44 @@ fn trusted_client_ip_header() -> Option<String> {
     }
 }
 
+/// The address a request is counted against for rate limits. The web
+/// app's server (Vercel) reaches this API from a few shared addresses; it
+/// names the real client in a header it signs with a key only it and this
+/// API hold (audit run-6). Used for counting only: audit logs keep
+/// `extract_client_ip`, so the operator stores no more addresses than before.
+fn rate_limit_ip(headers: &HeaderMap) -> String {
+    std::env::var("NEXUSINBOX_EDGE_CLIENT_IP_KEY")
+        .ok()
+        .filter(|k| k.len() >= 32)
+        .and_then(|key| signed_edge_client_ip(headers, key.as_bytes(), Utc::now().timestamp()))
+        .unwrap_or_else(|| extract_client_ip(headers))
+}
+
 fn extract_client_ip(headers: &HeaderMap) -> String {
     client_ip_from_headers(
         headers,
         trusted_client_ip_header().as_deref(),
         is_production_env(),
     )
+}
+
+/// `x-nexusinbox-client: <ip>.<unix seconds>.<base64url HMAC-SHA256 of
+/// "<ip>.<unix seconds>">`, signed with the shared key and at most a minute
+/// old. The address is counted like any other (`ip_source`).
+fn signed_edge_client_ip(headers: &HeaderMap, key: &[u8], now: i64) -> Option<String> {
+    use hmac::{Hmac, Mac};
+    let value = headers.get("x-nexusinbox-client")?.to_str().ok()?;
+    let (signed, mac) = value.rsplit_once('.')?;
+    let (ip, ts) = signed.rsplit_once('.')?;
+    let ts: i64 = ts.parse().ok()?;
+    if (now - ts).abs() > 60 {
+        return None;
+    }
+    let mac = URL_SAFE_NO_PAD.decode(mac).ok()?;
+    let mut expected = Hmac::<Sha256>::new_from_slice(key).ok()?;
+    expected.update(signed.as_bytes());
+    expected.verify_slice(&mac).ok()?;
+    ip.parse::<std::net::IpAddr>().ok().map(ip_source)
 }
 
 /// Pure core of [`extract_client_ip`], split out so tests can exercise the
@@ -4445,6 +4482,19 @@ fn client_ip_from_headers(
     header_ip(headers, "x-real-ip").unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Whether `caller` has budget left this window, without spending any or
+/// adding an entry.
+fn caller_budget_left(state: &AppState, caller: &str, limit: u64) -> bool {
+    let now = Utc::now().timestamp();
+    let budgets = state
+        .caller_budgets
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    budgets.get(caller).is_none_or(|b| {
+        now - b.window_started_at >= PER_IP_RATE_LIMIT_WINDOW_SECS as i64 || b.count < limit
+    })
+}
+
 fn consume_caller_rate_limit(state: &AppState, caller: &str, limit: u64) -> bool {
     let now = Utc::now().timestamp();
     let mut budgets = state
@@ -4492,7 +4542,7 @@ fn rate_limit_caller(headers: &HeaderMap) -> (String, u64, &'static str) {
         }
     }
     (
-        format!("ip:{}", extract_client_ip(headers)),
+        format!("ip:{}", rate_limit_ip(headers)),
         PER_IP_RATE_LIMIT_REQUESTS,
         "too many requests from this IP in current window",
     )
@@ -4516,19 +4566,20 @@ async fn enforce_request_rate_limit(
     // first, one client sending faster than its own cap drained the shared
     // budget and 429'd every other caller on the machine (review 2026-11-07).
     let (caller, limit, message) = rate_limit_caller(request.headers());
-    // Its own /64 first, then the /48 it lies in, so a /64 over its cap
-    // does not use up the /48 its neighbours share.
-    let within = consume_caller_rate_limit(&state, &caller, limit)
-        && caller
-            .strip_prefix("ip:")
-            .and_then(ipv6_slash48)
-            .is_none_or(|net| {
-                consume_caller_rate_limit(
-                    &state,
-                    &format!("ip48:{net}"),
-                    PER_IPV6_48_RATE_LIMIT_REQUESTS,
-                )
-            });
+    // A full /48 refuses before its /64s get entries (so one /48 cannot fill
+    // the table with fresh /64s); then the /64's own cap, then the /48 is
+    // spent, so a /64 over its cap does not use up its neighbours' share.
+    let net48 = caller
+        .strip_prefix("ip:")
+        .and_then(ipv6_slash48)
+        .map(|net| format!("ip48:{net}"));
+    let within = net48
+        .as_deref()
+        .is_none_or(|key| caller_budget_left(&state, key, PER_IPV6_48_RATE_LIMIT_REQUESTS))
+        && consume_caller_rate_limit(&state, &caller, limit)
+        && net48.as_deref().is_none_or(|key| {
+            consume_caller_rate_limit(&state, key, PER_IPV6_48_RATE_LIMIT_REQUESTS)
+        });
     if !within {
         return (
             StatusCode::TOO_MANY_REQUESTS,
@@ -8056,6 +8107,13 @@ async fn delete_agent(
     }
 
     if let Some(pool) = maybe_pool {
+        require_recent_sign_in(
+            &state,
+            &headers,
+            &pool,
+            "sign in with World ID again to delete an agent",
+        )
+        .await?;
         let user_uuid = parse_user_uuid(&user_id)?;
         let result = sqlx::query("DELETE FROM agents WHERE id = $1 AND user_id = $2")
             .bind(agent_id)
@@ -8757,6 +8815,23 @@ async fn session_is_recent(
     .await
     .map_err(|e| internal_error("failed to look up session", e))?;
     Ok(recent == Some(true))
+}
+
+/// Refuse a human request unless its World ID sign-in is recent (the same
+/// 10 minutes as changing who may sign a device list): for handing out
+/// read access to messages and for what cannot be undone (audit run-6).
+async fn require_recent_sign_in(
+    state: &AppState,
+    headers: &HeaderMap,
+    pool: &PgPool,
+    message: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let claims = authenticated_claims(state, headers).await?;
+    if session_is_recent(pool, &claims, SIGNER_CHANGE_REAUTH_SECS).await? {
+        Ok(())
+    } else {
+        Err(reauthentication_required(message))
+    }
 }
 
 fn reauthentication_required(message: &str) -> (StatusCode, Json<ErrorResponse>) {
@@ -9814,7 +9889,7 @@ async fn public_agent_profile(
     headers: HeaderMap,
     Path(aid): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let client_ip = extract_client_ip(&headers);
+    let client_ip = rate_limit_ip(&headers);
     if !consume_keyed_budget(
         &state.public_agent_ip_budgets,
         &client_ip,
@@ -9871,10 +9946,9 @@ async fn resolve_pairing_code(
     headers: HeaderMap,
     JsonBody(payload): JsonBody<ResolvePairingRequest>,
 ) -> Result<Json<ResolvePairingResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let client_ip = extract_client_ip(&headers);
     if !consume_keyed_budget(
         &state.pairing_ip_budgets,
-        &format!("agent-pairing:ip:{client_ip}"),
+        &format!("agent-pairing:ip:{}", rate_limit_ip(&headers)),
         PAIRING_RESOLVE_LIMIT_PER_IP,
         PAIRING_RESOLVE_WINDOW_SECS,
     ) {
@@ -12168,7 +12242,7 @@ async fn revoke_refresh_family_for_reuse(
         r#"
         UPDATE agent_credentials
         SET status = 'compromised', revoked_at = NOW()
-        WHERE id = $1 AND status != 'compromised'
+        WHERE id = $1 AND status = 'active'
         "#,
     )
     .bind(credential_id)
@@ -12433,6 +12507,20 @@ async fn agent_auth_refresh(
     .map_err(|e| internal_error("failed to revoke old token", e))?;
 
     if revoked.is_none() {
+        // Revoked between the lookup and here. An owner's revoke, rotation or
+        // emergency stop leaves the credential no longer active: refuse
+        // plainly. Only a credential still active (a concurrent refresh of
+        // the same token) is taken as reuse.
+        let still_active: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM agent_credentials WHERE id = $1 AND status = 'active')",
+        )
+        .bind(credential_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| internal_error("credential lookup failed", e))?;
+        if !still_active {
+            return Err(unauthorized_error("agent credential is not active"));
+        }
         return Err(revoke_refresh_family_for_reuse(
             &pool,
             credential_id,
@@ -16601,6 +16689,9 @@ async fn auto_reply_claim_target(
     Ok((pool, user_uuid, ctx))
 }
 
+/// Automatic replies one agent may make in a UTC day (docs/25 §7.2).
+const AUTO_REPLY_DAILY_CAP_PER_AGENT: i64 = 50;
+
 /// POST /messages/{id}/auto-reply-claim
 ///
 /// Takes the row before an executor sends an auto-reply, so two executors
@@ -16618,19 +16709,38 @@ async fn claim_auto_reply(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let (pool, user_uuid, _) =
         auto_reply_claim_target(&state, &method, &uri, &headers, message_id).await?;
+    // At most AUTO_REPLY_DAILY_CAP_PER_AGENT automatic replies a UTC day per
+    // agent (docs/25 §7.2): requests from others cannot spend the person's
+    // whole send budget through it. Past that, the message is the person's.
     let claimed = sqlx::query(
-        "UPDATE message_index SET auto_reply_claimed_at = NOW() \
+        "WITH target AS ( \
+           SELECT recipient_did FROM message_index WHERE id = $1 AND owner_user_id = $2 \
+         ), agent_dids AS ( \
+           SELECT k.did FROM agent_identity_keys k \
+           WHERE k.aid = (SELECT aid FROM agent_identity_keys \
+                          WHERE did = (SELECT recipient_did FROM target) LIMIT 1) \
+           UNION SELECT recipient_did FROM target \
+         ) \
+         UPDATE message_index SET auto_reply_claimed_at = NOW() \
          WHERE id = $1 AND owner_user_id = $2 \
-           AND auto_reply_sent_at IS NULL AND auto_reply_claimed_at IS NULL",
+           AND auto_reply_sent_at IS NULL AND auto_reply_claimed_at IS NULL \
+           AND (SELECT COUNT(*) FROM message_index m \
+                WHERE m.owner_user_id = $2 \
+                  AND m.recipient_did IN (SELECT did FROM agent_dids) \
+                  AND m.auto_reply_claimed_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' \
+               ) < $3",
     )
     .bind(message_id)
     .bind(user_uuid)
+    .bind(AUTO_REPLY_DAILY_CAP_PER_AGENT)
     .execute(&pool)
     .await
     .map_err(|e| internal_error("failed to claim auto-reply", e))?
     .rows_affected();
     if claimed == 0 {
-        return Err(conflict_error("auto-reply already claimed or sent"));
+        return Err(conflict_error(
+            "auto-reply already claimed or sent, or this agent's automatic replies for today are used up",
+        ));
     }
     Ok(Json(serde_json::json!({ "claimed": true })))
 }
@@ -17761,12 +17871,62 @@ mod internal_tests {
             r#"{"success":true,"results":[{"success":false,"nullifier":"0xab"},{"success":true,"nullifier":"0xcd"}]}"#,
         );
         assert!(!world_result_matches(&failed, "0xab", "login"));
+        // Verified as another credential than the Orb.
+        let device = answer(
+            r#"{"success":true,"results":[{"identifier":"device","success":true,"nullifier":"0xab"}]}"#,
+        );
+        assert!(!world_result_matches(&device, "0xab", "login"));
         // Fields World leaves out are not held against it.
         assert!(world_result_matches(
             &answer(r#"{"success":true}"#),
             "0xab",
             "login"
         ));
+    }
+
+    #[test]
+    fn the_web_servers_signed_client_address_is_used_only_when_it_checks_out() {
+        use hmac::{Hmac, Mac};
+        let key = b"0123456789abcdef0123456789abcdef";
+        let sign = |ip: &str, ts: i64, key: &[u8]| {
+            let signed = format!("{ip}.{ts}");
+            let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+            mac.update(signed.as_bytes());
+            format!(
+                "{signed}.{}",
+                URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+            )
+        };
+        let with = |v: String| headers_with(&[("x-nexusinbox-client", v.as_str())]);
+        let now = 1_800_000_000;
+        assert_eq!(
+            signed_edge_client_ip(&with(sign("203.0.113.9", now, key)), key, now).as_deref(),
+            Some("203.0.113.9")
+        );
+        assert_eq!(
+            signed_edge_client_ip(&with(sign("2001:db8:1:2::9", now, key)), key, now).as_deref(),
+            Some("2001:db8:1:2::/64")
+        );
+        // Another key, too old, or the address changed after signing.
+        assert_eq!(
+            signed_edge_client_ip(
+                &with(sign(
+                    "203.0.113.9",
+                    now,
+                    b"another key of thirty-two bytes!"
+                )),
+                key,
+                now
+            ),
+            None
+        );
+        assert_eq!(
+            signed_edge_client_ip(&with(sign("203.0.113.9", now - 120, key)), key, now),
+            None
+        );
+        let forged = sign("203.0.113.9", now, key).replacen("203.0.113.9", "198.51.100.1", 1);
+        assert_eq!(signed_edge_client_ip(&with(forged), key, now), None);
+        assert_eq!(signed_edge_client_ip(&HeaderMap::new(), key, now), None);
     }
 
     #[test]

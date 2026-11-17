@@ -85,6 +85,9 @@ describe("pickFirstFreeCandidate", () => {
   });
 });
 
+// The slots below are in May 2026; "now" is just before them.
+const NOW = Date.parse("2026-04-30T00:00:00Z");
+
 describe("findFirstFreeCandidate — API shape", () => {
   it("sends freebusy POST and picks free candidate on 200", async () => {
     const fetcher: FreebusyFetcher = vi.fn(async () => ({
@@ -102,7 +105,7 @@ describe("findFirstFreeCandidate — API shape", () => {
       c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z"),
       c("2026-05-01T11:00:00Z", "2026-05-01T12:00:00Z"),
     ];
-    const free = await findFirstFreeCandidate(candidates, "tok-abc", fetcher);
+    const free = await findFirstFreeCandidate(candidates, "tok-abc", fetcher, NOW);
     expect(free?.start).toBe("2026-05-01T11:00:00Z");
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url, init] = (fetcher as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -130,6 +133,7 @@ describe("findFirstFreeCandidate — API shape", () => {
       [c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z")],
       "tok",
       fetcher,
+        NOW,
     );
     expect(free).toBeNull();
   });
@@ -145,6 +149,7 @@ describe("findFirstFreeCandidate — API shape", () => {
         [c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z")],
         "bad-tok",
         fetcher,
+        NOW,
       ),
     ).rejects.toThrow(/401/);
   });
@@ -157,8 +162,20 @@ describe("findFirstFreeCandidate — API shape", () => {
   ])("throws rather than call a slot free when %s", async (_, body) => {
     const fetcher: FreebusyFetcher = async () => ({ ok: true, status: 200, body: JSON.stringify(body) });
     await expect(
-      findFirstFreeCandidate([c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z")], "tok", fetcher),
+      findFirstFreeCandidate([c("2026-05-01T09:00:00Z", "2026-05-01T10:00:00Z")], "tok", fetcher, NOW),
     ).rejects.toThrow(/freebusy/);
+  });
+
+  it("sends no slot the sender put far off, reversed or too long", async () => {
+    const fetcher: FreebusyFetcher = vi.fn();
+    const odd = [
+      c("9999-12-31T09:00:00-12:00", "9999-12-31T10:00:00-12:00"),
+      c("2026-05-01T10:00:00Z", "2026-05-01T09:00:00Z"),
+      c("2026-05-01T09:00:00Z", "2026-05-03T09:00:00Z"),
+      c("2026-01-01T09:00:00Z", "2026-01-01T10:00:00Z"),
+    ];
+    expect(await findFirstFreeCandidate(odd, "tok", fetcher, NOW)).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("returns null for empty candidate list without calling API", async () => {

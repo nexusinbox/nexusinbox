@@ -855,6 +855,15 @@ pub(crate) async fn set_cloud_access(
     if payload.enabled && relay_ticket_key().is_none() {
         return Err(relay_unavailable());
     }
+    if payload.enabled {
+        require_recent_sign_in(
+            &state,
+            &headers,
+            &pool,
+            "sign in with World ID again to let cloud AIs reach this agent",
+        )
+        .await?;
+    }
     let aid: String = sqlx::query_scalar(
         "UPDATE agent_credentials SET \
            cloud_access_enabled_at = CASE WHEN $3 THEN COALESCE(cloud_access_enabled_at, NOW()) ELSE NULL END, \
@@ -1065,6 +1074,13 @@ pub(crate) async fn authorize_decide(
             "redirect_to": with_query(&checked.redirect_uri, &denied),
         })));
     }
+    require_recent_sign_in(
+        &state,
+        &headers,
+        &pool,
+        "sign in with World ID again to let this app read messages",
+    )
+    .await?;
 
     let mut tx = pool
         .begin()

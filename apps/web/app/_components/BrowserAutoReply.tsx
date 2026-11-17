@@ -25,6 +25,8 @@ import { answeredReplies } from "../../lib/protocol/answered";
 
 // Refused automatic replies per message, for the page's life.
 const refusedReplies = new Map<string, number>();
+// Failed calendar checks per message, for the page's life.
+const calendarFailures = new Map<string, number>();
 
 export function BrowserAutoReply({ agent, deviceDid }: { agent: Agent; deviceDid: string }) {
   const currentAgent = agent;
@@ -103,6 +105,7 @@ export function BrowserAutoReply({ agent, deviceDid }: { agent: Agent; deviceDid
           checkSender: (content) => checkReceived(content, [agent]),
           answered: answeredReplies,
           refusals: refusedReplies,
+          calendarFailures,
           sendProtocolReply: (input) =>
             realSendProtocolReply({
               protocolType: input.protocolType,

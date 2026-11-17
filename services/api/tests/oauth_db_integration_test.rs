@@ -1127,3 +1127,84 @@ async fn public_agent_pages_show_only_shared_agents() {
     let (status, _) = call(&app, "GET", &page, "", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+#[serial]
+async fn handing_out_read_access_or_deleting_an_agent_needs_a_recent_sign_in() {
+    let pool = db!();
+    let s = setup(pool, "0xoauth-reauth", 0x6a).await;
+    let chal = challenge(VERIFIER);
+    let mut body: serde_json::Map<String, Value> = authorize_params(&s, &chal)
+        .iter()
+        .map(|(k, v)| (k.to_string(), json!(v)))
+        .collect();
+    body.insert("approve".into(), json!(true));
+
+    // A session signed in 20 minutes ago (a browser left signed in).
+    sqlx::query("UPDATE sessions SET issued_at = NOW() - INTERVAL '20 minutes' WHERE user_id = $1")
+        .bind(s.me.user_id)
+        .execute(&s.pool)
+        .await
+        .unwrap();
+    let (status, out) = call(
+        &s.app,
+        "POST",
+        "/oauth/authorize",
+        &s.me.auth,
+        Some(Value::Object(body.clone())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{out}");
+    assert_eq!(out["error"], "reauthentication_required");
+    // Saying no needs nothing more.
+    let mut deny = body.clone();
+    deny.insert("approve".into(), json!(false));
+    let (status, _) = call(
+        &s.app,
+        "POST",
+        "/oauth/authorize",
+        &s.me.auth,
+        Some(Value::Object(deny)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let agent_id: Uuid = sqlx::query_scalar("SELECT id FROM agents WHERE user_id = $1")
+        .bind(s.me.user_id)
+        .fetch_one(&s.pool)
+        .await
+        .unwrap();
+    let (status, out) = call(
+        &s.app,
+        "DELETE",
+        &format!("/agents/{agent_id}"),
+        &s.me.auth,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{out}");
+
+    // Signed in again just now: both go through.
+    sqlx::query("UPDATE sessions SET issued_at = NOW() WHERE user_id = $1")
+        .bind(s.me.user_id)
+        .execute(&s.pool)
+        .await
+        .unwrap();
+    let (status, out) = call(
+        &s.app,
+        "POST",
+        "/oauth/authorize",
+        &s.me.auth,
+        Some(Value::Object(body)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    let (status, _) = call(
+        &s.app,
+        "DELETE",
+        &format!("/agents/{agent_id}"),
+        &s.me.auth,
+        None,
+    )
+    .await;
+    assert!(status.is_success());
+}

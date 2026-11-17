@@ -6,6 +6,7 @@
 // the server and this browser's keys (lib/onboarding/flow.ts). Only AI
 // tools checked end to end can be chosen (docs/41 §5.2.1).
 
+import { needsReauth, ReauthNotice } from "../_components/ReauthNotice";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -410,6 +411,7 @@ function ConnectStep({
   const grantsQuery = useOAuthGrantsQuery({ refetchInterval: CONNECT_POLL_MS });
   const setCloudAccess = useSetCloudAccessMutation();
   const [cloudFailed, setCloudFailed] = useState(false);
+  const [cloudReauth, setCloudReauth] = useState(false);
   const now = useNow(CONNECT_POLL_MS);
 
   const credentials: AgentCredential[] = credentialsQuery.data?.credentials ?? [];
@@ -422,10 +424,12 @@ function ConnectStep({
 
   const turnOn = async (credentialId: string) => {
     setCloudFailed(false);
+    setCloudReauth(false);
     try {
       await setCloudAccess.mutateAsync({ credentialId, enabled: true });
-    } catch {
-      setCloudFailed(true);
+    } catch (e) {
+      if (needsReauth(e)) setCloudReauth(true);
+      else setCloudFailed(true);
     }
   };
 
@@ -472,7 +476,8 @@ function ConnectStep({
               >
                 {t("firstRun.connect2.cloudTurnOn")}
               </button>
-              {cloudFailed ? <ErrorLine>{t("firstRun.connect2.cloudFailed")}</ErrorLine> : null}
+              {cloudReauth ? <ReauthNotice reason="readAccess" /> : null}
+            {cloudFailed ? <ErrorLine>{t("firstRun.connect2.cloudFailed")}</ErrorLine> : null}
             </>
           ) : cloud.kind === "preparing" ? (
             <span className="item-sub">{t("firstRun.connect2.cloudPreparing")}</span>

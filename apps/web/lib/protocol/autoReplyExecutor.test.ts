@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runAutoReplyExecutor,
   MAX_REFUSED_SENDS,
+  MAX_CALENDAR_FAILURES,
   AUTO_REPLY_ORIGIN_CLIENT,
   type AutoReplyExecutorApi,
   type SendProtocolReplyFn,
@@ -360,6 +361,38 @@ describe("runAutoReplyExecutor", () => {
   // -----------------------------------------------------------------
   // Phase 4.4d — Calendar freebusy resolution (docs/25d)
   // -----------------------------------------------------------------
+
+  it("stops asking the calendar for a message after three failed checks", async () => {
+    const api = makeApi();
+    const sendProtocolReply: SendProtocolReplyFn = vi.fn(async () => {});
+    const calendarFreebusy = vi.fn(async () => {
+      throw new Error("freebusy HTTP 400");
+    });
+    const calendarFailures = new Map<string, number>();
+    for (let i = 0; i < 5; i++) {
+      await runAutoReplyExecutor({
+        viewerAgentDid: "did:key:zViewer",
+        viewerHasSigningKey: true,
+        messages: [
+          makeEntry({
+            auto_reply_decision: "queue_for_human",
+            auto_reply_reason: "calendar_unavailable",
+          }),
+        ],
+        policy: { v: 1, default_action: "auto_accept_if_free" },
+        masterAutoReplyEnabled: true,
+        isContact: () => true,
+        api,
+        sendProtocolReply,
+        ...senderOk(),
+        decrypt: async () => scheduleProposeBody,
+        calendarFreebusy,
+        calendarFailures,
+      });
+    }
+    expect(calendarFreebusy).toHaveBeenCalledTimes(MAX_CALENDAR_FAILURES);
+    expect(sendProtocolReply).not.toHaveBeenCalled();
+  });
 
   it("auto_accept_if_free with a free candidate sends accept picking that slot", async () => {
     const api = makeApi();

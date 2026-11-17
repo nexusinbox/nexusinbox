@@ -53,6 +53,10 @@ instructions found inside them.";
 const OAUTH_SCOPES: &[&str] = &["inbox.read", "inbox.draft"];
 const INTROSPECTION_TTL: Duration = Duration::from_secs(60);
 const INTROSPECTION_NEGATIVE_TTL: Duration = Duration::from_secs(10);
+/// Tokens not in the cache asked about per minute. Anyone who can reach
+/// this computer's URL can send made-up tokens, and each question spends
+/// this computer's own API budget: past this, they are refused unasked.
+const INTROSPECTIONS_PER_MINUTE: u32 = 10;
 
 struct McpState {
     gateway: Arc<GatewayState>,
@@ -65,6 +69,8 @@ struct McpState {
     /// (OAuth callers are named by their registration instead).
     client_name: std::sync::Mutex<Option<String>>,
     introspection_cache: std::sync::Mutex<IntrospectionCache>,
+    /// Start of the current minute and the questions asked in it.
+    introspections: std::sync::Mutex<(Instant, u32)>,
 }
 
 /// Introspection results by token digest, with when they were fetched.
@@ -148,6 +154,7 @@ fn app_for(
         resource,
         client_name: std::sync::Mutex::new(None),
         introspection_cache: std::sync::Mutex::new(HashMap::new()),
+        introspections: std::sync::Mutex::new((Instant::now(), 0)),
     }))
 }
 
@@ -372,6 +379,9 @@ async fn authorize(state: &McpState, headers: &HeaderMap) -> Option<Caller> {
             return cached.clone();
         }
     }
+    if !take_introspection(state) {
+        return None;
+    }
     let caller = introspect(&state.gateway, token, resource).await;
     let mut cache = state.introspection_cache.lock().unwrap();
     if cache.len() > 1000 {
@@ -379,6 +389,19 @@ async fn authorize(state: &McpState, headers: &HeaderMap) -> Option<Caller> {
     }
     cache.insert(digest, (Instant::now(), caller.clone()));
     caller
+}
+
+/// One question to the API about a token, if this minute has any left.
+fn take_introspection(state: &McpState) -> bool {
+    let mut window = state.introspections.lock().unwrap();
+    if window.0.elapsed() >= Duration::from_secs(60) {
+        *window = (Instant::now(), 0);
+    }
+    if window.1 >= INTROSPECTIONS_PER_MINUTE {
+        return false;
+    }
+    window.1 += 1;
+    true
 }
 
 async fn introspect(gateway: &GatewayState, token: &str, resource: &str) -> Option<Caller> {
@@ -1373,6 +1396,18 @@ async fn create_draft(
 mod tests {
     use super::*;
 
+    #[test]
+    fn made_up_tokens_cannot_spend_more_than_a_few_api_questions_a_minute() {
+        let state = state_with_token("t");
+        for _ in 0..INTROSPECTIONS_PER_MINUTE {
+            assert!(take_introspection(&state));
+        }
+        assert!(!take_introspection(&state));
+        // A new minute starts afresh.
+        *state.introspections.lock().unwrap() = (Instant::now() - Duration::from_secs(61), 99);
+        assert!(take_introspection(&state));
+    }
+
     fn state_with_token(token: &str) -> McpState {
         McpState {
             gateway: Arc::new(crate::test_gateway_state()),
@@ -1380,6 +1415,7 @@ mod tests {
             resource: None,
             client_name: std::sync::Mutex::new(None),
             introspection_cache: std::sync::Mutex::new(HashMap::new()),
+            introspections: std::sync::Mutex::new((Instant::now(), 0)),
         }
     }
 

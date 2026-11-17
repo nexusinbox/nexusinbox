@@ -74,11 +74,33 @@ const defaultFetcher: FreebusyFetcher = async (url, init) => {
  * Throws on network / auth / quota errors so the executor can
  * distinguish "all busy" from "couldn't check" in its audit reason.
  */
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** How far ahead a slot may be: two years. */
+const MAX_AHEAD_MS = 2 * 365 * DAY_MS;
+/** How long one slot may be: a day. */
+const MAX_SLOT_MS = DAY_MS;
+
 export async function findFirstFreeCandidate(
   candidates: readonly IsoInterval[],
   accessToken: string,
   fetcher: FreebusyFetcher = defaultFetcher,
+  now: number = Date.now(),
 ): Promise<IsoInterval | null> {
+  // Only slots in the window a meeting can sensibly be in: the sender
+  // chooses these, and far-off or reversed times are never accepted
+  // automatically (nor sent to Google).
+  candidates = candidates.filter((c) => {
+    const start = Date.parse(c.start);
+    const end = Date.parse(c.end);
+    return (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end > start &&
+      end - start <= MAX_SLOT_MS &&
+      start >= now - DAY_MS &&
+      start <= now + MAX_AHEAD_MS
+    );
+  });
   if (candidates.length === 0) return null;
 
   const times = candidates

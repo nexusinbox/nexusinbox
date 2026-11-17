@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { CLIENT_IP_HEADER, signedClientIp, vercelClientIp } from "./lib/edge/client-ip";
 
 const AUTH_COOKIE_NAME = "nexusinbox_session";
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -248,8 +249,22 @@ function generateNonce(): string {
   return btoa(bin);
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  // Calls to the API (rewritten to it, or forwarded by /api/auth/*): name
+  // the client in a signed header; never pass on one the client sent.
+  if (pathname.startsWith("/api/")) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete(CLIENT_IP_HEADER);
+    const signed = await signedClientIp(
+      vercelClientIp(request.headers),
+      process.env.NEXUSINBOX_EDGE_CLIENT_IP_KEY,
+    );
+    if (signed) requestHeaders.set(CLIENT_IP_HEADER, signed);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   const sessionValue = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
   // Mint a fresh nonce for every request and thread it through request
@@ -306,6 +321,7 @@ export const config = {
   // Run middleware on every page navigation AND every static asset request,
   // except for Next internals that must never be rewritten.
   matcher: [
+    "/api/:path*",
     {
       source:
         "/((?!api|_next/static|_next/image|favicon.ico|icon.svg).*)",

@@ -8,6 +8,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { defaultApiClient } from "../../../lib/api/client";
+import { needsReauth, ReauthNotice } from "../../_components/ReauthNotice";
 import type { OAuthAuthorizeInfo } from "../../../lib/api/types";
 import { useTranslation } from "../../../lib/i18n";
 
@@ -53,6 +54,7 @@ function Consent() {
   const [info, setInfo] = useState<OAuthAuthorizeInfo | null>(null);
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [reauth, setReauth] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +77,8 @@ function Consent() {
       const { redirect_to } = await defaultApiClient.oauthAuthorizeDecide(params, approve);
       window.location.assign(redirect_to);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (needsReauth(e)) setReauth(true);
+      else setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   };
@@ -155,6 +158,7 @@ function Consent() {
           {t("oauthConsent.deny")}
         </button>
       </div>
+      {reauth ? <ReauthNotice reason="readAccessReturn" /> : null}
     </div>
   );
 }

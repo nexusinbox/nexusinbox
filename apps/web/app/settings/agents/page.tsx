@@ -7,6 +7,7 @@ import { RefreshIconButton } from "../../_components/RefreshIconButton";
 import { AutoReplyPolicyPanel } from "../../_components/AutoReplyPolicyPanel";
 import { AgentStatusCard, AgentStatusLine, useNow } from "../../_components/AgentStatusCard";
 import { CommandLine } from "../../_components/AgentSetup";
+import { needsReauth, ReauthNotice } from "../../_components/ReauthNotice";
 import {
   useAgentCredentialsQuery,
   useAgentsQuery,
@@ -588,6 +589,7 @@ export default function AgentsSettingsPage() {
   const agentsQuery = useAgentsQuery();
   const updateAgent = useUpdateAgentMutation();
   const deleteAgent = useDeleteAgentMutation();
+  const [deleteReauth, setDeleteReauth] = useState(false);
   const credentialsQuery = useAgentCredentialsQuery();
   const now = useNow(15_000);
   // Below the profile: the status card, or everything else.
@@ -710,9 +712,15 @@ export default function AgentsSettingsPage() {
     try {
       await deleteAgent.mutateAsync(activeAgent.id);
       setActiveDid("");
+      setDeleteReauth(false);
       setBanner({ tone: "success", text: t("agents.bannerDeleted") });
-    } catch {
-      setBanner({ tone: "error", text: t("agents.bannerDeleteFailed") });
+    } catch (e) {
+      if (needsReauth(e)) {
+        setBanner(null);
+        setDeleteReauth(true);
+      } else {
+        setBanner({ tone: "error", text: t("agents.bannerDeleteFailed") });
+      }
     }
   };
 
@@ -952,6 +960,7 @@ export default function AgentsSettingsPage() {
               </header>
 
               <div className="reader-body ap-body">
+                {deleteReauth ? <ReauthNotice reason="irreversible" /> : null}
                 {banner ? (
                   <p className={bannerClass} style={{ marginBottom: 12 }}>
                     {banner.text}
