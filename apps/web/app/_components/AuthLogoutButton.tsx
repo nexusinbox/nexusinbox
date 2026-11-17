@@ -1,18 +1,18 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useAuthLogoutMutation } from "../../lib/api/hooks";
 
 export function AuthLogoutButton() {
-  const router = useRouter();
   const logout = useAuthLogoutMutation();
 
   const handleLogout = async () => {
     try {
       await logout.mutateAsync();
     } finally {
-      router.replace("/login");
-      router.refresh();
+      // A full navigation: a client replace followed by refresh() re-read the
+      // page being left without its session, and the middleware sent it to
+      // /login?next=… instead. This also drops everything held in memory.
+      window.location.replace("/login");
     }
   };
 

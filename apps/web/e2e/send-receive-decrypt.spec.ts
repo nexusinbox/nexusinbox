@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { makeFutureSessionJwt } from "./_helpers/auth";
+import { seedAuthSessionCookie } from "./_helpers/auth";
 import { mockNexusInboxBackend } from "./_helpers/mocks";
 
 // Integrated smoke flow that exercises the in-browser key-generation
@@ -29,7 +29,28 @@ type AgentRecord = {
   auto_reply: boolean;
   unread_count: number;
   created_at: string;
+  /** The root browser only, until its signed list names more (docs/40). */
+  devices: { did: string; encryption_public_key: string; kind: "browser"; activated_at: string }[];
+  device_list: { version: number; jws: string } | null;
 };
+
+/** did:key of an Ed25519 public key (base64url), as the API derives it. */
+function didFromPublicKey(publicKeyB64Url: string): string {
+  const raw = Buffer.from(publicKeyB64Url, "base64url");
+  const bytes = Buffer.concat([Buffer.from([0xed, 0x01]), raw]);
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = BigInt(`0x${bytes.toString("hex")}`);
+  let out = "";
+  while (n > 0n) {
+    out = alphabet[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = `1${out}`;
+  }
+  return `did:key:z${out}`;
+}
 
 type MessageRecord = {
   id: string;
@@ -46,10 +67,6 @@ type MessageRecord = {
   thread_id: string | null;
 };
 
-function makeDid(index: number): string {
-  return `did:key:zE2E${String(index).padStart(6, "0")}`;
-}
-
 function makeAid(index: number): string {
   return `aid:ai:01E2ESEED${String(index).padStart(7, "0")}`;
 }
@@ -60,6 +77,8 @@ function makeMessageId(index: number): string {
 
 test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   page,
+  context,
+  baseURL,
 }) => {
   // Force JA locale so the navigation/button labels we click below
   // ("作成", "送信", "受信トレイ") match the rendered UI.
@@ -96,7 +115,7 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
         encryption_key: string;
       };
       const id = makeMessageId(agentSeq);
-      const did = makeDid(agentSeq);
+      const did = didFromPublicKey(payload.public_key);
       const aid = makeAid(agentSeq);
       agentSeq += 1;
 
@@ -111,6 +130,15 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
         auto_reply: false,
         unread_count: 0,
         created_at: new Date().toISOString(),
+        devices: [
+          {
+            did,
+            encryption_public_key: payload.encryption_key,
+            kind: "browser",
+            activated_at: new Date().toISOString(),
+          },
+        ],
+        device_list: null,
       });
 
       await route.fulfill({
@@ -122,6 +150,22 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
     }
 
     await route.fallback();
+  });
+
+  // The browser signs each agent's first device list (Home's upkeep).
+  await page.route("**/api/agents/*/device-list", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    const id = new URL(route.request().url()).pathname.split("/")[3];
+    const agent = agents.find((a) => a.id === id);
+    const { jws } = route.request().postDataJSON() as { jws: string };
+    const payload = JSON.parse(Buffer.from(jws.split(".")[1], "base64url").toString("utf8")) as { version: number };
+    if (!agent) return route.fulfill({ status: 404, body: "{}" });
+    agent.device_list = { version: payload.version, jws };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ version: payload.version }),
+    });
   });
 
   // The compose page resolves every recipient on the server (an AID to
@@ -148,6 +192,8 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
         signing_public_key: agent.public_key,
         encryption_public_key: agent.encryption_key,
         key_holder: "web_keystore",
+        devices: agent.devices.map(({ did, encryption_public_key }) => ({ did, encryption_public_key })),
+        device_list: agent.device_list,
       }),
     });
   });
@@ -290,17 +336,9 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
     await route.fallback();
   });
 
-  await page.goto("/login");
-  await expect(page.getByTestId("login-root")).toBeVisible();
-
-  const currentUrl = new URL(page.url());
-  await page.context().addCookies([
-    {
-      name: "nexusinbox_session",
-      value: makeFutureSessionJwt(),
-      url: `${currentUrl.protocol}//${currentUrl.host}`,
-    },
-  ]);
+  // Signed in before the first page: opening /login with a session makes
+  // it move to Home on its own, which aborted the next goto.
+  await seedAuthSessionCookie(context, baseURL);
 
   // Create the sender agent.
   await page.goto("/settings/agents/new");
@@ -334,6 +372,11 @@ test("integrated flow: login -> compose -> send -> receive -> decrypt", async ({
   expect(agents).toHaveLength(2);
   const senderDid = agents[0].did;
   const recipientDid = agents[1].did;
+
+  // Home signs each agent's first device list (this browser is the only
+  // device); sending waits for the recipient to have one (docs/40 §15.2).
+  await page.goto("/");
+  await expect.poll(() => agents.every((a) => a.device_list !== null), { timeout: 15_000 }).toBe(true);
 
   const plainSubject = "E2E統合テスト件名";
   const plainBody = "E2E統合テスト本文";

@@ -1,3 +1,6 @@
+// Contacts → "Blocked": list, block by technical ID, unblock (docs/05 §1.4).
+// The API sends no World ID hash back, and the manual form takes a
+// technical ID only.
 import { expect, test } from "@playwright/test";
 import { seedAuthSessionCookie } from "./_helpers/auth";
 import { mockNexusInboxBackend } from "./_helpers/mocks";
@@ -6,7 +9,6 @@ type BlockEntry = {
   id: string;
   level: "l1_did" | "l2_identity" | "l3_stealth";
   target_did: string | null;
-  target_world_id: string | null;
   created_at: string;
 };
 
@@ -14,52 +16,35 @@ function blockId(index: number): string {
   return `00000000-0000-0000-0000-${String(index).padStart(12, "b")}`;
 }
 
-test("blocks management: list, create L1/L2, delete", async ({ page, context, baseURL }) => {
+test("blocks management: empty list, block by technical ID, unblock", async ({ page, context, baseURL }) => {
   const blocks: BlockEntry[] = [];
+  const posted: unknown[] = [];
   let seq = 1;
 
-  // JA locale so the asserted labels ("ブロックはありません。", "ブロック追加",
-  // etc.) match the rendered text. Playwright contexts have no
-  // localStorage by default and the i18n provider falls back to en.
   await page.addInitScript(() => {
     window.localStorage.setItem("nexusinbox-locale", "ja");
   });
-
-  // Stand up the deterministic backend (session + agents + 404
-  // catchall) so AppShell's boot queries don't proxy to the absent
-  // :8080 backend. The blocks-specific routes layered after this
-  // call win because Playwright matches routes last-registered-first.
+  // Deterministic backend first; the blocks routes below win (last
+  // registered is matched first).
   await mockNexusInboxBackend(page);
 
   await page.route("**/api/blocks", async (route) => {
     const method = route.request().method();
     if (method === "GET") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ blocks }),
-      });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ blocks }) });
       return;
     }
     if (method === "POST") {
-      const payload = route.request().postDataJSON() as {
-        level: BlockEntry["level"];
-        target_did?: string;
-        target_world_id?: string;
-      };
+      const payload = route.request().postDataJSON() as { level: BlockEntry["level"]; target_did?: string };
+      posted.push(payload);
       const id = blockId(seq++);
       blocks.unshift({
         id,
         level: payload.level,
         target_did: payload.target_did ?? null,
-        target_world_id: payload.target_world_id ?? null,
         created_at: new Date().toISOString(),
       });
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({ id }),
-      });
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id }) });
       return;
     }
     await route.fallback();
@@ -67,57 +52,43 @@ test("blocks management: list, create L1/L2, delete", async ({ page, context, ba
 
   await page.route("**/api/blocks/*", async (route) => {
     if (route.request().method() === "DELETE") {
-      const url = new URL(route.request().url());
-      const id = url.pathname.split("/").pop()!;
-      const before = blocks.length;
+      const id = new URL(route.request().url()).pathname.split("/").pop()!;
       const idx = blocks.findIndex((b) => b.id === id);
       if (idx >= 0) blocks.splice(idx, 1);
-      await route.fulfill({
-        status: blocks.length < before ? 204 : 404,
-        contentType: "application/json",
-        body: blocks.length < before ? "" : JSON.stringify({ error: "not_found" }),
-      });
+      await route.fulfill({ status: idx >= 0 ? 204 : 404, contentType: "application/json", body: "" });
       return;
     }
     await route.fallback();
   });
 
   await seedAuthSessionCookie(context, baseURL);
-
   await page.goto("/settings/blocks");
   await expect(page).toHaveURL(/\/settings\/blocks$/);
-  await expect(page.getByText("ブロックはありません。")).toBeVisible();
+  await expect(page.getByText("ブロックしている相手はいません。")).toBeVisible();
 
-  // Block list rows now render as `.card-item` (the older
-  // `.thread-item` class went away when the page moved off the
-  // shared inbox layout). Add-button label is the full
-  // `t("blocks.addBtn")` string ("追加 (上級者向け手入力)") and the
-  // delete button is `t("blocks.unblock")` ("ブロック解除"). The
-  // displayed level title is the long localized label, not "L1" /
-  // "L2" — we assert via the rendered targetDidBadge / world-id
-  // badge and the identifier text instead.
-  const addBtn = page.getByRole("button", { name: "追加 (上級者向け手入力)" });
+  // The manual form: a technical ID only, no World ID hash field.
+  await page.getByText("アドレスを指定してブロック（上級者向け）").click();
+  await expect(page.getByText("ブロックの範囲：この相手だけ")).toBeVisible();
+  await expect(page.locator("#block-target-world-id")).toHaveCount(0);
 
-  // Create an L1 block.
-  const l1Did = "did:key:zE2EBlock00001";
-  await page.locator("#block-target-did").fill(l1Did);
-  await addBtn.click();
+  const did = "did:key:zE2EBlock00001";
+  await page.locator("#block-target-did").fill(did);
+  await page.getByRole("button", { name: "ブロックする" }).click();
   await expect(page.getByText("ブロックを追加しました。")).toBeVisible();
-  const firstCard = page.locator(".card-item").first();
-  await expect(firstCard).toContainText("特定の送信者をブロック");
-  await expect(firstCard).toContainText(l1Did);
+  expect(posted).toEqual([{ level: "l1_did", target_did: did }]);
+  const rows = page.locator(".bl-row");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("この相手だけ");
 
-  // Switch level to L2 and create.
-  await page.locator(".select").first().selectOption("l2_identity");
-  await page.locator("#block-target-world-id").fill("0xDEADBEEF");
-  await addBtn.click();
-  await expect(page.locator(".card-item")).toHaveCount(2);
-  await expect(firstCard).toContainText("ID単位の完全ブロック");
-  await expect(firstCard).toContainText("0xDEADBEEF");
+  // A person-wide block made from a message (the server names no one).
+  blocks.unshift({ id: blockId(seq++), level: "l2_identity", target_did: null, created_at: new Date().toISOString() });
+  await page.reload();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("ある人のすべてのエージェント");
 
-  // Delete the first (L2) entry.
-  await firstCard.getByRole("button", { name: "ブロック解除" }).click();
+  // Unblock it.
+  await rows.first().getByTestId("blocks-unblock").click();
   await expect(page.getByText("ブロックを解除しました。")).toBeVisible();
-  await expect(page.locator(".card-item")).toHaveCount(1);
-  await expect(firstCard).toContainText("特定の送信者をブロック");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("この相手だけ");
 });
