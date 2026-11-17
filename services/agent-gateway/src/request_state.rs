@@ -216,8 +216,9 @@ fn payload_str(protocol: &ProtocolFacts, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// A reply no valid exchange makes (review 2026-11-17): answering one's own
-/// offer, accepting a slot the answered offer did not name, or a task taken
+/// A reply no valid exchange makes (review 2026-11-17): answering (or
+/// countering) one's own offer or something that is not an offer, accepting
+/// a slot the offer its reply_to names did not name, or a task taken
 /// on, declined or reported done by the side that asked for it. A good
 /// signature does not make such a step valid.
 fn out_of_turn(kind: &str, events: &[&Event]) -> bool {
@@ -237,32 +238,41 @@ fn out_of_turn(kind: &str, events: &[&Event]) -> bool {
             && at(a, "end").is_some()
             && at(a, "end") == at(b, "end")
     };
-    let mut offer: Option<&Event> = None;
+    // Each answer is checked against the offer its reply_to names, not the
+    // latest one (review 2026-11-17).
+    let by_id: HashMap<&str, &Event> = events
+        .iter()
+        .map(|e| (e.protocol.id.as_str(), *e))
+        .collect();
     for e in events {
-        match action(e) {
-            "propose" | "counter" => offer = Some(e),
-            "accept" | "decline" => {
-                let Some(o) = offer else { return true };
-                if o.message.mine == e.message.mine {
-                    return true;
-                }
-                if action(e) == "accept" {
-                    let pick = e.protocol.payload.get("selected_candidate");
-                    let offered = o
-                        .protocol
-                        .payload
-                        .get("candidates")
-                        .and_then(Value::as_array);
-                    let named = match (pick, offered) {
-                        (Some(pick), Some(offered)) => offered.iter().any(|c| same(c, pick)),
-                        _ => false,
-                    };
-                    if !named {
-                        return true;
-                    }
-                }
+        if !matches!(action(e), "counter" | "accept" | "decline") {
+            continue;
+        }
+        let offer = e
+            .protocol
+            .reply_to
+            .as_deref()
+            .and_then(|id| by_id.get(id).copied());
+        let Some(o) = offer.filter(|o| matches!(action(o), "propose" | "counter")) else {
+            return true;
+        };
+        if o.message.mine == e.message.mine {
+            return true;
+        }
+        if action(e) == "accept" {
+            let pick = e.protocol.payload.get("selected_candidate");
+            let offered = o
+                .protocol
+                .payload
+                .get("candidates")
+                .and_then(Value::as_array);
+            let named = match (pick, offered) {
+                (Some(pick), Some(offered)) => offered.iter().any(|c| same(c, pick)),
+                _ => false,
+            };
+            if !named {
+                return true;
             }
-            _ => {}
         }
     }
     false
@@ -481,7 +491,7 @@ mod tests {
         );
         let vectors: Vectors = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(vectors.ai_started_window_seconds, AI_STARTED_WINDOW_SECS);
-        assert_eq!(vectors.cases.len(), 37);
+        assert_eq!(vectors.cases.len(), 39);
         for case in &vectors.cases {
             let out = conversation_requests(&case.messages, &vectors.now);
             assert_eq!(out.unverified, case.expect.unverified, "{}", case.name);

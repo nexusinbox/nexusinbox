@@ -1965,6 +1965,145 @@
     ],
     "unverified": []
    }
+  },
+  {
+   "name": "out of turn: an accept is checked against the offer it replies to, not the latest one",
+   "messages": [
+    {
+     "id": "m1",
+     "at": "2026-11-16T10:00:00Z",
+     "mine": true,
+     "verified": true,
+     "protocol": {
+      "id": "P1",
+      "type": "schedule_negotiation",
+      "action": "propose",
+      "reply_to": null,
+      "payload": {
+       "candidates": [
+        {
+         "start": "2026-11-18T05:00:00Z",
+         "end": "2026-11-18T06:00:00Z"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "m2",
+     "at": "2026-11-16T10:05:00Z",
+     "mine": false,
+     "verified": true,
+     "protocol": {
+      "id": "P2",
+      "type": "schedule_negotiation",
+      "action": "counter",
+      "reply_to": "P1",
+      "payload": {
+       "candidates": [
+        {
+         "start": "2026-11-19T05:00:00Z",
+         "end": "2026-11-19T06:00:00Z"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "m3",
+     "at": "2026-11-16T10:10:00Z",
+     "mine": true,
+     "verified": true,
+     "protocol": {
+      "id": "P3",
+      "type": "schedule_negotiation",
+      "action": "accept",
+      "reply_to": "P1",
+      "payload": {
+       "selected_candidate": {
+        "start": "2026-11-19T05:00:00Z",
+        "end": "2026-11-19T06:00:00Z"
+       }
+      }
+     }
+    }
+   ],
+   "expect": {
+    "requests": [
+     {
+      "request_id": "P1",
+      "state": "conflict",
+      "next": "you",
+      "last_message_id": "m3",
+      "evidence": [
+       "m1",
+       "m2",
+       "m3"
+      ]
+     }
+    ],
+    "unverified": []
+   }
+  },
+  {
+   "name": "out of turn: a counter to one's own offer",
+   "messages": [
+    {
+     "id": "m1",
+     "at": "2026-11-16T10:00:00Z",
+     "mine": true,
+     "verified": true,
+     "protocol": {
+      "id": "P1",
+      "type": "schedule_negotiation",
+      "action": "propose",
+      "reply_to": null,
+      "payload": {
+       "candidates": [
+        {
+         "start": "2026-11-18T05:00:00Z",
+         "end": "2026-11-18T06:00:00Z"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "id": "m2",
+     "at": "2026-11-16T10:05:00Z",
+     "mine": true,
+     "verified": true,
+     "protocol": {
+      "id": "P2",
+      "type": "schedule_negotiation",
+      "action": "counter",
+      "reply_to": "P1",
+      "payload": {
+       "candidates": [
+        {
+         "start": "2026-11-19T05:00:00Z",
+         "end": "2026-11-19T06:00:00Z"
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expect": {
+    "requests": [
+     {
+      "request_id": "P1",
+      "state": "conflict",
+      "next": "you",
+      "last_message_id": "m2",
+      "evidence": [
+       "m1",
+       "m2"
+      ]
+     }
+    ],
+    "unverified": []
+   }
   }
  ]
 }
