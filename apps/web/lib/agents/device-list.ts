@@ -165,17 +165,13 @@ export function onlyRootDevice(agent: Agent): boolean {
  * The agent's own root as this browser knows it (docs/40 §16.2), never as
  * the server alone says: the DID the server names only when this browser
  * holds its key (the root browser); else the root this browser recorded
- * when it joined; else, for a browser that joined before that record
- * existed, its pin, only while it holds a device key of the agent. Null
- * when it knows none. Confirmation numbers are computed from this.
+ * when it joined. Null when it knows neither (a browser that joined before
+ * that record existed shows no number; a pin cannot stand in, since the
+ * server chooses which aid it is read under). Confirmation numbers are
+ * computed from this.
  */
-export async function ownRootHere(
-  agent: Pick<Agent, "aid" | "did" | "dids" | "devices">,
-): Promise<string | null> {
+export async function ownRootHere(agent: Pick<Agent, "aid" | "did">): Promise<string | null> {
   const key = await getSigningPrivateKey(agent.did).catch(() => null);
   if (key) return agent.did;
-  const recorded = loadOwnRoot(agent.aid);
-  if (recorded) return recorded;
-  if (!(await localDeviceDid(agent).catch(() => null))) return null;
-  return loadPin(agent.aid)?.root ?? null;
+  return loadOwnRoot(agent.aid);
 }

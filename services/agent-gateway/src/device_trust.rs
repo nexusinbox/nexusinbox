@@ -522,6 +522,12 @@ pub struct Peers {
     /// is a warning (docs/40 §15.2).
     #[serde(default)]
     pub signed: std::collections::BTreeSet<String>,
+    /// This computer's own agent's root, by AID, recorded only when the
+    /// browser's MAC over it checked out (connect code, docs/40 §13.4).
+    /// `pins` also hold roots first seen from the server; the confirmation
+    /// number is computed from this one only.
+    #[serde(default)]
+    pub own_roots: BTreeMap<String, String>,
 }
 
 pub struct PeerStore {

@@ -46,9 +46,10 @@ describe("ownRootHere", () => {
     expect(await ownRootHere(agent("did:key:zServerSays", ["did:key:zServerSays"]))).toBeNull();
   });
 
-  it("falls back to the pin of a browser that joined earlier while it holds a device key", async () => {
+  it("never takes a pin as the own root, even while holding a device key the server lists", async () => {
+    // The server lists this browser's device under another aid it has a pin for.
     keys.add("did:key:zThisBrowser");
-    savePin(AID, { root: "did:key:zPinnedRoot", version: 2 });
-    expect(await ownRootHere(agent("did:key:zPinnedRoot", ["did:key:zThisBrowser"]))).toBe("did:key:zPinnedRoot");
+    savePin(AID, { root: "did:key:zTheirRoot", version: 2 });
+    expect(await ownRootHere(agent("did:key:zServerSays", ["did:key:zThisBrowser"]))).toBeNull();
   });
 });

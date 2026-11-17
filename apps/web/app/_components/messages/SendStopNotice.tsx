@@ -23,7 +23,7 @@ export function SendStopNotice({
 }: {
   stop: SendStop;
   /** The sending agent, whose root this browser knows, for the new confirmation number (docs/40 §16.2). */
-  ownAgent?: Pick<Agent, "aid" | "did" | "dids" | "devices"> | null;
+  ownAgent?: Pick<Agent, "aid" | "did"> | null;
   /** The recipient as the person knows them. */
   name?: string | null;
   onClose: () => void;
@@ -40,13 +40,11 @@ export function SendStopNotice({
   const verifiedRoot = verified?.root ?? null;
   const ownAid = ownAgent?.aid;
   const ownDid = ownAgent?.did;
-  const ownDids = ownAgent?.dids;
-  const ownDevices = ownAgent?.devices;
   useEffect(() => {
     let cancelled = false;
     if (verifiedRoot && ownAid && ownDid && stop.root) {
       const root = stop.root;
-      void ownRootHere({ aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices }).then(async (ownRoot) => {
+      void ownRootHere({ aid: ownAid, did: ownDid }).then(async (ownRoot) => {
         const n = ownRoot ? await confirmationNumber(ownRoot, root) : null;
         if (!cancelled) setNewNumber(n);
       });
@@ -54,7 +52,7 @@ export function SendStopNotice({
     return () => {
       cancelled = true;
     };
-  }, [verifiedRoot, ownAid, ownDid, ownDids, ownDevices, stop.root]);
+  }, [verifiedRoot, ownAid, ownDid, stop.root]);
   // Accepting in one step rests on the new number; without one, the usual
   // second confirmation.
   const byNumber = !!verified && !!newNumber;

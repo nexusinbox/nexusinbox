@@ -148,3 +148,22 @@ async fn a_handful_of_ips_cannot_exhaust_the_shared_budget() {
         "another caller must still be served"
     );
 }
+
+#[tokio::test]
+async fn one_ipv6_48_cannot_spread_over_its_64s_to_reach_the_global_budget() {
+    let app = common::test_app();
+    // Twelve /64s of one /48, each at its own cap of 60: 720 requests.
+    let mut accepted = 0;
+    for net in 0..12u16 {
+        for host in 0..60u16 {
+            let ip = format!("2001:db8:aa:{net:x}::{:x}", host + 1);
+            if status_from(&app, &ip).await == StatusCode::OK {
+                accepted += 1;
+            }
+        }
+    }
+    // Only the /48's 600 got through.
+    assert_eq!(accepted, 600);
+    // Another /48 is not held back by it.
+    assert_eq!(status_from(&app, "2001:db8:bb::1").await, StatusCode::OK);
+}

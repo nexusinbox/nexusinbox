@@ -31,7 +31,7 @@ export function ConfirmationPanel({
   counterpart: string;
   /** The other agent as the person knows it. */
   name: string;
-  ownAgent: Pick<Agent, "aid" | "did" | "dids" | "devices" | "label">;
+  ownAgent: Pick<Agent, "aid" | "did" | "label">;
   /** The contact the result is sealed into; without one, the number only. */
   contact: ContactEntry | null;
 }) {
@@ -42,7 +42,7 @@ export function ConfirmationPanel({
   const [saved, setSaved] = useState<"same" | "different" | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const { aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices } = ownAgent;
+  const { aid: ownAid, did: ownDid } = ownAgent;
   useEffect(() => {
     let cancelled = false;
     setLoaded({ kind: "loading" });
@@ -52,7 +52,7 @@ export function ConfirmationPanel({
         const checked = await checkedRoot(served.aid);
         // The own agent's root is the DID it was created with (docs/40 §4.1),
         // as this browser knows it, not as the server says.
-        const ownRoot = await ownRootHere({ aid: ownAid, did: ownDid, dids: ownDids, devices: ownDevices });
+        const ownRoot = await ownRootHere({ aid: ownAid, did: ownDid });
         if (cancelled) return;
         if ("stop" in checked || !ownRoot) {
           setLoaded({ kind: "unavailable" });
@@ -67,7 +67,7 @@ export function ConfirmationPanel({
     return () => {
       cancelled = true;
     };
-  }, [counterpart, ownAid, ownDid, ownDids, ownDevices]);
+  }, [counterpart, ownAid, ownDid]);
 
   const record = async (same: boolean) => {
     if (!contact || loaded.kind !== "ready") return;
@@ -81,7 +81,9 @@ export function ConfirmationPanel({
         person_name: contact.person_name,
         agent_label: contact.agent_label,
         note: contact.note,
-        aid: contact.aid ?? null,
+        // The agent the number was computed for, so every browser of the
+        // person reads the verdict under it (docs/40 §16.2).
+        aid: contact.aid ?? loaded.aid,
         // Matching numbers check the root shown; a mismatch keeps the old one.
         root: same ? loaded.root : (contact.root ?? loaded.root),
         verified: same ? { root: loaded.root, at: new Date().toISOString() } : null,

@@ -86,6 +86,10 @@ const PER_IP_RATE_LIMIT_REQUESTS: u64 = 60;
 /// shares, so a person's own budget is what keeps one of them from using up
 /// the others'.
 const PER_PERSON_RATE_LIMIT_REQUESTS: u64 = 300;
+/// Requests per minute from one IPv6 /48, across all its /64s: a client
+/// holding a /48 (or /56) cannot reach the process-wide budget by spreading
+/// over many /64 buckets.
+const PER_IPV6_48_RATE_LIMIT_REQUESTS: u64 = 600;
 /// Per-caller rate limit window (seconds), for both of the above
 const PER_IP_RATE_LIMIT_WINDOW_SECS: u64 = 60;
 /// Maximum number of tracked callers (IPs and people) in the rate limiter map
@@ -457,10 +461,34 @@ struct AuthVerifyRequest {
 #[derive(Deserialize)]
 struct WorldVerifyResult {
     success: bool,
-    #[allow(dead_code)]
     action: Option<String>,
-    #[allow(dead_code)]
-    nullifier_hash: Option<String>,
+    /// v4: the verified nullifier.
+    nullifier: Option<String>,
+    /// v4: one entry per response World checked.
+    #[serde(default)]
+    results: Option<Vec<WorldVerifyItem>>,
+}
+
+#[derive(Deserialize)]
+struct WorldVerifyItem {
+    #[serde(default)]
+    success: bool,
+    nullifier: Option<String>,
+}
+
+/// Whether World's answer covers the login being made (docs: POST
+/// /api/v4/verify returns `action`, `nullifier` and per-response `results`):
+/// the account is keyed on `nullifier`, so it must be one World verified,
+/// for this action. A field World leaves out is not held against it.
+fn world_result_matches(result: &WorldVerifyResult, nullifier: &str, action: &str) -> bool {
+    let same = |n: &str| n.eq_ignore_ascii_case(nullifier);
+    result.action.as_deref().is_none_or(|a| a == action)
+        && result.nullifier.as_deref().is_none_or(same)
+        && result.results.as_ref().is_none_or(|items| {
+            items
+                .iter()
+                .any(|i| i.success && i.nullifier.as_deref().is_some_and(same))
+        })
 }
 
 #[derive(Serialize)]
@@ -4372,6 +4400,16 @@ fn ip_source(ip: std::net::IpAddr) -> String {
     }
 }
 
+/// The /48 an IPv6 source (as `ip_source` writes it, `<prefix>/64`) lies in.
+fn ipv6_slash48(source: &str) -> Option<String> {
+    let addr: std::net::Ipv6Addr = source.strip_suffix("/64")?.parse().ok()?;
+    let s = addr.segments();
+    Some(format!(
+        "{}/48",
+        std::net::Ipv6Addr::new(s[0], s[1], s[2], 0, 0, 0, 0, 0)
+    ))
+}
+
 fn client_ip_from_headers(
     headers: &HeaderMap,
     trusted_header: Option<&str>,
@@ -4478,7 +4516,20 @@ async fn enforce_request_rate_limit(
     // first, one client sending faster than its own cap drained the shared
     // budget and 429'd every other caller on the machine (review 2026-11-07).
     let (caller, limit, message) = rate_limit_caller(request.headers());
-    if !consume_caller_rate_limit(&state, &caller, limit) {
+    // Its own /64 first, then the /48 it lies in, so a /64 over its cap
+    // does not use up the /48 its neighbours share.
+    let within = consume_caller_rate_limit(&state, &caller, limit)
+        && caller
+            .strip_prefix("ip:")
+            .and_then(ipv6_slash48)
+            .is_none_or(|net| {
+                consume_caller_rate_limit(
+                    &state,
+                    &format!("ip48:{net}"),
+                    PER_IPV6_48_RATE_LIMIT_REQUESTS,
+                )
+            });
+    if !within {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
@@ -5072,6 +5123,16 @@ async fn auth_verify(
                 Json(ErrorResponse {
                     error: "world_verify_failed".to_string(),
                     message: "world verification was not successful".to_string(),
+                }),
+            ));
+        }
+        if !world_result_matches(&verify_response, &nullifier_hash, &action) {
+            audit_fail(401, "world_verify_mismatch");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "world_verify_failed".to_string(),
+                    message: "world verification does not cover this login".to_string(),
                 }),
             ));
         }
@@ -8795,9 +8856,11 @@ async fn resolve_browser_pairing(
 ) -> Result<Json<BrowserPairingResponse>, (StatusCode, Json<ErrorResponse>)> {
     let user_id = authenticated_user_id(&state, &headers).await?;
     let user_uuid = parse_user_uuid(&user_id)?;
+    // Counted per person: signed-in web traffic arrives from Vercel's few
+    // addresses, which one person's guesses must not use up for everyone.
     if !consume_keyed_budget(
         &state.pairing_ip_budgets,
-        &extract_client_ip(&headers),
+        &format!("browser-pairing:user:{user_uuid}"),
         PAIRING_RESOLVE_LIMIT_PER_IP,
         PAIRING_RESOLVE_WINDOW_SECS,
     ) {
@@ -9811,7 +9874,7 @@ async fn resolve_pairing_code(
     let client_ip = extract_client_ip(&headers);
     if !consume_keyed_budget(
         &state.pairing_ip_budgets,
-        &client_ip,
+        &format!("agent-pairing:ip:{client_ip}"),
         PAIRING_RESOLVE_LIMIT_PER_IP,
         PAIRING_RESOLVE_WINDOW_SECS,
     ) {
@@ -13500,9 +13563,9 @@ async fn create_attachment_intent(
     let client_ip = extract_client_ip(&headers);
     let user_agent = audit_user_agent(&headers);
 
-    // Per-IP rate limit — enforced before DB work so cheap intent spam from a
+    // Per-person rate limit (not per IP: web traffic shares Vercel's addresses) — enforced before DB work so cheap intent spam from a
     // single IP fails fast without touching Postgres.
-    if !consume_attachment_intent_ip_budget(&state, &client_ip) {
+    if !consume_attachment_intent_ip_budget(&state, &format!("user:{user_uuid}")) {
         // Audit the rejection so ops can see the IP + UA of the offender.
         // DB may be unavailable here too — fire-and-forget on a best-effort
         // pool, skipping if we can't get one.
@@ -13750,11 +13813,11 @@ async fn complete_attachment(
     let client_ip = extract_client_ip(&headers);
     let user_agent = audit_user_agent(&headers);
 
-    // Per-IP burst limit. Shares the attachment-operations budget with
+    // Per-person burst limit (not per IP: web traffic shares Vercel's addresses). Shares the attachment-operations budget with
     // /attachments/intents so the overall ceiling per IP (60/min) covers
     // the full upload flow rather than letting complete be abused to
     // enumerate R2 state cheaply.
-    if !consume_attachment_intent_ip_budget(&state, &client_ip) {
+    if !consume_attachment_intent_ip_budget(&state, &format!("user:{user_uuid}")) {
         if let Ok(Some(audit_pool)) = state.database_pool().await {
             record_audit_event(
                 audit_pool,
@@ -14353,12 +14416,11 @@ async fn generate_attachment_download_url(
         ctx.require_scope("messages.read")?;
     }
     let user_uuid = parse_user_uuid(ctx.user_id())?;
-    let client_ip = extract_client_ip(&headers);
 
-    // Per-IP scraping guard. An attacker with a stolen cookie could
+    // Per-person scraping guard (not per IP: web traffic shares Vercel's addresses). An attacker with a stolen cookie could
     // otherwise try to iterate attachment_ids for bulk presigned-URL
     // harvesting. Shares the attachment-operations budget.
-    if !consume_attachment_intent_ip_budget(&state, &client_ip) {
+    if !consume_attachment_intent_ip_budget(&state, &format!("user:{user_uuid}")) {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
@@ -17684,6 +17746,30 @@ mod internal_tests {
     }
 
     #[test]
+    fn world_answer_must_cover_the_nullifier_and_action_of_the_login() {
+        let answer = |json: &str| serde_json::from_str::<WorldVerifyResult>(json).unwrap();
+        let ok = answer(
+            r#"{"success":true,"action":"login","nullifier":"0xAB","results":[{"identifier":"orb","success":true,"nullifier":"0xab"}]}"#,
+        );
+        assert!(world_result_matches(&ok, "0xab", "login"));
+        // Another nullifier than the one the account is keyed on.
+        assert!(!world_result_matches(&ok, "0xcd", "login"));
+        // Another action.
+        assert!(!world_result_matches(&ok, "0xab", "other"));
+        // The entry with this nullifier did not verify.
+        let failed = answer(
+            r#"{"success":true,"results":[{"success":false,"nullifier":"0xab"},{"success":true,"nullifier":"0xcd"}]}"#,
+        );
+        assert!(!world_result_matches(&failed, "0xab", "login"));
+        // Fields World leaves out are not held against it.
+        assert!(world_result_matches(
+            &answer(r#"{"success":true}"#),
+            "0xab",
+            "login"
+        ));
+    }
+
+    #[test]
     fn ipv6_clients_are_counted_by_their_slash_64() {
         let a = headers_with(&[("fly-client-ip", "2001:db8:1:2:aaaa::1")]);
         let b = headers_with(&[("fly-client-ip", "2001:db8:1:2:bbbb::9")]);
@@ -17694,6 +17780,10 @@ mod internal_tests {
         assert_ne!(ip(&a), ip(&c));
         let mapped = headers_with(&[("fly-client-ip", "::ffff:203.0.113.7")]);
         assert_eq!(ip(&mapped), "203.0.113.7");
+        // Every /64 of one /48 shares a /48 budget as well.
+        assert_eq!(ipv6_slash48(&ip(&a)).as_deref(), Some("2001:db8:1::/48"));
+        assert_eq!(ipv6_slash48(&ip(&c)), ipv6_slash48(&ip(&a)));
+        assert_eq!(ipv6_slash48("203.0.113.7"), None);
     }
 
     #[test]

@@ -173,7 +173,13 @@ export function useUpdateContactMutation() {
               verified: existing.verified ?? null,
               distrusted_root: existing.distrusted_root ?? null,
             }
-          : await rootFieldsFor(payload.did);
+          : {
+              // Filled in now, but what the person already said about a
+              // root stays (docs/40 §16.2).
+              ...(await rootFieldsFor(payload.did)),
+              verified: existing?.verified ?? null,
+              distrusted_root: existing?.distrusted_root ?? null,
+            };
       const sealed = await sealForSave(defaultApiClient, payload.did, { ...payload.body, ...rootFields });
       return defaultApiClient.updateContact(payload.id, { sealed });
     },

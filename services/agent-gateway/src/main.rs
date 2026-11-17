@@ -1735,6 +1735,14 @@ async fn main() {
             "[INFO] Isolated mode auto-reply executor: ENABLED (interval {:?})",
             interval
         );
+        if state.state_dir.is_none() {
+            // Settings given by hand: what this computer learned about other
+            // agents' keys lives in memory only, so after a restart it trusts
+            // the first list it sees again (docs/40 §13.2).
+            eprintln!(
+                "[WARN] No agent directory (--state-dir): keys learned about other agents are forgotten on restart. Connect with `nexusinbox connect` to keep them."
+            );
+        }
         tokio::spawn(async move {
             let backend = Arc::new(GatewayExecutorBackend::new(exec_state));
             auto_reply_executor::run_loop(backend, interval).await;
@@ -1983,7 +1991,11 @@ impl auto_reply_executor::ExecutorBackend for GatewayExecutorBackend {
     ) -> Result<auto_reply_executor::RecipientPubkey, auto_reply_executor::ResolveError> {
         use auto_reply_executor::ResolveError;
         let token = ensure_token(&self.state).await?;
-        let checked = check_recipient(&self.state, &token, did, None)
+        // This agent's own DID (its sender copy) is bound to the signer's
+        // AID, as for drafts and sends.
+        let me = get_signer_identity(&self.state).await?;
+        let expected = (did == me.did).then_some(me.aid.as_str());
+        let checked = check_recipient(&self.state, &token, did, expected)
             .await
             .map_err(|e| match e {
                 CheckError::Stop { reason, .. } => ResolveError::Stopped(reason.code()),
@@ -2244,6 +2256,7 @@ async fn confirm_own_root(state: Arc<GatewayState>) {
                         peers
                             .pins
                             .insert(aid.clone(), device_trust::Pin::root(&root, 0));
+                        peers.own_roots.insert(aid.clone(), root.clone());
                     })
                     // The secret goes only once the pin reads back from the file.
                     .and_then(|()| state.peers.load())
@@ -2291,9 +2304,11 @@ fn run_verify(dir: &std::path::Path, own_aid: &str, target: &str) -> i32 {
         eprintln!("[ERROR] {target} is not an agent this computer has sent to or read from.");
         return 2;
     };
-    let Some(own) = peers.pins.get(own_aid) else {
+    // Only a root the browser's MAC confirmed: a pin may be one the server
+    // showed first (docs/40 §16.2).
+    let Some(own_root) = peers.own_roots.get(own_aid) else {
         eprintln!(
-            "[ERROR] This computer has not confirmed its own agent's key yet. Start the agent once (it learns the key from the browser), then try again."
+            "[ERROR] This computer has not confirmed its own agent's key with the browser, so it shows no number. Compare the number in the NexusInbox app (Contacts) instead. A computer connected with the long connect code confirms the key when it starts."
         );
         return 2;
     };
@@ -2307,7 +2322,7 @@ fn run_verify(dir: &std::path::Path, own_aid: &str, target: &str) -> i32 {
     println!();
     println!(
         "    {}",
-        device_trust::confirmation_number(&own.root, &theirs.root)
+        device_trust::confirmation_number(own_root, &theirs.root)
     );
     println!();
     println!(
@@ -2709,6 +2724,36 @@ mod tests {
             "the old refresh token must not be presented again"
         );
         assert!(state.token.lock().unwrap().refresh_token.is_none());
+    }
+
+    #[test]
+    fn verify_shows_a_number_only_for_an_own_root_the_browser_confirmed() {
+        let dir = std::env::temp_dir().join(format!("verify-own-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = device_trust::PeerStore::new(Some(&dir));
+        store
+            .update(|p| {
+                // A root first seen from the server, and the other agent's.
+                p.pins.insert(
+                    "aid:ai:me".into(),
+                    device_trust::Pin::root("did:key:zServerSaid", 0),
+                );
+                p.pins.insert(
+                    "aid:ai:them".into(),
+                    device_trust::Pin::root("did:key:zTheirs", 0),
+                );
+            })
+            .unwrap();
+        assert_eq!(run_verify(&dir, "aid:ai:me", "aid:ai:them"), 2);
+        store
+            .update(|p| {
+                p.own_roots
+                    .insert("aid:ai:me".into(), "did:key:zConfirmed".into());
+            })
+            .unwrap();
+        assert_eq!(run_verify(&dir, "aid:ai:me", "aid:ai:them"), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[tokio::test]
@@ -3588,12 +3633,17 @@ mod tests {
                 // Who is reading, to check the sender (docs/40 §14.5).
                 "get_public_key",
                 "unwrap_content_key",
+                // Resolving the proposer: is it this agent's own DID?
+                "get_public_key",
                 "get_public_key",
                 "wrap_content_key",
                 "get_public_key",
                 "wrap_content_key",
-                // The proposer's device, then this agent's two (docs/38).
+                // The proposer's device.
                 "wrap_content_key",
+                // Resolving this agent's own DID, bound to the signer's AID.
+                "get_public_key",
+                // This agent's two devices (docs/38).
                 "wrap_content_key",
                 "wrap_content_key",
                 // This agent, which signature v2 names.
@@ -3606,16 +3656,16 @@ mod tests {
             json!({ "encrypted_key": "x25519v1:incoming:wrapped:key:data" })
         );
         assert_eq!(
-            daemon_calls[3].1["recipient_encryption_pub"],
+            daemon_calls[4].1["recipient_encryption_pub"],
             "cHJvcG9zZXItZW5jcnlwdGlvbi1rZXk"
         );
         assert_eq!(
-            daemon_calls[5].1["recipient_encryption_pub"],
+            daemon_calls[6].1["recipient_encryption_pub"],
             DAEMON_ENCRYPTION_KEY
         );
         assert_eq!(
-            daemon_calls[5].1["content_key"],
-            daemon_calls[3].1["content_key"]
+            daemon_calls[6].1["content_key"],
+            daemon_calls[4].1["content_key"]
         );
         // sign_envelope_v2 gets the whole envelope the POST body then
         // carries, the body hashed (docs/40 §14.3).
@@ -3629,10 +3679,10 @@ mod tests {
                 .to_string(),
         )
         .unwrap();
-        assert_eq!(daemon_calls[10].1, sent_fields.daemon_params());
+        assert_eq!(daemon_calls[12].1, sent_fields.daemon_params());
 
         // The reply opens with the key handed to wrap_content_key.
-        let reply_key = daemon_calls[3].1["content_key"].as_str().unwrap();
+        let reply_key = daemon_calls[4].1["content_key"].as_str().unwrap();
         let reply: serde_json::Value = serde_json::from_str(
             &envelope_crypto::decrypt_envelope_text(
                 envelope["encrypted_content"].as_str().unwrap(),
